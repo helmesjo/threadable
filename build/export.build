@@ -1,0 +1,6 @@
+$out_root/
+{
+  include threadable/
+}
+
+export $out_root/threadable/$import.target
