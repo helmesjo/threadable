@@ -36,7 +36,7 @@ namespace threadable
       void operator()(void* addr) override
       {
         func_t& func = *static_cast<func_t*>(addr);
-        func();
+        std::invoke(std::forward<func_t>(func));
       }
     };
 
