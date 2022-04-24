@@ -48,8 +48,8 @@ namespace threadable
     {
       wrapped<func_t> obj;
       static_assert(sizeof(obj) == sizeof(callable), "wrapped size must be equal to callable size");
-      std::memcpy(buffer.data(), &obj, sizeof(obj));
-      std::memcpy(buffer.data() + sizeof(obj), &func, sizeof(func));
+      std::memcpy(buffer.data(), reinterpret_cast<void*>(&obj), sizeof(obj));
+      std::memcpy(buffer.data() + sizeof(obj), reinterpret_cast<void*>(&func), sizeof(func));
     }
 
     void operator()()
