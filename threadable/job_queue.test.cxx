@@ -53,16 +53,18 @@ SCENARIO("job_queue: execution")
   
   GIVEN("push two jobs")
   {
-    queue.push([&]{ order.push_back(1); });
-    queue.push([&]{ order.push_back(2); });
+    queue.push([&order]{ order.push_back(1); });
+    queue.push([&order]{ order.push_back(2); });
     WHEN("pop two jobs")
     {
       auto& job1 = queue.pop();
       auto& job2 = queue.pop();
       THEN("jobs are ordered LIFO")
       {
-        job1.function();
-        job2.function();
+        REQUIRE(job1);
+        job1();
+        job2();
+        REQUIRE(order.size() == 2);
         REQUIRE(order[0] == 2);
         REQUIRE(order[1] == 1);
       }
@@ -73,8 +75,9 @@ SCENARIO("job_queue: execution")
       auto* job2 = queue.steal();
       THEN("jobs are ordered FIFO")
       {
-        job1->function();
-        job2->function();
+        (*job1)();
+        (*job2)();
+        REQUIRE(order.size() == 2);
         REQUIRE(order[0] == 1);
         REQUIRE(order[1] == 2);
       }
@@ -87,22 +90,13 @@ SCENARIO("job_queue: execution")
         auto* job2 = queue.steal();
         THEN("jobs are ordered LIFO")
         {
-          job1.function();
-          job2->function();
+          job1();
+          (*job2)();
+          REQUIRE(order.size() == 2);
           REQUIRE(order[0] == 2);
           REQUIRE(order[1] == 1);
         }
       }
     }
-  }
-}
-
-SCENARIO("job_queue: data storage")
-{
-  auto queue = job_queue{};
-  
-  GIVEN("lambda with small capture is pushed")
-  {
-    queue.push([val1 = std::uint8_t{64}]{});
   }
 }

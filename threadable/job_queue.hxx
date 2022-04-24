@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -17,33 +18,90 @@ namespace threadable
   // TODO: Make portable
   constexpr auto cache_line_size = std::size_t{64};
 #endif
-  
-  using function_t = std::function<void()>;
+
+  constexpr auto buffer_size = 54;
+  struct function
+  {
+    struct base
+    {
+      virtual ~base() = default;
+      virtual void operator()(void*) = 0;
+    };
+
+    template<typename callable_t>
+    struct wrapped final: base
+    {
+      void operator()(void* addr) override
+      {
+        callable_t& func = *static_cast<callable_t*>(addr);
+        func();
+      }
+    };
+
+    using buffer_t = std::array<std::uint8_t, buffer_size>;
+    static constexpr buffer_t zero_buffer{};
+
+    template<typename callable_t>
+    void set(callable_t&& func)
+    {
+      wrapped<callable_t> obj;
+      static_assert(sizeof(obj) == sizeof(base), "wrapped size must be equal to base size");
+      std::memcpy(buffer.data(), &obj, sizeof(obj));
+      std::memcpy(buffer.data() + sizeof(obj), &func, sizeof(func));
+    }
+
+    void operator()()
+    {
+      base& obj = reinterpret_cast<base&>(*buffer.data());
+      void* addr = buffer.data() + sizeof(base);
+      obj(addr);
+    }
+
+    operator bool() const
+    {
+      return std::memcmp(zero_buffer.data(), buffer.data(), sizeof(typename buffer_t::value_type) * buffer.size());
+    }
+
+    buffer_t buffer;
+  };
+  static_assert(sizeof(function) < cache_line_size, "function size must be less than cache line size");
+
   struct alignas(cache_line_size) job
   {
-    function_t function;
-    std::weak_ptr<job> parent;
-    std::atomic_size_t unfinished_jobs;
-    std::array<char, 8> buffer;
+    void operator()()
+    {
+      func();
+    }
+
+    operator bool() const
+    {
+      return func;
+    }
+
+    job* parent = nullptr;
+    function func;
+    std::atomic_uint16_t unfinished_jobs;
   };
-  static_assert(sizeof(job) == cache_line_size);
+  static_assert(sizeof(job) == cache_line_size, "job size must equal cache line size");
 
   class job_queue
   {
     static constexpr auto NUMBER_OF_JOBS = std::size_t{8};
     static constexpr auto MASK = NUMBER_OF_JOBS - std::size_t{1u};
-  
+
   public:
-  
-    void push(function_t&& fun) noexcept
+
+    template<typename callable_t>
+    void push(callable_t&& fun) noexcept
     {
+      static_assert(sizeof(callable_t) < buffer_size, "callable is too big");
       std::scoped_lock _{mutex_};
 
       auto& job = jobs_[bottom_ & MASK];
-      job.function = std::move(fun);
+      job.func.set(std::forward<callable_t>(fun));
       ++bottom_;
     }
-  
+
     job& pop() noexcept
     {
       std::scoped_lock _{mutex_};
@@ -56,7 +114,7 @@ namespace threadable
       --bottom_;
       return jobs_[bottom_ & MASK];
     }
-  
+
     job* steal() noexcept
     {
       std::scoped_lock _{mutex_};
@@ -65,12 +123,12 @@ namespace threadable
           // no job there to steal
           return nullptr;
       }
- 
+
       auto& job = jobs_[top_ & MASK];
       ++top_;
       return &job;
     }
-  
+
     std::size_t size() const noexcept
     {
       std::scoped_lock _{mutex_};
