@@ -4,10 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <concepts>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <new>
+#include <tuple>
 
 namespace threadable
 {
@@ -91,15 +93,29 @@ namespace threadable
 
   public:
 
-    template<typename callable_t>
-    void push(callable_t&& fun) noexcept
+    template<typename func_t>
+    void push(func_t&& func) noexcept
+      requires std::invocable<func_t>
     {
-      static_assert(sizeof(callable_t) < buffer_size, "callable is too big");
+      static_assert(sizeof(func) < buffer_size, "callable is too big");
       std::scoped_lock _{mutex_};
 
       auto& job = jobs_[bottom_ & MASK];
-      job.func.set(std::forward<callable_t>(fun));
+      job.func.set(std::forward<func_t>(func));
       ++bottom_;
+    }
+
+    template<typename func_t, typename... arg_ts>
+      requires std::invocable<func_t, arg_ts...>
+    void push(func_t func, arg_ts&&... args)
+    {
+      // perfectly forwarded lvalue references are stored by value in lambda,
+      // so need to use tuple+apply trick.
+      push([func = std::forward<func_t>(func), args = std::tuple<decltype(args)...>(std::forward<decltype(args)>(args)...)]() mutable{
+        std::apply([&func](auto&&... args) mutable{
+          std::invoke(std::forward<func_t>(func), std::forward<arg_ts>(args)...);
+        }, args);
+      });
     }
 
     job& pop() noexcept

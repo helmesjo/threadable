@@ -46,11 +46,59 @@ SCENARIO("job_queue: push, pop, steal")
   }
 }
 
+namespace
+{
+  void free_func(int& called)
+  {
+    ++called;
+  }
+}
+
 SCENARIO("job_queue: execution")
 {
   auto queue = job_queue{};
   std::vector<int> order;
-  
+  GIVEN("push job")
+  {
+    int called = 0;
+    WHEN("lambda")
+    {
+      queue.push([&called]{ ++called; });
+      THEN("popped job invokes it")
+      {
+        auto& job = queue.pop();
+        job();
+        REQUIRE(called == 1);
+      }
+    }
+    WHEN("free function")
+    {
+      queue.push(free_func, called);
+      THEN("popped job invokes it")
+      {
+        auto& job = queue.pop();
+        job();
+        REQUIRE(called == 1);
+      }
+    }
+    WHEN("member function")
+    {
+      struct type
+      {
+        void func(int& called)
+        {
+          ++called;
+        }
+      } obj;
+      queue.push(&type::func, obj, called);
+      THEN("popped job invokes it")
+      {
+        auto& job = queue.pop();
+        job();
+        REQUIRE(called == 1);
+      }
+    }
+  }
   GIVEN("push two jobs")
   {
     queue.push([&order]{ order.push_back(1); });
