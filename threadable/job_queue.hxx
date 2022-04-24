@@ -48,6 +48,9 @@ namespace threadable
     {
       wrapped<func_t> obj;
       static_assert(sizeof(obj) == sizeof(callable), "wrapped size must be equal to callable size");
+
+      // TODO: Check out 'placement new' & std::align instead of memcpy,
+      //       because this will probably explode someday.
       std::memcpy(buffer.data(), reinterpret_cast<void*>(&obj), sizeof(obj));
       std::memcpy(buffer.data() + sizeof(obj), reinterpret_cast<void*>(&func), sizeof(func));
     }
