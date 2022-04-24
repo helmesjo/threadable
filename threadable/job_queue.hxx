@@ -24,18 +24,18 @@ namespace threadable
   constexpr auto buffer_size = 54;
   struct function
   {
-    struct base
+    struct callable
     {
-      virtual ~base() = default;
+      virtual ~callable() = default;
       virtual void operator()(void*) = 0;
     };
 
-    template<typename callable_t>
-    struct wrapped final: base
+    template<typename func_t>
+    struct wrapped final: callable
     {
       void operator()(void* addr) override
       {
-        callable_t& func = *static_cast<callable_t*>(addr);
+        func_t& func = *static_cast<func_t*>(addr);
         func();
       }
     };
@@ -43,19 +43,19 @@ namespace threadable
     using buffer_t = std::array<std::uint8_t, buffer_size>;
     static constexpr buffer_t zero_buffer{};
 
-    template<typename callable_t>
-    void set(callable_t&& func)
+    template<typename func_t>
+    void set(func_t&& func)
     {
-      wrapped<callable_t> obj;
-      static_assert(sizeof(obj) == sizeof(base), "wrapped size must be equal to base size");
+      wrapped<func_t> obj;
+      static_assert(sizeof(obj) == sizeof(callable), "wrapped size must be equal to callable size");
       std::memcpy(buffer.data(), &obj, sizeof(obj));
       std::memcpy(buffer.data() + sizeof(obj), &func, sizeof(func));
     }
 
     void operator()()
     {
-      base& obj = reinterpret_cast<base&>(*buffer.data());
-      void* addr = buffer.data() + sizeof(base);
+      callable& obj = reinterpret_cast<callable&>(*buffer.data());
+      void* addr = buffer.data() + sizeof(callable);
       obj(addr);
     }
 
