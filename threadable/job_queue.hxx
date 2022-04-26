@@ -29,6 +29,7 @@ namespace threadable
       {
           func_t& func = *static_cast<func_t*>(addr);
           std::invoke(std::forward<func_t>(func));
+          func.~func_t();
       }
       using invoke_func_t = decltype(&invoke_func<void>);
 
@@ -42,12 +43,18 @@ namespace threadable
         void set(func_t&& func)
         {
           unwrap_func = std::addressof(invoke_func<func_t>);
-          // TODO:
-          //    Check out 'placement new' & std::align instead of memcpy for none trivially copyable types,
-          //    else this will explode some day.
           if constexpr(std::is_trivially_copyable_v<std::remove_reference_t<func_t>>)
           {
             std::memcpy(buffer.data(), std::addressof(func), sizeof(func));
+          }
+          else
+          {
+            void* ptr = buffer.data();
+            auto size = buffer.size();
+            if (std::align(alignof(func_t), sizeof(func_t), ptr, size))
+            {
+              (void)new (buffer.data()) func_t(std::forward<decltype(func)>(func));
+            }
           }
         }
 
@@ -104,16 +111,16 @@ namespace threadable
       std::scoped_lock _{mutex_};
 
       auto& job = jobs_[bottom_ & MASK];
-      job.func.set(std::forward<func_t>(func));
+      job.func.set(std::forward<decltype(func)>(func));
       ++bottom_;
     }
 
     template<typename func_t, typename... arg_ts>
       requires std::invocable<func_t, arg_ts...>
-    void push(func_t func, arg_ts&&... args)
+    void push(func_t&& func, arg_ts&&... args)
     {
-      push([func = std::forward<func_t>(func), ...args = std::forward<decltype(args)>(args)]() mutable{
-        std::invoke(std::forward<func_t>(func), std::forward<arg_ts>(args)...);
+      push([&func, ...args = std::forward<decltype(args)>(args)]() mutable{
+        std::invoke(func, std::forward<arg_ts>(args)...);
       });
     }
 

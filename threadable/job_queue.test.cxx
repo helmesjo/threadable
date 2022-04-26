@@ -21,9 +21,6 @@ SCENARIO("job_queue: push, pop, steal")
   }
   GIVEN("push two jobs")
   {
-    int val;
-    auto derp = [&val]{};
-    static_assert(std::is_trivially_copyable_v<decltype(derp)>);
     queue.push([]{});
     queue.push([]{});
     WHEN("pop two jobs")
@@ -85,7 +82,7 @@ SCENARIO("job_queue: execution")
         REQUIRE(called == 1);
       }
     }
-    WHEN("member function")
+    WHEN("member: trivially copyable type")
     {
       struct type
       {
@@ -93,13 +90,48 @@ SCENARIO("job_queue: execution")
         {
           ++called;
         }
-      } obj;
-      queue.push(&type::func, obj, std::ref(called));
+      };
+      static_assert(std::is_trivially_copyable_v<type>);
+
+      queue.push(&type::func, type{}, std::ref(called));
       THEN("popped job invokes it")
       {
         auto& job = queue.pop();
         job();
         REQUIRE(called == 1);
+      }
+    }
+    WHEN("member: non-trivially-copyable type")
+    {
+      struct type
+      {
+        ~type()
+        {
+          ++destroyed;
+        }
+        void func(int& called)
+        {
+          ++called;
+        }
+
+        int& destroyed;
+      };
+      static_assert(!std::is_trivially_copyable_v<type>);
+
+      int destroyed = 0;
+      queue.push(&type::func, type{destroyed}, std::ref(called));
+      THEN("popped job invokes it")
+      {
+        auto& job = queue.pop();
+        called = 0;
+        destroyed = 0;
+        job();
+        REQUIRE(called == 1);
+
+        AND_THEN("destructor is called")
+        {
+          REQUIRE(destroyed);
+        }
       }
     }
   }
