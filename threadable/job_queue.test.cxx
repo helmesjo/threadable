@@ -1,5 +1,6 @@
 #include <threadable/job_queue.hxx>
 #include <threadable/doctest_include.hxx>
+#include <type_traits>
 
 using namespace threadable;
 
@@ -20,6 +21,9 @@ SCENARIO("job_queue: push, pop, steal")
   }
   GIVEN("push two jobs")
   {
+    int val;
+    auto derp = [&val]{};
+    static_assert(std::is_trivially_copyable_v<decltype(derp)>);
     queue.push([]{});
     queue.push([]{});
     WHEN("pop two jobs")
@@ -48,9 +52,9 @@ SCENARIO("job_queue: push, pop, steal")
 
 namespace
 {
-  void free_func(int& called)
+  void free_func(int& arg)
   {
-    ++called;
+    ++arg;
   }
 }
 
@@ -73,7 +77,7 @@ SCENARIO("job_queue: execution")
     }
     WHEN("free function")
     {
-      queue.push(free_func, called);
+      queue.push(free_func, std::ref(called));
       THEN("popped job invokes it")
       {
         auto& job = queue.pop();
@@ -90,7 +94,7 @@ SCENARIO("job_queue: execution")
           ++called;
         }
       } obj;
-      queue.push(&type::func, obj, called);
+      queue.push(&type::func, obj, std::ref(called));
       THEN("popped job invokes it")
       {
         auto& job = queue.pop();

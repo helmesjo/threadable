@@ -35,38 +35,40 @@ namespace threadable
       template<std::size_t buffer_size>
       struct function
       {
-          using buffer_t = std::array<std::uint8_t, buffer_size>;
-          static constexpr buffer_t zero_buffer{};
+        using buffer_t = std::array<std::uint8_t, buffer_size>;
+        static constexpr buffer_t zero_buffer{};
 
-          template<typename func_t>
-          void set(func_t&& func)
+        template<typename func_t>
+        void set(func_t&& func)
+        {
+          unwrap_func = std::addressof(invoke_func<func_t>);
+          // TODO:
+          //    Check out 'placement new' & std::align instead of memcpy for none trivially copyable types,
+          //    else this will explode some day.
+          if constexpr(std::is_trivially_copyable_v<std::remove_reference_t<func_t>>)
           {
-              // TODO:
-              //    Check out 'placement new' & std::align instead of memcpy for none trivially copyable types,
-              //    else this will explode some day.
-              unwrap_func = std::addressof(invoke_func<func_t>);
-              std::memcpy(buffer.data(), std::addressof(func), sizeof(func));
+            std::memcpy(buffer.data(), std::addressof(func), sizeof(func));
           }
+        }
 
-          void operator()()
-          {
-              void* addr = buffer.data();
-              unwrap_func(addr);
-          }
+        void operator()()
+        {
+          unwrap_func(buffer.data());
+        }
 
-          operator bool() const
-          {
-              return std::memcmp(zero_buffer.data(), buffer.data(), buffer.size() * sizeof(typename buffer_t::value_type));
-          }
+        operator bool() const
+        {
+          return std::memcmp(zero_buffer.data(), buffer.data(), buffer.size() * sizeof(typename buffer_t::value_type));
+        }
 
-          invoke_func_t unwrap_func;
-          buffer_t buffer;
+        invoke_func_t unwrap_func;
+        buffer_t buffer;
       };
 
       struct job_base
       {
-          job_base* parent = nullptr;
-          std::atomic_uint16_t unfinished_jobs;
+        job_base* parent = nullptr;
+        std::atomic_uint16_t unfinished_jobs;
       };
       static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
@@ -75,12 +77,12 @@ namespace threadable
   {
       void operator()()
       {
-          func();
+        func();
       }
 
       operator bool() const
       {
-          return func;
+        return func;
       }
 
       details::function<details::job_buffer_size> func;
@@ -110,12 +112,8 @@ namespace threadable
       requires std::invocable<func_t, arg_ts...>
     void push(func_t func, arg_ts&&... args)
     {
-      // perfectly forwarded lvalue references are stored by value in lambda,
-      // so need to use tuple+apply trick.
-      push([func = std::forward<func_t>(func), args = std::tuple<decltype(args)...>(std::forward<decltype(args)>(args)...)]() mutable{
-        std::apply([&func](auto&&... args) mutable{
-          std::invoke(std::forward<func_t>(func), std::forward<arg_ts>(args)...);
-        }, args);
+      push([func = std::forward<func_t>(func), ...args = std::forward<decltype(args)>(args)]() mutable{
+        std::invoke(std::forward<func_t>(func), std::forward<arg_ts>(args)...);
       });
     }
 
