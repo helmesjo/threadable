@@ -63,14 +63,15 @@ namespace threadable
         void operator()()
         {
           unwrap_func(buffer.data());
+          unwrap_func = nullptr;
         }
 
         operator bool() const
         {
-          return std::memcmp(zero_buffer.data(), buffer.data(), buffer.size() * sizeof(typename buffer_t::value_type));
+          return unwrap_func;
         }
 
-        invoke_func_t unwrap_func;
+        invoke_func_t unwrap_func = nullptr;
         buffer_t buffer;
       };
 

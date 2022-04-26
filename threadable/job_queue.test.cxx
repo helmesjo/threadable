@@ -61,6 +61,20 @@ SCENARIO("job_queue: execution")
   std::vector<int> order;
   GIVEN("push job")
   {
+    WHEN("popped")
+    {
+      queue.push([]{});
+      auto& job = queue.pop();
+      THEN("job is true before invoked")
+      {
+        REQUIRE(job == true);
+      }
+      THEN("job is false after invoked")
+      {
+        job();
+        REQUIRE_FALSE(job);
+      }
+    }
     int called = 0;
     WHEN("lambda")
     {
