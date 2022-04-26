@@ -12,6 +12,8 @@
 #include <new>
 #include <tuple>
 
+#define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
+
 namespace threadable
 {
 #if __cpp_lib_hardware_interference_size >= 201603
@@ -28,7 +30,7 @@ namespace threadable
       void invoke_func(void* addr)
       {
           func_t& func = *static_cast<func_t*>(addr);
-          std::invoke(std::forward<func_t>(func));
+          std::invoke(func);
           func.~func_t();
       }
       using invoke_func_t = decltype(&invoke_func<void>);
@@ -53,7 +55,7 @@ namespace threadable
             auto size = buffer.size();
             if (std::align(alignof(func_t), sizeof(func_t), ptr, size))
             {
-              (void)new (buffer.data()) func_t(std::forward<decltype(func)>(func));
+              (void)new (buffer.data()) func_t(FWD(func));
             }
           }
         }
@@ -111,7 +113,7 @@ namespace threadable
       std::scoped_lock _{mutex_};
 
       auto& job = jobs_[bottom_ & MASK];
-      job.func.set(std::forward<decltype(func)>(func));
+      job.func.set(FWD(func));
       ++bottom_;
     }
 
@@ -119,8 +121,8 @@ namespace threadable
       requires std::invocable<func_t, arg_ts...>
     void push(func_t&& func, arg_ts&&... args)
     {
-      push([&func, ...args = std::forward<decltype(args)>(args)]() mutable{
-        std::invoke(func, std::forward<arg_ts>(args)...);
+      push([&func, ...args = FWD(args)]() mutable{
+        std::invoke(func, FWD(args)...);
       });
     }
 
@@ -163,3 +165,5 @@ namespace threadable
     std::size_t bottom_;
   };
 }
+
+#undef FWD
