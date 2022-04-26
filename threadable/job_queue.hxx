@@ -98,7 +98,7 @@ namespace threadable
     void push(func_t&& func) noexcept
       requires std::invocable<func_t>
     {
-      static_assert(sizeof(func) < details::job_buffer_size, "callable is too big");
+      static_assert(sizeof(func) <= details::job_buffer_size, "callable is too big");
       std::scoped_lock _{mutex_};
 
       auto& job = jobs_[bottom_ & MASK];
