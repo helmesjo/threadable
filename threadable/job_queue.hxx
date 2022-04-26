@@ -22,71 +22,68 @@ namespace threadable
   constexpr auto cache_line_size = std::size_t{64};
 #endif
 
-  constexpr auto buffer_size = 54;
-  struct function
+  namespace details
   {
-    struct callable
-    {
-      virtual ~callable() = default;
-      virtual void operator()(void*) = 0;
-    };
-
-    template<typename func_t>
-    struct wrapped final: callable
-    {
-      void operator()(void* addr) override
+      template<typename func_t>
+      void invoke_func(void* addr)
       {
-        func_t& func = *static_cast<func_t*>(addr);
-        std::invoke(std::forward<func_t>(func));
+          func_t& func = *static_cast<func_t*>(addr);
+          std::invoke(std::forward<func_t>(func));
       }
-    };
+      using invoke_func_t = decltype(&invoke_func<void>);
 
-    using buffer_t = std::array<std::uint8_t, buffer_size>;
-    static constexpr buffer_t zero_buffer{};
+      template<std::size_t buffer_size>
+      struct function
+      {
+          using buffer_t = std::array<std::uint8_t, buffer_size>;
+          static constexpr buffer_t zero_buffer{};
 
-    template<typename func_t>
-    void set(func_t&& func)
-    {
-      wrapped<func_t> obj;
-      static_assert(sizeof(obj) == sizeof(callable), "wrapped size must be equal to callable size");
+          template<typename func_t>
+          void set(func_t&& func)
+          {
+              // TODO:
+              //    Check out 'placement new' & std::align instead of memcpy for none trivially copyable types,
+              //    else this will explode some day.
+              unwrap_func = std::addressof(invoke_func<func_t>);
+              std::memcpy(buffer.data(), std::addressof(func), sizeof(func));
+          }
 
-      // TODO: Check out 'placement new' & std::align instead of memcpy,
-      //       because this will probably explode someday.
-      std::memcpy(buffer.data(), reinterpret_cast<void*>(&obj), sizeof(obj));
-      std::memcpy(buffer.data() + sizeof(obj), reinterpret_cast<void*>(&func), sizeof(func));
-    }
+          void operator()()
+          {
+              void* addr = buffer.data();
+              unwrap_func(addr);
+          }
 
-    void operator()()
-    {
-      callable& obj = reinterpret_cast<callable&>(*buffer.data());
-      void* addr = buffer.data() + sizeof(callable);
-      obj(addr);
-    }
+          operator bool() const
+          {
+              return std::memcmp(zero_buffer.data(), buffer.data(), buffer.size() * sizeof(typename buffer_t::value_type));
+          }
 
-    operator bool() const
-    {
-      return std::memcmp(zero_buffer.data(), buffer.data(), sizeof(typename buffer_t::value_type) * buffer.size());
-    }
+          invoke_func_t unwrap_func;
+          buffer_t buffer;
+      };
 
-    buffer_t buffer;
-  };
-  static_assert(sizeof(function) < cache_line_size, "function size must be less than cache line size");
+      struct job_base
+      {
+          job_base* parent = nullptr;
+          std::atomic_uint16_t unfinished_jobs;
+      };
+      static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
+  }
 
-  struct alignas(cache_line_size) job
+  struct alignas(cache_line_size) job final: details::job_base
   {
-    void operator()()
-    {
-      func();
-    }
+      void operator()()
+      {
+          func();
+      }
 
-    operator bool() const
-    {
-      return func;
-    }
+      operator bool() const
+      {
+          return func;
+      }
 
-    job* parent = nullptr;
-    function func;
-    std::atomic_uint16_t unfinished_jobs;
+      details::function<details::job_buffer_size> func;
   };
   static_assert(sizeof(job) == cache_line_size, "job size must equal cache line size");
 
@@ -101,7 +98,7 @@ namespace threadable
     void push(func_t&& func) noexcept
       requires std::invocable<func_t>
     {
-      static_assert(sizeof(func) < buffer_size, "callable is too big");
+      static_assert(sizeof(func) < details::job_buffer_size, "callable is too big");
       std::scoped_lock _{mutex_};
 
       auto& job = jobs_[bottom_ & MASK];
