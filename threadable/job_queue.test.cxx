@@ -25,8 +25,8 @@ SCENARIO("job_queue: push, pop, steal")
     queue.push([]{});
     WHEN("pop two jobs")
     {
-      auto& job1 = queue.pop();
-      auto& job2 = queue.pop();
+      (void)queue.pop();
+      (void)queue.pop();
       THEN("queue is empty")
       {
         REQUIRE(queue.size() == 0);
@@ -34,10 +34,10 @@ SCENARIO("job_queue: push, pop, steal")
     }
     WHEN("pop one job")
     {
-      auto& job1 = queue.pop();
+      (void)queue.pop();
       AND_WHEN("steal one job")
       {
-        auto* job2 = queue.steal();
+        (void)queue.steal();
         THEN("queue is empty")
         {
           REQUIRE(queue.size() == 0);
