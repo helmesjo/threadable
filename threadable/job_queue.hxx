@@ -53,6 +53,7 @@ namespace threadable
           {
             void* ptr = buffer.data();
             auto size = buffer.size();
+            // TODO: Use the first byte of the buffer to represent ptr offset
             if (std::align(alignof(func_t), sizeof(func_t), ptr, size))
             {
               (void)::new (ptr) func_t(FWD(func));
