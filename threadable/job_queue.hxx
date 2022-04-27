@@ -42,7 +42,7 @@ namespace threadable
         static constexpr buffer_t zero_buffer{};
 
         template<typename func_t>
-        void set(func_t&& func)
+        void set(func_t&& func) noexcept
         {
           unwrap_func = std::addressof(invoke_func<func_t>);
           if constexpr(std::is_trivially_copyable_v<std::remove_reference_t<func_t>>)
@@ -66,7 +66,7 @@ namespace threadable
           unwrap_func = nullptr;
         }
 
-        operator bool() const
+        operator bool() const noexcept
         {
           return unwrap_func;
         }
@@ -120,7 +120,7 @@ namespace threadable
 
     template<typename func_t, typename... arg_ts>
       requires std::invocable<func_t, arg_ts...>
-    void push(func_t&& func, arg_ts&&... args)
+    void push(func_t&& func, arg_ts&&... args) noexcept
     {
       push([func = FWD(func), ...args = FWD(args)]() mutable{
         std::invoke(FWD(func), FWD(args)...);
