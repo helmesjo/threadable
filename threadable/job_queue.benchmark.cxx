@@ -37,8 +37,8 @@ static void std_queue(benchmark::State& state)
     int val = 0;
     queue.emplace([&val]{ ++val; });
     auto& job = queue.front();
-    queue.pop();
     job();
+    queue.pop();
     benchmark::DoNotOptimize(job);
     benchmark::DoNotOptimize(val);
   }
