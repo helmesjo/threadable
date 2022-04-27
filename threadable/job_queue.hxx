@@ -55,7 +55,7 @@ namespace threadable
             auto size = buffer.size();
             if (std::align(alignof(func_t), sizeof(func_t), ptr, size))
             {
-              (void)new (buffer.data()) func_t(FWD(func));
+              (void)::new (reinterpret_cast<void*>(buffer.data())) func_t(FWD(func));
             }
           }
         }
@@ -122,8 +122,8 @@ namespace threadable
       requires std::invocable<func_t, arg_ts...>
     void push(func_t&& func, arg_ts&&... args)
     {
-      push([func, ...args = FWD(args)]() mutable{
-        std::invoke(func, FWD(args)...);
+      push([func = FWD(func), ...args = FWD(args)]() mutable{
+        std::invoke(FWD(func), FWD(args)...);
       });
     }
 
