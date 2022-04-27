@@ -122,7 +122,7 @@ namespace threadable
       requires std::invocable<func_t, arg_ts...>
     void push(func_t&& func, arg_ts&&... args)
     {
-      push([&func, ...args = FWD(args)]() mutable{
+      push([func, ...args = FWD(args)]() mutable{
         std::invoke(func, FWD(args)...);
       });
     }
