@@ -55,7 +55,7 @@ namespace threadable
             auto size = buffer.size();
             if (std::align(alignof(func_t), sizeof(func_t), ptr, size))
             {
-              (void)::new (reinterpret_cast<void*>(buffer.data())) func_t(FWD(func));
+              (void)::new (ptr) func_t(FWD(func));
             }
           }
         }
