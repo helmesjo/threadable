@@ -10,3 +10,4 @@ email: helmesjo@gmail.com
 depends: * build2 >= 0.14.0
 depends: * bpkg >= 0.14.0
 depends: doctest ^2.4.7
+depends: google-benchmark ^1.6.0+1

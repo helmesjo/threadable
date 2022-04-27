@@ -1,6 +1,7 @@
 intf_libs = # Interface dependencies.
 impl_libs = # Implementation dependencies.
 import test_libs += doctest%lib{doctest}
+import benchmark_libs += google-benchmark%lib{benchmark}
 
 lib{threadable}: {hxx ixx txx cxx}{** -version -**.test... -**.benchmark... -doctest*} \
   hxx{version} $impl_libs $intf_libs
@@ -39,7 +40,29 @@ for t: cxx{**.test...}
   {
     cxx.coptions += $no_used_local_typedef
   }
-}# Include the generated version header into the distribution (so that we don't
+}
+
+# Benchmarks.
+#
+if $(config.$(project).benchmarks)
+{
+  exe{*.benchmark}:
+  {
+    test = true
+    install = false
+  }
+
+  for t: cxx{**.benchmark...}
+  {
+    d = $directory($t)
+    n = $name($t)...
+
+    ./: $d/exe{$n}: $t $d/{hxx ixx txx}{+$n} $d/testscript{+$n}
+    $d/exe{$n}: $benchmark_libs lib{threadable}: bin.whole = false
+  }
+}
+
+# Include the generated version header into the distribution (so that we don't
 # pick up an installed one) and don't remove it when cleaning in src (so that
 # clean results in a state identical to distributed).
 #
