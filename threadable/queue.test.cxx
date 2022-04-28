@@ -238,16 +238,23 @@ SCENARIO("queue: execution")
 
 SCENARIO("queue: stress-test")
 {
-  static constexpr std::size_t nr_of_jobs = 1 << 16;
+  static constexpr std::size_t nr_of_jobs = 1 << 14;
   auto queue = threadable::queue<nr_of_jobs>{};
   GIVEN("one producer/consumer & multiple stealers")
   {
     THEN("there are no race conditions")
     {
       std::atomic_size_t counter{0};
+      // pre-fill half
+      for(std::size_t i = 0; i < nr_of_jobs/2; ++i)
       {
+        queue.push([&counter]{ ++counter; });
+      }
+      {
+        // start pusher/popper
         std::jthread producer([&queue, &counter]{
-          for(std::size_t i = 0; i < nr_of_jobs; ++i)
+          // push remaining half
+          for(std::size_t i = 0; i < nr_of_jobs/2; ++i)
           {
             queue.push([&counter]{ ++counter; });
           }
@@ -259,6 +266,7 @@ SCENARIO("queue: stress-test")
             }
           }
         });
+        // start stealers
         std::vector<std::jthread> stealers;
         for(std::size_t i = 0; i < std::thread::hardware_concurrency(); ++i)
         {
