@@ -111,8 +111,9 @@ namespace threadable
 
   class queue
   {
-    static constexpr auto NUMBER_OF_JOBS = std::size_t{8};
-    static constexpr auto MASK = NUMBER_OF_JOBS - std::size_t{1u};
+    static constexpr auto max_nr_of_jobs = std::size_t{8};
+    static_assert((max_nr_of_jobs & (max_nr_of_jobs - 1)) == 0, "number of jobs must be a power of 2");
+    static constexpr auto MASK = max_nr_of_jobs - std::size_t{1u};
 
   public:
 
@@ -177,7 +178,7 @@ namespace threadable
 
   private:
     mutable std::mutex mutex_;
-    std::array<job, 8> jobs_;
+    std::array<job, max_nr_of_jobs> jobs_;
     std::size_t top_;
     std::size_t bottom_;
   };
