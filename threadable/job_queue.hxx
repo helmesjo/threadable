@@ -134,7 +134,7 @@ namespace threadable
     job& pop() noexcept
     {
       std::scoped_lock _{mutex_};
-      if (const auto jobCount = bottom_ - top_; jobCount <= 0)
+      if (bottom_ - top_ == 0)
       {
           // no job left in the queue
           std::terminate();
@@ -147,7 +147,7 @@ namespace threadable
     job* steal() noexcept
     {
       std::scoped_lock _{mutex_};
-      if (const auto jobCount = bottom_ - top_; jobCount <= 0)
+      if (bottom_ - top_ == 0)
       {
           // no job there to steal
           return nullptr;
