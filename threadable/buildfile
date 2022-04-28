@@ -6,6 +6,12 @@ import benchmark_libs += google-benchmark%lib{benchmark}
 lib{threadable}: {hxx ixx txx cxx}{** -version -**.test... -**.benchmark... -doctest*} \
   hxx{version} $impl_libs $intf_libs
 
+switch $cxx.target.class, $cxx.target.system
+{
+  case 'linux' | 'bsd'
+    cxx.libs += -lpthread
+}
+
 # Unit tests.
 #
 
@@ -30,15 +36,16 @@ for t: cxx{**.test...}
   ./: $d/exe{$n}: $t $d/{hxx ixx txx}{+$n} hxx{doctest_include} $d/testscript{+$n}
   $d/exe{$n}: libue{doctest_main} lib{threadable}: bin.whole = false
 
-  # Ignore warning caused by doctest 'parameterized tests'
   switch $cxx.id
   {
     case 'gcc' | 'clang' | 'clang-apple' | 'clang-emscripten'
-      no_used_local_typedef = -Wno-unused-local-typedefs
-  }
-  obj{$n}:
-  {
-    cxx.coptions += $no_used_local_typedef
+    {
+      obj{$n}:
+      {
+        # Ignore warning caused by doctest 'parameterized tests'
+        cxx.coptions += -Wno-unused-local-typedefs
+      }
+    }
   }
 }
 
