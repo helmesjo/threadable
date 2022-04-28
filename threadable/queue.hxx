@@ -42,7 +42,8 @@ namespace threadable
       struct function
       {
         using buffer_t = std::array<std::uint8_t, buffer_size>;
-        static constexpr buffer_t zero_buffer{};
+
+        constexpr function() noexcept = default;
 
         template<typename func_t>
         void set(func_t&& func) noexcept
@@ -88,6 +89,8 @@ namespace threadable
 
   struct alignas(cache_line_size) job final: details::job_base
   {
+      constexpr job() noexcept = default;
+
       template<typename func_t>
       void set(func_t&& func) noexcept
       {
@@ -106,26 +109,29 @@ namespace threadable
 
       details::function<details::job_buffer_size> func;
   };
+  static job null_job;
   static_assert(sizeof(job) == cache_line_size, "job size must equal cache line size");
 
+  template<std::size_t max_nr_of_jobs = 4096>
   class queue
   {
-    static constexpr auto max_nr_of_jobs = std::size_t{8};
     static_assert((max_nr_of_jobs & (max_nr_of_jobs - 1)) == 0, "number of jobs must be a power of 2");
     static constexpr auto MASK = max_nr_of_jobs - std::size_t{1u};
 
   public:
+    constexpr queue() noexcept = default;
 
     template<typename func_t>
     void push(func_t&& func) noexcept
       requires std::invocable<func_t>
     {
       static_assert(sizeof(func) <= details::job_buffer_size, "callable is too big");
-      std::scoped_lock _{mutex_};
 
-      auto& job = jobs_[bottom_ & MASK];
+      const auto b = bottom_.load();
+      auto& job = jobs_[b & MASK];
       job.set(FWD(func));
-      ++bottom_;
+      std::atomic_thread_fence(std::memory_order_release);
+      bottom_ = b + 1;
     }
 
     template<typename func_t, typename... arg_ts>
@@ -139,34 +145,63 @@ namespace threadable
 
     job& pop() noexcept
     {
-      std::scoped_lock _{mutex_};
-      if (bottom_ - top_ == 0)
+      const auto b = bottom_.load() - 1;
+      bottom_ = b;
+      std::atomic_thread_fence(std::memory_order::seq_cst);
+      const auto t = top_.load();
+
+      if(t <= b)
       {
-          // no job left in the queue
-          std::terminate();
+        // non-empty queue
+        auto* job = &jobs_[b & MASK];
+        if(t != b)
+        {
+          // there's still more than one item left in the queue
+          return *job;
+        }
+
+        // this is the last item in the queue
+        //
+        // whether we win or lose a race against steal() we still set
+        // the queue to 'empty' (buttom = top), because either way it
+        // implies that the last job has been taken.
+        auto expected = t;
+        if(!top_.compare_exchange_weak(expected, t+1))
+        {
+          // lost race against steal()
+          job = &null_job;
+        }
+        bottom_ = t+1;
+        return *job;
       }
- 
-      --bottom_;
-      return jobs_[bottom_ & MASK];
+      else
+      {
+        bottom_ = t;
+      }
+      return null_job;
     }
 
     job* steal() noexcept
     {
-      std::scoped_lock _{mutex_};
-      if (bottom_ - top_ == 0)
-      {
-          // no job there to steal
-          return nullptr;
-      }
+      const auto t = top_.load();
+      std::atomic_thread_fence(std::memory_order_release);
+      const auto b = bottom_.load();
 
-      auto& job = jobs_[top_ & MASK];
-      ++top_;
-      return &job;
+      if(t < b)
+      {
+        auto& job = jobs_[t & MASK];
+        auto expected = t;
+        if(top_.compare_exchange_weak(expected, t+1))
+        {
+          // won race against pop()
+          return &job;
+        }
+      }
+      return nullptr;
     }
 
     std::size_t size() const noexcept
     {
-      std::scoped_lock _{mutex_};
       return bottom_ - top_;
     }
 
@@ -176,10 +211,9 @@ namespace threadable
     }
 
   private:
-    mutable std::mutex mutex_;
     std::array<job, max_nr_of_jobs> jobs_;
-    std::size_t top_;
-    std::size_t bottom_;
+    std::atomic_size_t top_{0};
+    std::atomic_size_t bottom_{0};
   };
 }
 

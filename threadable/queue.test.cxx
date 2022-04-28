@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <type_traits>
+#include <thread>
 
 SCENARIO("queue: push, pop, steal")
 {
@@ -231,6 +232,48 @@ SCENARIO("queue: execution")
           REQUIRE(order[1] == 1);
         }
       }
+    }
+  }
+}
+
+SCENARIO("queue: stress-test")
+{
+  static constexpr std::size_t nr_of_jobs = 1 << 16;
+  auto queue = threadable::queue<nr_of_jobs>{};
+  GIVEN("one producer/consumer & multiple stealers")
+  {
+    THEN("there are no race conditions")
+    {
+      std::atomic_size_t counter{0};
+      {
+        std::jthread producer([&queue, &counter]{
+          for(std::size_t i=0; i<nr_of_jobs; ++i)
+          {
+            queue.push([&counter]{ ++counter; });
+          }
+          while(!queue.empty())
+          {
+            if(auto& job = queue.pop(); job)
+            {
+              job();
+            }
+          }
+        });
+        std::vector<std::jthread> stealers;
+        for(std::size_t i=0; i<100; ++i)
+        {
+          stealers.emplace_back([&queue]{
+            while(!queue.empty())
+            {
+              if(auto* job = queue.steal(); job)
+              {
+                (*job)();
+              }
+            }
+          });
+        }
+      }
+      REQUIRE(counter.load() == nr_of_jobs);
     }
   }
 }
