@@ -13,7 +13,7 @@ SCENARIO("queue: push, pop, steal")
       auto* job = queue.steal();
       THEN("no job is returned")
       {
-        REQUIRE(!job);
+        REQUIRE_FALSE(job);
       }
     }
   }
@@ -25,7 +25,7 @@ SCENARIO("queue: push, pop, steal")
     {
       (void)queue.pop();
       (void)queue.pop();
-      THEN("queue is empty")
+      THEN("size is 0")
       {
         REQUIRE(queue.size() == 0);
       }
@@ -33,10 +33,30 @@ SCENARIO("queue: push, pop, steal")
     WHEN("pop one job")
     {
       (void)queue.pop();
+      THEN("size is 1")
+      {
+        REQUIRE(queue.size() == 1);
+      }
       AND_WHEN("steal one job")
       {
         (void)queue.steal();
-        THEN("queue is empty")
+        THEN("size is 0")
+        {
+          REQUIRE(queue.size() == 0);
+        }
+      }
+    }
+    WHEN("steal one job")
+    {
+      (void)queue.steal();
+      THEN("size is 1")
+      {
+        REQUIRE(queue.size() == 1);
+      }
+      AND_WHEN("pop one job")
+      {
+        (void)queue.pop();
+        THEN("size is 0")
         {
           REQUIRE(queue.size() == 0);
         }
