@@ -181,7 +181,7 @@ namespace threadable
       return null_job;
     }
 
-    job* steal() noexcept
+    job& steal() noexcept
     {
       const auto t = top_.load();
       std::atomic_thread_fence(std::memory_order_release);
@@ -194,10 +194,10 @@ namespace threadable
         if(top_.compare_exchange_weak(expected, t+1))
         {
           // won race against pop()
-          return &job;
+          return job;
         }
       }
-      return nullptr;
+      return null_job;
     }
 
     std::size_t size() const noexcept

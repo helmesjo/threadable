@@ -18,7 +18,7 @@ SCENARIO("queue: push, pop, steal")
     }
     WHEN("steal one job")
     {
-      auto* job = queue.steal();
+      auto& job = queue.steal();
       THEN("no job is returned")
       {
         REQUIRE_FALSE(job);
@@ -205,9 +205,9 @@ SCENARIO("queue: execution")
     {
       while(!queue.empty())
       {
-        auto* job = queue.steal();
+        auto& job = queue.steal();
         REQUIRE(job);
-        (*job)();
+        job();
       }
       THEN("jobs are executed FIFO")
       {
@@ -222,9 +222,9 @@ SCENARIO("queue: execution")
       job1();
       AND_WHEN("steal & execute one job")
       {
-        auto* job2 = queue.steal();
+        auto& job2 = queue.steal();
         REQUIRE(job2);
-        (*job2)();
+        job2();
         THEN("jobs are executed LIFO")
         {
           REQUIRE(order.size() == 2);
@@ -265,9 +265,9 @@ SCENARIO("queue: stress-test")
           stealers.emplace_back([&queue]{
             while(!queue.empty())
             {
-              if(auto* job = queue.steal(); job)
+              if(auto& job = queue.steal(); job)
               {
-                (*job)();
+                job();
               }
             }
           });
