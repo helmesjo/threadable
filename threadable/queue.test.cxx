@@ -1,5 +1,7 @@
 #include <threadable/queue.hxx>
 #include <threadable/doctest_include.hxx>
+
+#include <functional>
 #include <type_traits>
 
 SCENARIO("queue: push, pop, steal")
@@ -8,6 +10,11 @@ SCENARIO("queue: push, pop, steal")
 
   GIVEN("queue is empty")
   {
+    THEN("size is 0")
+    {
+      REQUIRE(queue.size() == 0);
+      REQUIRE(queue.empty());
+    }
     WHEN("steal one job")
     {
       auto* job = queue.steal();
@@ -21,6 +28,11 @@ SCENARIO("queue: push, pop, steal")
   {
     queue.push([]{});
     queue.push([]{});
+    THEN("size is 2")
+    {
+      REQUIRE(queue.size() == 2);
+      REQUIRE_FALSE(queue.empty());
+    }
     WHEN("pop two jobs")
     {
       (void)queue.pop();
@@ -76,7 +88,6 @@ namespace
 SCENARIO("queue: execution")
 {
   auto queue = threadable::queue{};
-  std::vector<int> order;
   GIVEN("push job")
   {
     WHEN("popped")
@@ -114,7 +125,7 @@ SCENARIO("queue: execution")
         REQUIRE(called == 1);
       }
     }
-    WHEN("member: trivially copyable type")
+    WHEN("member function: trivially copyable type")
     {
       struct type
       {
@@ -134,7 +145,7 @@ SCENARIO("queue: execution")
         REQUIRE(called == 1);
       }
     }
-    WHEN("member: non-trivially-copyable type")
+    WHEN("member function: non-trivially-copyable type")
     {
       struct type
       {
@@ -169,47 +180,52 @@ SCENARIO("queue: execution")
       }
     }
   }
+
+  std::vector<int> order;
   GIVEN("push two jobs")
   {
     queue.push([&order]{ order.push_back(1); });
     queue.push([&order]{ order.push_back(2); });
-    WHEN("pop two jobs")
+    WHEN("pop & execute jobs")
     {
-      auto& job1 = queue.pop();
-      auto& job2 = queue.pop();
-      THEN("jobs are ordered LIFO")
+      while(!queue.empty())
       {
-        REQUIRE(job1);
-        job1();
-        job2();
+        auto& job = queue.pop();
+        job();
+      }
+      THEN("jobs are executed LIFO")
+      {
         REQUIRE(order.size() == 2);
         REQUIRE(order[0] == 2);
         REQUIRE(order[1] == 1);
       }
     }
-    WHEN("steal two jobs")
+    WHEN("steal & execute jobs")
     {
-      auto* job1 = queue.steal();
-      auto* job2 = queue.steal();
-      THEN("jobs are ordered FIFO")
+      while(!queue.empty())
       {
-        (*job1)();
-        (*job2)();
+        auto* job = queue.steal();
+        REQUIRE(job);
+        (*job)();
+      }
+      THEN("jobs are executed FIFO")
+      {
         REQUIRE(order.size() == 2);
         REQUIRE(order[0] == 1);
         REQUIRE(order[1] == 2);
       }
     }
-    WHEN("pop one job")
+    WHEN("pop & execute one job")
     {
       auto& job1 = queue.pop();
-      AND_WHEN("steal one job")
+      job1();
+      AND_WHEN("steal & execute one job")
       {
         auto* job2 = queue.steal();
-        THEN("jobs are ordered LIFO")
+        REQUIRE(job2);
+        (*job2)();
+        THEN("jobs are executed LIFO")
         {
-          job1();
-          (*job2)();
           REQUIRE(order.size() == 2);
           REQUIRE(order[0] == 2);
           REQUIRE(order[1] == 1);

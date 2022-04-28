@@ -169,6 +169,12 @@ namespace threadable
       std::scoped_lock _{mutex_};
       return bottom_ - top_;
     }
+
+    bool empty() const noexcept
+    {
+      return size() == 0;
+    }
+
   private:
     mutable std::mutex mutex_;
     std::array<job, 8> jobs_;
