@@ -31,7 +31,10 @@ namespace threadable
       {
           func_t& func = *static_cast<func_t*>(addr);
           std::invoke(func);
-          func.~func_t();
+          if constexpr(std::is_destructible_v<func_t>)
+          {
+            func.~func_t();
+          }
       }
       using invoke_func_t = decltype(&invoke_func<void>);
 
@@ -45,7 +48,7 @@ namespace threadable
         void set(func_t&& func) noexcept
         {
           unwrap_func = std::addressof(invoke_func<func_t>);
-          if constexpr(std::is_trivially_copyable_v<std::remove_reference_t<func_t>>)
+          if constexpr(std::is_trivially_copyable_v<func_t>)
           {
             std::memcpy(buffer.data(), std::addressof(func), sizeof(func));
           }

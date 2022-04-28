@@ -67,7 +67,7 @@ SCENARIO("job_queue: execution")
       auto& job = queue.pop();
       THEN("job is true before invoked")
       {
-        REQUIRE(job == true);
+        REQUIRE(job);
       }
       THEN("job is false after invoked")
       {
@@ -106,6 +106,7 @@ SCENARIO("job_queue: execution")
         }
       };
       static_assert(std::is_trivially_copyable_v<type>);
+      static_assert(std::is_trivially_destructible_v<type>);
 
       queue.push(&type::func, type{}, std::ref(called));
       THEN("popped job invokes it")
@@ -131,6 +132,7 @@ SCENARIO("job_queue: execution")
         int& destroyed;
       };
       static_assert(!std::is_trivially_copyable_v<type>);
+      static_assert(std::is_destructible_v<type>);
 
       int destroyed = 0;
       queue.push(&type::func, type{destroyed}, std::ref(called));
