@@ -3,6 +3,15 @@ impl_libs = # Implementation dependencies.
 import test_libs += doctest%lib{doctest}
 import benchmark_libs += google-benchmark%lib{benchmark}
 
+switch $cxx.id
+{
+  case 'gcc' | 'clang' | 'clang-apple' | 'clang-emscripten'
+  {
+    cxx.export.coptions += -pthread
+    cxx.export.loptions += -lpthread
+  }
+}
+
 lib{threadable}: {hxx ixx txx cxx}{** -version -**.test... -**.benchmark... -doctest*} \
   hxx{version} $impl_libs $intf_libs
 
