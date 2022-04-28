@@ -7,13 +7,24 @@
 static void threadable_function(benchmark::State& state)
 {
   using threadable_func_t = threadable::details::function<threadable::details::job_buffer_size>;
+  threadable_func_t func;
   for (auto _ : state)
   {
     int val = 0;
-    threadable_func_t job;
-    job.set([&val]{ ++val; });
-    job();
-    benchmark::DoNotOptimize(job);
+    func.set([&val]{ ++val; });
+    func();
+    benchmark::DoNotOptimize(val);
+  }
+}
+
+static void std_function(benchmark::State& state)
+{
+  std::function<void()> func;
+  for (auto _ : state)
+  {
+    int val = 0;
+    func = [&val]{ ++val; };
+    func();
     benchmark::DoNotOptimize(val);
   }
 }
@@ -27,19 +38,6 @@ static void threadable_queue(benchmark::State& state)
     queue.push([&val]{ ++val; });
     auto& job = queue.pop();
     job();
-    benchmark::DoNotOptimize(job);
-    benchmark::DoNotOptimize(val);
-  }
-}
-
-static void std_function(benchmark::State& state)
-{
-  for (auto _ : state)
-  {
-    int val = 0;
-    auto job = std::function<void()>{[&val]{ ++val; }};
-    job();
-    benchmark::DoNotOptimize(job);
     benchmark::DoNotOptimize(val);
   }
 }
@@ -54,7 +52,6 @@ static void std_queue(benchmark::State& state)
     auto& job = queue.front();
     job();
     queue.pop();
-    benchmark::DoNotOptimize(job);
     benchmark::DoNotOptimize(val);
   }
 }

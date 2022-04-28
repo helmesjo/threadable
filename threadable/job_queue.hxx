@@ -89,6 +89,12 @@ namespace threadable
 
   struct alignas(cache_line_size) job final: details::job_base
   {
+      template<typename func_t>
+      void set(func_t&& func) noexcept
+      {
+        this->func.set(FWD(func));
+      }
+
       void operator()()
       {
         func();
@@ -118,7 +124,7 @@ namespace threadable
       std::scoped_lock _{mutex_};
 
       auto& job = jobs_[bottom_ & MASK];
-      job.func.set(FWD(func));
+      job.set(FWD(func));
       ++bottom_;
     }
 
