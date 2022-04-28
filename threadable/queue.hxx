@@ -36,7 +36,7 @@ namespace threadable
           func.~func_t();
         }
       }
-      using invoke_func_t = decltype(&invoke_func<void>);
+      using invoke_func_t = decltype(&invoke_func<void(*)()>);
 
       template<std::size_t buffer_size>
       struct function
