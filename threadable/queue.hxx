@@ -56,8 +56,7 @@ namespace threadable
           else
           {
             void* ptr = buffer.data();
-            auto size = buffer.size();
-            if(::new (ptr) func_t(FWD(func)) != ptr)
+            if(::new ((void*)buffer.data()) func_t(FWD(func)) != ptr)
             {
               std::terminate();
             }
