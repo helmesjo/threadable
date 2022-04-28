@@ -247,7 +247,7 @@ SCENARIO("queue: stress-test")
       std::atomic_size_t counter{0};
       {
         std::jthread producer([&queue, &counter]{
-          for(std::size_t i=0; i<nr_of_jobs; ++i)
+          for(std::size_t i = 0; i < nr_of_jobs; ++i)
           {
             queue.push([&counter]{ ++counter; });
           }
@@ -260,7 +260,7 @@ SCENARIO("queue: stress-test")
           }
         });
         std::vector<std::jthread> stealers;
-        for(std::size_t i=0; i<100; ++i)
+        for(std::size_t i = 0; i < std::thread::hardware_concurrency(); ++i)
         {
           stealers.emplace_back([&queue]{
             while(!queue.empty())
