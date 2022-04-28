@@ -109,7 +109,7 @@ namespace threadable
   };
   static_assert(sizeof(job) == cache_line_size, "job size must equal cache line size");
 
-  class job_queue
+  class queue
   {
     static constexpr auto NUMBER_OF_JOBS = std::size_t{8};
     static constexpr auto MASK = NUMBER_OF_JOBS - std::size_t{1u};

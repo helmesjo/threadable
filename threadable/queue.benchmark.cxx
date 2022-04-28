@@ -1,4 +1,4 @@
-#include <threadable/job_queue.hxx>
+#include <threadable/queue.hxx>
 #include <benchmark/benchmark.h>
 
 #include <functional>
@@ -31,7 +31,7 @@ static void std_function(benchmark::State& state)
 
 static void threadable_queue(benchmark::State& state)
 {
-  threadable::job_queue queue;
+  threadable::queue queue;
   for (auto _ : state)
   {
     int val = 0;

@@ -1,12 +1,10 @@
-#include <threadable/job_queue.hxx>
+#include <threadable/queue.hxx>
 #include <threadable/doctest_include.hxx>
 #include <type_traits>
 
-using namespace threadable;
-
-SCENARIO("job_queue: push, pop, steal")
+SCENARIO("queue: push, pop, steal")
 {
-  auto queue = job_queue{};
+  auto queue = threadable::queue{};
 
   GIVEN("queue is empty")
   {
@@ -55,9 +53,9 @@ namespace
   }
 }
 
-SCENARIO("job_queue: execution")
+SCENARIO("queue: execution")
 {
-  auto queue = job_queue{};
+  auto queue = threadable::queue{};
   std::vector<int> order;
   GIVEN("push job")
   {
