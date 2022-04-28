@@ -29,12 +29,12 @@ namespace threadable
       template<typename func_t>
       void invoke_func(void* addr)
       {
-          func_t& func = *static_cast<func_t*>(addr);
-          std::invoke(func);
-          if constexpr(std::is_destructible_v<func_t>)
-          {
-            func.~func_t();
-          }
+        func_t& func = *static_cast<func_t*>(addr);
+        std::invoke(func);
+        if constexpr(std::is_destructible_v<func_t>)
+        {
+          func.~func_t();
+        }
       }
       using invoke_func_t = decltype(&invoke_func<void>);
 
