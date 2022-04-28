@@ -47,6 +47,7 @@ namespace threadable
         template<typename func_t>
         void set(func_t&& func) noexcept
         {
+          static_assert(sizeof(func_t) <= buffer_size, "callable won't fit in function buffer");
           unwrap_func = std::addressof(invoke_func<func_t>);
           if constexpr(std::is_trivially_copyable_v<func_t>)
           {
@@ -56,10 +57,9 @@ namespace threadable
           {
             void* ptr = buffer.data();
             auto size = buffer.size();
-            // TODO: Use the first byte of the buffer to represent ptr offset
-            if (std::align(alignof(func_t), sizeof(func_t), ptr, size))
+            if(::new (ptr) func_t(FWD(func)) != ptr)
             {
-              (void)::new (ptr) func_t(FWD(func));
+              std::terminate();
             }
           }
         }
