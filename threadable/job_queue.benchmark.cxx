@@ -4,7 +4,21 @@
 #include <functional>
 #include <queue>
 
-static void job_queue(benchmark::State& state)
+static void threadable_function(benchmark::State& state)
+{
+  using threadable_func_t = threadable::details::function<threadable::details::job_buffer_size>;
+  for (auto _ : state)
+  {
+    int val = 0;
+    threadable_func_t job;
+    job.set([&val]{ ++val; });
+    job();
+    benchmark::DoNotOptimize(job);
+    benchmark::DoNotOptimize(val);
+  }
+}
+
+static void threadable_queue(benchmark::State& state)
 {
   threadable::job_queue queue;
   for (auto _ : state)
@@ -29,6 +43,7 @@ static void std_function(benchmark::State& state)
     benchmark::DoNotOptimize(val);
   }
 }
+
 static void std_queue(benchmark::State& state)
 {
   std::queue<std::function<void()>> queue;
@@ -44,8 +59,10 @@ static void std_queue(benchmark::State& state)
   }
 }
 
-BENCHMARK(job_queue);
+BENCHMARK(threadable_function);
 BENCHMARK(std_function);
+
+BENCHMARK(threadable_queue);
 BENCHMARK(std_queue);
 
 BENCHMARK_MAIN();
