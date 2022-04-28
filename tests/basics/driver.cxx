@@ -6,7 +6,7 @@
 
 int main ()
 {
-  using namespace std;
+  //using namespace std;
   //using namespace threadable;
 
   // Basics.
