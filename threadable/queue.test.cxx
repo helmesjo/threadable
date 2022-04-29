@@ -1,6 +1,7 @@
 #include <threadable/queue.hxx>
 #include <threadable/doctest_include.hxx>
 
+#include <algorithm>
 #include <functional>
 #include <type_traits>
 #include <thread>
@@ -254,7 +255,7 @@ SCENARIO("queue: stress-test")
       }
       {
         // start pusher/popper
-        std::jthread producer([&queue, &counter]{
+        std::thread producer([&queue, &counter]{
           // push remaining half
           for(std::size_t i = 0; i < nr_of_jobs/2; ++i)
           {
@@ -269,7 +270,7 @@ SCENARIO("queue: stress-test")
           }
         });
         // start stealers
-        std::vector<std::jthread> stealers;
+        std::vector<std::thread> stealers;
         for(std::size_t i = 0; i < std::thread::hardware_concurrency(); ++i)
         {
           stealers.emplace_back([&queue]{
@@ -282,6 +283,9 @@ SCENARIO("queue: stress-test")
             }
           });
         }
+
+        producer.join();
+        std::for_each(stealers.begin(), stealers.end(), [](auto& thread) { thread.join(); });
       }
       REQUIRE(counter.load() == nr_of_jobs);
     }
