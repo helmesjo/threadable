@@ -7,8 +7,7 @@ switch $cxx.id
 {
   case 'gcc' | 'clang' | 'clang-apple' | 'clang-emscripten'
   {
-    cxx.export.coptions += -pthread
-    cxx.export.loptions += -lpthread
+    cxx.libs += -lpthread
   }
 }
 
