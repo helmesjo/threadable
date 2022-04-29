@@ -238,8 +238,10 @@ SCENARIO("queue: execution")
 
 SCENARIO("queue: stress-test")
 {
-  static constexpr std::size_t nr_of_jobs = 1 << 14;
-  auto queue = threadable::queue<nr_of_jobs>{};
+  static constexpr std::size_t nr_of_jobs = 1 << 16;
+  // allocate on heap to not overflow stack
+  auto queuePtr = std::make_shared<threadable::queue<nr_of_jobs>>();
+  auto& queue = *queuePtr;
   GIVEN("one producer/consumer & multiple stealers")
   {
     THEN("there are no race conditions")
