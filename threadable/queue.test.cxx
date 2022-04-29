@@ -271,7 +271,7 @@ SCENARIO("queue: stress-test")
         });
         // start stealers
         std::vector<std::thread> stealers;
-        for(std::size_t i = 0; i < std::thread::hardware_concurrency(); ++i)
+        for(std::size_t i = 0; i < std::max(10u, std::thread::hardware_concurrency()); ++i)
         {
           stealers.emplace_back([&queue]{
             while(!queue.empty())
