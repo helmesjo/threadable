@@ -11,7 +11,7 @@ switch $cxx.id
   }
 }
 
-lib{threadable}: {hxx ixx txx cxx}{** -version -**.test... -**.benchmark... -doctest*} \
+./ : lib{threadable}: {hxx ixx txx cxx}{** -version -**.test... -**.benchmark... -doctest*} \
   hxx{version} $impl_libs $intf_libs
 
 switch $cxx.target.class, $cxx.target.system
