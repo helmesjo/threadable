@@ -33,7 +33,7 @@ for t: cxx{**.test...}
   d = $directory($t)
   n = $name($t)...
 
-  $d/exe{$n}: $t $d/{hxx ixx txx}{+$n} hxx{doctest_include} $d/testscript{+$n}
+  ./: $d/exe{$n}: $t $d/{hxx ixx txx}{+$n} hxx{doctest_include} $d/testscript{+$n}
   $d/exe{$n}: libue{doctest_main} lib{threadable}: bin.whole = false
 
   switch $cxx.id
@@ -64,7 +64,7 @@ if $(config.$(project).benchmarks)
     d = $directory($t)
     n = $name($t)...
 
-    $d/exe{$n}: $t $d/{hxx ixx txx}{+$n} $d/testscript{+$n}
+    ./: $d/exe{$n}: $t $d/{hxx ixx txx}{+$n} $d/testscript{+$n}
     $d/exe{$n}: $benchmark_libs lib{threadable}: bin.whole = false
   }
 }
