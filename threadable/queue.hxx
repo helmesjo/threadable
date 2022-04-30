@@ -69,14 +69,14 @@ namespace threadable
         {
           static_assert(sizeof(func_t) <= buffer_size, "callable won't fit in function buffer");
           unwrap_func = std::addressof(invoke_func<func_t>);
+          void* buffPtr = buffer.data();
           if constexpr(std::is_trivially_copyable_v<func_t>)
           {
-            std::memcpy(buffer.data(), std::addressof(func), sizeof(func));
+            std::memcpy(buffPtr, std::addressof(func), sizeof(func));
           }
           else
           {
-            void* ptr = buffer.data();
-            if(::new ((void*)buffer.data()) func_t(FWD(func)) != ptr)
+            if(::new (buffPtr) func_t(FWD(func)) != buffPtr)
             {
               std::terminate();
             }
