@@ -182,7 +182,7 @@ namespace threadable
         // this is the last item in the queue
         //
         // whether we win or lose a race against steal() we still set
-        // the queue to 'empty' (buttom = top), because either way it
+        // the queue to 'empty' (bottom = top), because either way it
         // implies that the last job has been taken.
         auto expected = t;
         if(!top_.compare_exchange_weak(expected, t+1))
