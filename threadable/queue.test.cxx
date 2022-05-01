@@ -2,6 +2,7 @@
 #include <threadable/doctest_include.hxx>
 
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <type_traits>
 #include <thread>
@@ -242,6 +243,45 @@ SCENARIO("queue: execution")
         }
       }
     }
+  }
+}
+
+SCENARIO("queue: completion token")
+{
+  auto queue = threadable::queue{};
+  GIVEN("push job & store token")
+  {
+    auto token = queue.push([]{});
+    THEN("token is not done before job is invoked")
+    {
+      REQUIRE_FALSE(token.done());
+    }
+    THEN("token is done after job was invoked")
+    {
+      auto& job = queue.pop();
+      job();
+      REQUIRE(token.done());
+    }
+    WHEN("waiting on token")
+    {
+      THEN("it releases after job has executed")
+      {
+        using clock_t = std::chrono::steady_clock;
+
+        auto waiterDoneTime = clock_t::now();
+        std::thread waiter([&token, &waiterDoneTime]{ 
+          token.wait();
+          waiterDoneTime = clock_t::now();
+        });
+
+        auto& job = queue.pop();
+        job();
+        auto jobDoneTime = clock_t::now();
+        waiter.join();
+
+        REQUIRE(jobDoneTime < waiterDoneTime);
+      }
+    }    
   }
 }
 

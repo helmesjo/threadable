@@ -62,8 +62,6 @@ namespace threadable
       {
         using buffer_t = std::array<std::uint8_t, buffer_size>;
 
-        constexpr function() noexcept = default;
-
         template<typename func_t>
         void set(func_t&& func) noexcept
         {
@@ -100,16 +98,13 @@ namespace threadable
 
       struct job_base
       {
-        job_base* parent = nullptr;
-        std::atomic_uint16_t unfinished_jobs;
+        std::atomic_flag done;
       };
       static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
 
   struct alignas(cache_line_size) job final: details::job_base
   {
-      constexpr job() noexcept = default;
-
       template<typename func_t>
       void set(func_t&& func) noexcept
       {
@@ -119,6 +114,8 @@ namespace threadable
       void operator()()
       {
         func();
+        done.test_and_set();
+        done.notify_all();
       }
 
       operator bool() const
@@ -131,6 +128,22 @@ namespace threadable
   static job null_job;
   static_assert(sizeof(job) == cache_line_size, "job size must equal cache line size");
 
+  struct job_token
+  {
+    bool done() const
+    {
+      return flag.test();
+    }
+
+    void wait() const
+    {
+      flag.wait(false);
+    }
+
+    std::atomic_flag& flag;
+  };
+
+
   template<std::size_t max_nr_of_jobs = 4096>
   class queue
   {
@@ -141,7 +154,7 @@ namespace threadable
     constexpr queue() noexcept = default;
 
     template<typename func_t>
-    void push(func_t&& func) noexcept
+    auto push(func_t&& func) noexcept
       requires std::invocable<func_t>
     {
       static_assert(sizeof(func) <= details::job_buffer_size, "callable is too big");
@@ -151,13 +164,15 @@ namespace threadable
       job.set(FWD(func));
       std::atomic_thread_fence(std::memory_order_release);
       bottom_ = b + 1;
+
+      return job_token{job.done};
     }
 
     template<typename func_t, typename... arg_ts>
       requires std::invocable<func_t, arg_ts...>
-    void push(func_t&& func, arg_ts&&... args) noexcept
+    decltype(auto) push(func_t&& func, arg_ts&&... args) noexcept
     {
-      push([func = FWD(func), ...args = FWD(args)]() mutable{
+      return push([func = FWD(func), ...args = FWD(args)]() mutable{
         std::invoke(FWD(func), FWD(args)...);
       });
     }
