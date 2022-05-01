@@ -81,10 +81,15 @@ namespace threadable
           }
         }
 
+        void unset() noexcept
+        {
+          unwrap_func = nullptr;
+        }
+
         void operator()()
         {
           unwrap_func(buffer.data());
-          unwrap_func = nullptr;
+          unset();
         }
 
         operator bool() const noexcept
@@ -111,6 +116,11 @@ namespace threadable
         this->func.set(FWD(func));
       }
 
+      void unset() noexcept
+      {
+        func.unset();
+      }
+
       void operator()()
       {
         func();
@@ -127,6 +137,30 @@ namespace threadable
   };
   static job null_job;
   static_assert(sizeof(job) == cache_line_size, "job size must equal cache line size");
+
+  struct job_ref
+  {
+    job_ref(job& ref):
+      ref(ref)
+    {}
+
+    ~job_ref()
+    {
+      ref.unset();
+    }
+
+    void operator()()
+    {
+      ref();
+    }
+
+    operator bool() const
+    {
+      return ref;
+    }
+
+    job& ref;
+  };
 
   struct job_token
   {
@@ -158,7 +192,7 @@ namespace threadable
       // pop & execute remaining jobs
       while(!empty())
       {
-        if(auto& job = pop())
+        if(auto job = pop())
         {
           job();
         }
@@ -197,7 +231,7 @@ namespace threadable
       });
     }
 
-    job& pop() noexcept
+    job_ref pop() noexcept
     {
       const auto b = bottom_.load() - 1;
       bottom_ = b;
@@ -235,7 +269,7 @@ namespace threadable
       return null_job;
     }
 
-    job& steal() noexcept
+    job_ref steal() noexcept
     {
       const auto t = top_.load();
       std::atomic_thread_fence(std::memory_order_release);
@@ -266,8 +300,8 @@ namespace threadable
 
   private:
     std::array<job, max_nr_of_jobs> jobs_;
-    std::atomic_size_t top_{0};
-    std::atomic_size_t bottom_{0};
+    std::atomic_ptrdiff_t top_{0};
+    std::atomic_ptrdiff_t bottom_{0};
   };
 }
 

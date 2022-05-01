@@ -21,7 +21,7 @@ SCENARIO("queue: push, pop, steal")
     }
     WHEN("pop one job")
     {
-      auto& job = queue.pop();
+      auto job = queue.pop();
       THEN("no job is returned")
       {
         REQUIRE_FALSE(job);
@@ -29,7 +29,7 @@ SCENARIO("queue: push, pop, steal")
     }
     WHEN("steal one job")
     {
-      auto& job = queue.steal();
+      auto job = queue.steal();
       THEN("no job is returned")
       {
         REQUIRE_FALSE(job);
@@ -105,7 +105,7 @@ SCENARIO("queue: execution")
     WHEN("popped")
     {
       queue.push([]{});
-      auto& job = queue.pop();
+      auto job = queue.pop();
       THEN("job is true before invoked")
       {
         REQUIRE(job);
@@ -122,7 +122,7 @@ SCENARIO("queue: execution")
       queue.push([&called]{ ++called; });
       THEN("popped job invokes it")
       {
-        auto& job = queue.pop();
+        auto job = queue.pop();
         job();
         REQUIRE(called == 1);
       }
@@ -132,7 +132,7 @@ SCENARIO("queue: execution")
       queue.push(free_func, std::ref(called));
       THEN("popped job invokes it")
       {
-        auto& job = queue.pop();
+        auto job = queue.pop();
         job();
         REQUIRE(called == 1);
       }
@@ -152,7 +152,7 @@ SCENARIO("queue: execution")
       queue.push(&type::func, type{}, std::ref(called));
       THEN("popped job invokes it")
       {
-        auto& job = queue.pop();
+        auto job = queue.pop();
         job();
         REQUIRE(called == 1);
       }
@@ -179,7 +179,7 @@ SCENARIO("queue: execution")
       queue.push(&type::func, type{destroyed}, std::ref(called));
       THEN("popped job invokes it")
       {
-        auto& job = queue.pop();
+        auto job = queue.pop();
         called = 0;
         destroyed = 0;
         job();
@@ -202,7 +202,7 @@ SCENARIO("queue: execution")
     {
       while(!queue.empty())
       {
-        auto& job = queue.pop();
+        auto job = queue.pop();
         job();
       }
       THEN("jobs are executed LIFO")
@@ -216,7 +216,7 @@ SCENARIO("queue: execution")
     {
       while(!queue.empty())
       {
-        auto& job = queue.steal();
+        auto job = queue.steal();
         REQUIRE(job);
         job();
       }
@@ -229,11 +229,11 @@ SCENARIO("queue: execution")
     }
     WHEN("pop & execute one job")
     {
-      auto& job1 = queue.pop();
+      auto job1 = queue.pop();
       job1();
       AND_WHEN("steal & execute one job")
       {
-        auto& job2 = queue.steal();
+        auto job2 = queue.steal();
         REQUIRE(job2);
         job2();
         THEN("jobs are executed LIFO")
@@ -274,7 +274,7 @@ SCENARIO("queue: synchronization")
       barrier.arrive_and_wait();
     });
 
-    auto& job = queue.steal();
+    auto job = queue.steal();
     WHEN("queue is simultaneously being destroyed")
     {
       auto stealer = std::thread([&]{
@@ -307,7 +307,7 @@ SCENARIO("queue: completion token")
     }
     THEN("token is done after job was invoked")
     {
-      auto& job = queue.pop();
+      auto job = queue.pop();
       job();
       REQUIRE(token.done());
     }
@@ -323,7 +323,7 @@ SCENARIO("queue: completion token")
           waiterDoneTime = clock_t::now();
         });
 
-        auto& job = queue.pop();
+        auto job = queue.pop();
         job();
         auto jobDoneTime = clock_t::now();
         waiter.join();
@@ -360,7 +360,7 @@ SCENARIO("queue: stress-test")
           }
           while(!queue.empty())
           {
-            if(auto& job = queue.pop(); job)
+            if(auto job = queue.pop(); job)
             {
               job();
             }
@@ -373,7 +373,7 @@ SCENARIO("queue: stress-test")
           stealers.emplace_back([&queue]{
             while(!queue.empty())
             {
-              if(auto& job = queue.steal(); job)
+              if(auto job = queue.steal(); job)
               {
                 job();
               }

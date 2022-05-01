@@ -36,7 +36,7 @@ static void threadable_queue(benchmark::State& state)
   {
     int val = 0;
     queue.push([&val]{ ++val; });
-    auto& job = queue.pop();
+    auto job = queue.pop();
     job();
     benchmark::DoNotOptimize(val);
   }
