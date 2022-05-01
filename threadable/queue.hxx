@@ -148,10 +148,30 @@ namespace threadable
   class queue
   {
     static_assert((max_nr_of_jobs & (max_nr_of_jobs - 1)) == 0, "number of jobs must be a power of 2");
-    static constexpr auto MASK = max_nr_of_jobs - std::size_t{1u};
+    static constexpr auto MASK = max_nr_of_jobs - 1u;
 
   public:
     constexpr queue() noexcept = default;
+  
+    ~queue()
+    {
+      // pop & execute remaining jobs
+      while(!empty())
+      {
+        if(auto& job = pop())
+        {
+          job();
+        }
+      }
+      // wait for any active (stolen) jobs
+      for(auto& job : jobs_)
+      {
+        if(job)
+        {
+          job.done.wait(false);
+        }
+      }
+    }
 
     template<typename func_t>
     auto push(func_t&& func) noexcept
@@ -197,7 +217,7 @@ namespace threadable
         // this is the last item in the queue
         //
         // whether we win or lose a race against steal() we still set
-        // the queue to 'empty' (bottom = top), because either way it
+        // the queue to 'empty' (bottom = newTop), because either way it
         // implies that the last job has been taken.
         auto expected = t;
         if(!top_.compare_exchange_weak(expected, t+1))

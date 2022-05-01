@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <latch>
 #include <type_traits>
 #include <thread>
 
@@ -246,6 +247,54 @@ SCENARIO("queue: execution")
   }
 }
 
+SCENARIO("queue: synchronization")
+{
+  GIVEN("stolen job is executed")
+  {
+    using clock_t = std::chrono::steady_clock;
+    auto stealerDoneTime = clock_t::now();
+    auto destroyerDoneTime = clock_t::now();
+    std::latch barrier{2};
+
+    auto queuePtr = std::shared_ptr<threadable::queue<2>>(new threadable::queue<2>(), [&](auto* ptr){
+      delete ptr;
+      destroyerDoneTime = clock_t::now();
+    });
+    auto& queue = *queuePtr;
+
+    // job stolen (steal() == FIFO) and executed by stealer
+    queue.push([&]{
+      // stealer: wait until destroyer is inside destructor
+      barrier.arrive_and_wait();
+      stealerDoneTime = clock_t::now(); 
+    });
+    // job popped (pop() == LIFO) & implicitly executed by destroyer (see queue::dtor)
+    queue.push([&]{
+      // queue::dtor invokes this and releases stealer job
+      barrier.arrive_and_wait();
+    });
+
+    auto& job = queue.steal();
+    WHEN("queue is simultaneously being destroyed")
+    {
+      auto stealer = std::thread([&]{
+        job();
+      });
+      auto destroyer = std::thread([&]{
+        queuePtr = nullptr;
+      });
+
+      stealer.join();
+      destroyer.join();
+
+      THEN("it waits for job to finish")
+      {
+        REQUIRE(stealerDoneTime < destroyerDoneTime);
+      }
+    }
+  }
+}
+
 SCENARIO("queue: completion token")
 {
   auto queue = threadable::queue{};
@@ -281,7 +330,7 @@ SCENARIO("queue: completion token")
 
         REQUIRE(jobDoneTime < waiterDoneTime);
       }
-    }    
+    }
   }
 }
 
