@@ -6,7 +6,7 @@
 
 static void threadable_function(benchmark::State& state)
 {
-  using threadable_func_t = threadable::details::function<threadable::details::job_buffer_size>;
+  using threadable_func_t = threadable::function<>;
   threadable_func_t func;
   for (auto _ : state)
   {

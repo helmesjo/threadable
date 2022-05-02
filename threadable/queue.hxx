@@ -35,16 +35,16 @@ namespace std
 
 namespace threadable
 {
-#if __cpp_lib_hardware_interference_size >= 201603
-  // Pretty much no compiler implements this yet
-  constexpr auto cache_line_size = std::hardware_destructive_interference_size;
-#else
-  // TODO: Make portable
-  constexpr auto cache_line_size = std::size_t{64};
-#endif
-
   namespace details
   {
+#if __cpp_lib_hardware_interference_size >= 201603
+        // Pretty much no compiler implements this yet
+        constexpr auto cache_line_size = std::hardware_destructive_interference_size;
+#else
+        // TODO: Make portable
+        constexpr auto cache_line_size = std::size_t{64};
+#endif
+
       template<typename func_t>
       void invoke_func(void* addr)
       {
@@ -57,58 +57,63 @@ namespace threadable
       }
       using invoke_func_t = decltype(&invoke_func<void(*)()>);
 
-      template<std::size_t buffer_size>
-      struct function
-      {
-        using buffer_t = std::array<std::uint8_t, buffer_size>;
-
-        template<typename func_t>
-        void set(func_t&& func) noexcept
-        {
-          static_assert(sizeof(func_t) <= buffer_size, "callable won't fit in function buffer");
-          unwrap_func = std::addressof(invoke_func<func_t>);
-          void* buffPtr = buffer.data();
-          if constexpr(std::is_trivially_copyable_v<func_t>)
-          {
-            std::memcpy(buffPtr, std::addressof(func), sizeof(func));
-          }
-          else
-          {
-            if(::new (buffPtr) func_t(FWD(func)) != buffPtr)
-            {
-              std::terminate();
-            }
-          }
-        }
-
-        void unset() noexcept
-        {
-          unwrap_func = nullptr;
-        }
-
-        void operator()()
-        {
-          unwrap_func(buffer.data());
-          unset();
-        }
-
-        operator bool() const noexcept
-        {
-          return unwrap_func;
-        }
-
-        invoke_func_t unwrap_func = nullptr;
-        buffer_t buffer;
-      };
-
       struct job_base
       {
         std::atomic_flag done;
       };
-      static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
 
-  struct alignas(cache_line_size) job final: details::job_base
+  template<std::size_t buffer_size = details::cache_line_size>
+  struct function
+  {
+    using buffer_t = std::array<std::uint8_t, buffer_size>;
+
+    template<typename callable_t>
+    void set(callable_t&& func) noexcept
+    {
+      using callable_value_t = std::remove_reference_t<callable_t>;
+      static_assert(sizeof(callable_value_t) <= buffer_size, "callable won't fit in function buffer");
+      unwrap_func = std::addressof(details::invoke_func<callable_value_t>);
+      void* buffPtr = buffer.data();
+      if constexpr(std::is_trivially_copyable_v<callable_value_t>)
+      {
+        std::memcpy(buffPtr, std::addressof(func), sizeof(func));
+      }
+      else
+      {
+        if(::new (buffPtr) callable_value_t(FWD(func)) != buffPtr)
+        {
+          std::terminate();
+        }
+      }
+    }
+
+    void unset() noexcept
+    {
+      unwrap_func = nullptr;
+    }
+
+    void operator()()
+    {
+      unwrap_func(buffer.data());
+      unset();
+    }
+
+    operator bool() const noexcept
+    {
+      return unwrap_func;
+    }
+
+    details::invoke_func_t unwrap_func = nullptr;
+    buffer_t buffer;
+  };
+
+  namespace details
+  {
+    static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
+  }
+
+  struct alignas(details::cache_line_size) job final: details::job_base
   {
       template<typename func_t>
       void set(func_t&& func) noexcept
@@ -133,10 +138,10 @@ namespace threadable
         return func;
       }
 
-      details::function<details::job_buffer_size> func;
+      function<details::job_buffer_size> func;
   };
   static job null_job;
-  static_assert(sizeof(job) == cache_line_size, "job size must equal cache line size");
+  static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
 
   struct job_ref
   {
