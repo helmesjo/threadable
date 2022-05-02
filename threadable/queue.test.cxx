@@ -99,14 +99,6 @@ SCENARIO("queue: push, pop, steal")
   }
 }
 
-namespace
-{
-  void free_func(int& arg)
-  {
-    ++arg;
-  }
-}
-
 SCENARIO("queue: execution")
 {
   auto queuePtr = std::make_shared<threadable::queue<>>();
@@ -135,80 +127,6 @@ SCENARIO("queue: execution")
       {
         job();
         REQUIRE_FALSE(job);
-      }
-    }
-    WHEN("lambda")
-    {
-      queue.push([&called]{ ++called; });
-      THEN("popped job invokes it")
-      {
-        auto job = queue.pop();
-        job();
-        REQUIRE(called == 1);
-      }
-    }
-    WHEN("free function")
-    {
-      queue.push(free_func, std::ref(called));
-      THEN("popped job invokes it")
-      {
-        auto job = queue.pop();
-        job();
-        REQUIRE(called == 1);
-      }
-    }
-    WHEN("member function: trivially copyable type")
-    {
-      struct type
-      {
-        void func(int& called)
-        {
-          ++called;
-        }
-      };
-      static_assert(std::is_trivially_copyable_v<type>);
-      static_assert(std::is_trivially_destructible_v<type>);
-
-      queue.push(&type::func, type{}, std::ref(called));
-      THEN("popped job invokes it")
-      {
-        auto job = queue.pop();
-        job();
-        REQUIRE(called == 1);
-      }
-    }
-    WHEN("member function: non-trivially-copyable type")
-    {
-      struct type
-      {
-        ~type()
-        {
-          ++destroyed;
-        }
-        void func(int& called)
-        {
-          ++called;
-        }
-
-        int& destroyed;
-      };
-      static_assert(!std::is_trivially_copyable_v<type>);
-      static_assert(std::is_destructible_v<type>);
-
-      int destroyed = 0;
-      queue.push(&type::func, type{destroyed}, std::ref(called));
-      THEN("popped job invokes it")
-      {
-        auto job = queue.pop();
-        called = 0;
-        destroyed = 0;
-        job();
-        REQUIRE(called == 1);
-
-        AND_THEN("destructor is called")
-        {
-          REQUIRE(destroyed);
-        }
       }
     }
   }
