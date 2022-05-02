@@ -22,6 +22,11 @@ SCENARIO("queue: push, pop, steal")
     WHEN("pop one job")
     {
       auto job = queue.pop();
+      THEN("size is 0")
+      {
+        REQUIRE(queue.size() == 0);
+        REQUIRE(queue.empty());
+      }
       THEN("no job is returned")
       {
         REQUIRE_FALSE(job);
@@ -30,6 +35,11 @@ SCENARIO("queue: push, pop, steal")
     WHEN("steal one job")
     {
       auto job = queue.steal();
+      THEN("size is 0")
+      {
+        REQUIRE(queue.size() == 0);
+        REQUIRE(queue.empty());
+      }
       THEN("no job is returned")
       {
         REQUIRE_FALSE(job);
