@@ -109,9 +109,20 @@ namespace
 
 SCENARIO("queue: execution")
 {
-  auto queue = threadable::queue{};
+  auto queuePtr = std::make_shared<threadable::queue<>>();
+  auto& queue = *queuePtr;
+  int called = 0;
   GIVEN("push job")
   {
+    WHEN("queue is destroyed")
+    {
+      queue.push([&called]{ ++called; });
+      queuePtr = nullptr;
+      THEN("queued job(s) are executed")
+      {
+        REQUIRE(called == 1);
+      }
+    }
     WHEN("popped")
     {
       queue.push([]{});
@@ -126,7 +137,6 @@ SCENARIO("queue: execution")
         REQUIRE_FALSE(job);
       }
     }
-    int called = 0;
     WHEN("lambda")
     {
       queue.push([&called]{ ++called; });
