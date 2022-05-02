@@ -45,14 +45,14 @@ namespace threadable
         constexpr auto cache_line_size = std::size_t{64};
 #endif
 
-      template<typename func_t>
+      template<typename callable_t>
       void invoke_func(void* addr)
       {
-        func_t& func = *static_cast<func_t*>(addr);
+        callable_t& func = *static_cast<callable_t*>(addr);
         std::invoke(func);
-        if constexpr(std::is_destructible_v<func_t>)
+        if constexpr(std::is_destructible_v<callable_t>)
         {
-          func.~func_t();
+          func.~callable_t();
         }
       }
       using invoke_func_t = decltype(&invoke_func<void(*)()>);
@@ -69,6 +69,7 @@ namespace threadable
     using buffer_t = std::array<std::uint8_t, buffer_size>;
 
     template<typename callable_t>
+      requires std::invocable<callable_t>
     void set(callable_t&& func) noexcept
     {
       using callable_value_t = std::remove_reference_t<callable_t>;
@@ -86,6 +87,15 @@ namespace threadable
           std::terminate();
         }
       }
+    }
+
+    template<typename callable_t, typename... arg_ts>
+      requires std::invocable<callable_t, arg_ts...>
+    decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
+    {
+      return set([func = FWD(func), ...args = FWD(args)] mutable {
+        std::invoke(FWD(func), FWD(args)...);
+      });
     }
 
     void reset() noexcept
@@ -115,33 +125,41 @@ namespace threadable
 
   struct alignas(details::cache_line_size) job final: details::job_base
   {
-      template<typename func_t>
-      void set(func_t&& func) noexcept
-      {
-        this->func.set(FWD(func));
-      }
+    template<typename callable_t>
+      requires std::invocable<callable_t>
+    void set(callable_t&& func) noexcept
+    {
+      this->func.set(FWD(func));
+    }
 
-      void reset() noexcept
-      {
-        func.reset();
-      }
+    template<typename callable_t, typename... arg_ts>
+      requires std::invocable<callable_t, arg_ts...>
+    decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
+    {
+      this->func.set(FWD(func), FWD(args)...);
+    }
 
-      void operator()()
-      {
-        func();
-        done.test_and_set();
-        done.notify_all();
-      }
+    void reset() noexcept
+    {
+      func.reset();
+    }
 
-      operator bool() const
-      {
-        return func;
-      }
+    void operator()()
+    {
+      func();
+      done.test_and_set();
+      done.notify_all();
+    }
 
-      function<details::job_buffer_size> func;
+    operator bool() const
+    {
+      return func;
+    }
+
+    function<details::job_buffer_size> func;
   };
-  static job null_job;
   static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
+  static job null_job;
 
   struct job_ref
   {
@@ -182,7 +200,6 @@ namespace threadable
     std::atomic_flag& flag;
   };
 
-
   template<std::size_t max_nr_of_jobs = 4096>
   class queue
   {
@@ -212,28 +229,17 @@ namespace threadable
       }
     }
 
-    template<typename func_t>
-    auto push(func_t&& func) noexcept
-      requires std::invocable<func_t>
+    template<typename callable_t, typename... arg_ts>
+      requires std::invocable<callable_t, arg_ts...>
+    decltype(auto) push(callable_t&& func, arg_ts&&... args) noexcept
     {
-      static_assert(sizeof(func) <= details::job_buffer_size, "callable is too big");
-
       const auto b = bottom_.load();
       auto& job = jobs_[b & MASK];
-      job.set(FWD(func));
+      job.set(FWD(func), FWD(args)...);
       std::atomic_thread_fence(std::memory_order_release);
       bottom_ = b + 1;
 
       return job_token{job.done};
-    }
-
-    template<typename func_t, typename... arg_ts>
-      requires std::invocable<func_t, arg_ts...>
-    decltype(auto) push(func_t&& func, arg_ts&&... args) noexcept
-    {
-      return push([func = FWD(func), ...args = FWD(args)]() mutable{
-        std::invoke(FWD(func), FWD(args)...);
-      });
     }
 
     job_ref pop() noexcept
