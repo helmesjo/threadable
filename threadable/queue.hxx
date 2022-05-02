@@ -88,7 +88,7 @@ namespace threadable
       }
     }
 
-    void unset() noexcept
+    void reset() noexcept
     {
       unwrap_func = nullptr;
     }
@@ -96,7 +96,7 @@ namespace threadable
     void operator()()
     {
       unwrap_func(buffer.data());
-      unset();
+      reset();
     }
 
     operator bool() const noexcept
@@ -121,9 +121,9 @@ namespace threadable
         this->func.set(FWD(func));
       }
 
-      void unset() noexcept
+      void reset() noexcept
       {
-        func.unset();
+        func.reset();
       }
 
       void operator()()
@@ -151,7 +151,7 @@ namespace threadable
 
     ~job_ref()
     {
-      ref.unset();
+      ref.reset();
     }
 
     void operator()()
