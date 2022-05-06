@@ -11,7 +11,7 @@ static void threadable_function(benchmark::State& state)
   for (auto _ : state)
   {
     int val = 0;
-    func.set([&val]{ ++val; });
+    func = [&val]{ ++val; };
     func();
     benchmark::DoNotOptimize(val);
   }

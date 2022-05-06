@@ -14,23 +14,40 @@ SCENARIO("function: set/reset")
     }
     WHEN("callable is set")
     {
-      func.set([]{});
-      REQUIRE(func);
-
-      AND_WHEN("function is reset")
+      AND_WHEN("using set()")
       {
-        func.reset();
-        THEN("function is unset")
+        func.set([]{});
+        REQUIRE(func);
+
+        AND_WHEN("function is reset")
         {
-          REQUIRE_FALSE(func);
+          func.reset();
+          THEN("function is unset")
+          {
+            REQUIRE_FALSE(func);
+          }
+        }
+        AND_WHEN("function was invoked")
+        {
+          func();
+          THEN("function is unset")
+          {
+            REQUIRE_FALSE(func);
+          }
         }
       }
-      AND_WHEN("function was invoked")
+      AND_WHEN("using assign operator")
       {
-        func();
-        THEN("function is unset")
+        func = []{};
+        REQUIRE(func);
+
+        AND_WHEN("function is reset")
         {
-          REQUIRE_FALSE(func);
+          func = nullptr;
+          THEN("function is unset")
+          {
+            REQUIRE_FALSE(func);
+          }
         }
       }
     }

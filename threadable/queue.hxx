@@ -103,6 +103,21 @@ namespace threadable
       unwrap_func = nullptr;
     }
 
+    template<typename callable_t, typename... arg_ts>
+      requires std::invocable<callable_t, arg_ts...> 
+               && (!std::same_as<callable_t, std::nullptr_t>)
+    auto& operator=(callable_t&& func) noexcept
+    {
+      set(FWD(func));
+      return *this;
+    }
+
+    auto& operator=(std::nullptr_t) noexcept
+    {
+      reset();
+      return *this;
+    }
+
     void operator()()
     {
       unwrap_func(buffer.data());
