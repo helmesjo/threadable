@@ -66,8 +66,6 @@ namespace threadable
   template<std::size_t buffer_size = details::cache_line_size>
   struct function
   {
-    using buffer_t = std::array<std::uint8_t, buffer_size>;
-
     template<typename callable_t>
       requires std::invocable<callable_t>
     void set(callable_t&& func) noexcept
@@ -91,9 +89,9 @@ namespace threadable
 
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-    decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
+    void set(callable_t&& func, arg_ts&&... args) noexcept
     {
-      return set([func = FWD(func), ...args = FWD(args)] mutable {
+      set([func = FWD(func), ...args = FWD(args)] mutable noexcept {
         std::invoke(FWD(func), FWD(args)...);
       });
     }
@@ -105,7 +103,6 @@ namespace threadable
 
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...> 
-               && (!std::same_as<callable_t, std::nullptr_t>)
     auto& operator=(callable_t&& func) noexcept
     {
       set(FWD(func));
@@ -129,8 +126,9 @@ namespace threadable
       return unwrap_func;
     }
 
+  private:
     details::invoke_func_t unwrap_func = nullptr;
-    buffer_t buffer;
+    std::array<std::uint8_t, buffer_size> buffer;
   };
 
   namespace details
@@ -140,13 +138,6 @@ namespace threadable
 
   struct alignas(details::cache_line_size) job final: details::job_base
   {
-    template<typename callable_t>
-      requires std::invocable<callable_t>
-    void set(callable_t&& func) noexcept
-    {
-      this->func.set(FWD(func));
-    }
-
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
@@ -171,6 +162,7 @@ namespace threadable
       return func;
     }
 
+  private:
     function<details::job_buffer_size> func;
   };
   static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
@@ -197,11 +189,16 @@ namespace threadable
       return ref;
     }
 
+  private:
     job& ref;
   };
 
   struct job_token
   {
+    job_token(std::atomic_flag& flag):
+      flag(flag)
+    {}
+  
     bool done() const
     {
       return flag.test();
@@ -212,6 +209,7 @@ namespace threadable
       flag.wait(false);
     }
 
+  private:
     std::atomic_flag& flag;
   };
 
@@ -246,7 +244,7 @@ namespace threadable
 
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-    decltype(auto) push(callable_t&& func, arg_ts&&... args) noexcept
+    job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
       const auto b = bottom_.load();
       auto& job = jobs_[b & MASK];
@@ -254,7 +252,7 @@ namespace threadable
       std::atomic_thread_fence(std::memory_order_release);
       bottom_ = b + 1;
 
-      return job_token{job.done};
+      return job.done;
     }
 
     job_ref pop() noexcept
