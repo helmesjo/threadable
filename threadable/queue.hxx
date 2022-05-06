@@ -138,6 +138,12 @@ namespace threadable
 
   struct alignas(details::cache_line_size) job final: details::job_base
   {
+    constexpr job() = default;
+    job(job&&) = delete;
+    job(const job&) = delete;
+    auto operator=(job&&) = delete;
+    auto operator=(const job&) = delete;
+  
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
@@ -221,6 +227,10 @@ namespace threadable
 
   public:
     constexpr queue() noexcept = default;
+    queue(queue&&) = delete;
+    queue(const queue&) = delete;
+    auto operator=(queue&&) = delete;
+    auto operator=(const queue&) = delete;
   
     ~queue()
     {
