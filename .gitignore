@@ -1,4 +1,6 @@
 .bdep/
+.vs/
+.vscode/
 
 # Local default options files.
 #
