@@ -60,6 +60,7 @@ namespace threadable
       struct job_base
       {
         std::atomic_flag done;
+        std::atomic_flag* child_done = nullptr;
       };
   }
 
@@ -158,6 +159,10 @@ namespace threadable
 
     void operator()()
     {
+      if(child_done)
+      {
+        child_done->wait(false);
+      }
       func();
       done.test_and_set();
       done.notify_all();
@@ -219,6 +224,12 @@ namespace threadable
     std::atomic_flag& flag;
   };
 
+  enum class execution_policy
+  {
+    sequential,
+    concurrent
+  };
+
   template<std::size_t max_nr_of_jobs = 4096>
   class queue
   {
@@ -226,7 +237,10 @@ namespace threadable
     static constexpr auto MASK = max_nr_of_jobs - 1u;
 
   public:
-    constexpr queue() noexcept = default;
+    queue(execution_policy policy = execution_policy::concurrent) noexcept:
+      policy_(policy)
+    {
+    }
     queue(queue&&) = delete;
     queue(const queue&) = delete;
     auto operator=(queue&&) = delete;
@@ -234,13 +248,10 @@ namespace threadable
   
     ~queue()
     {
-      // pop & execute remaining jobs
+      // pop & discard (reset) remaining jobs
       while(!empty())
       {
-        if(auto job = pop())
-        {
-          job();
-        }
+        (void)pop();
       }
       // wait for any active (stolen) jobs
       for(auto& job : jobs_)
@@ -259,6 +270,11 @@ namespace threadable
       const auto b = bottom_.load();
       auto& job = jobs_[b & MASK];
       job.set(FWD(func), FWD(args)...);
+      if(policy_ == execution_policy::sequential && b > 0)
+      {
+        const auto prev = b-1;
+        job.child_done = &jobs_[prev & MASK].done;
+      }
       std::atomic_thread_fence(std::memory_order_release);
       bottom_ = b + 1;
 
@@ -333,6 +349,7 @@ namespace threadable
     }
 
   private:
+    execution_policy policy_ = execution_policy::concurrent;
     std::array<job, max_nr_of_jobs> jobs_;
     std::atomic_ptrdiff_t top_{0};
     std::atomic_ptrdiff_t bottom_{0};
