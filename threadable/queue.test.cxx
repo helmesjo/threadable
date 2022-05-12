@@ -197,9 +197,9 @@ SCENARIO("queue (concurrent): execution")
   int called = 0;
   GIVEN("push job")
   {
+    auto token = queue.push([&called]{ ++called; });
     WHEN("queue is destroyed")
     {
-      queue.push([&called]{ ++called; });
       queuePtr = nullptr;
       THEN("queued job(s) are not executed")
       {
@@ -208,16 +208,23 @@ SCENARIO("queue (concurrent): execution")
     }
     WHEN("popped")
     {
-      queue.push([]{});
       auto job = queue.pop();
       THEN("job is true before invoked")
       {
         REQUIRE(job);
+        AND_THEN("token is not done")
+        {
+          REQUIRE_FALSE(token.done());
+        }
       }
       THEN("job is false after invoked")
       {
         job();
         REQUIRE_FALSE(job);
+        AND_THEN("token is done")
+        {
+          REQUIRE(token.done());
+        }
       }
     }
   }
@@ -389,6 +396,11 @@ SCENARIO("queue: completion token")
   GIVEN("push job & store token")
   {
     auto token = queue.push([]{});
+    THEN("token is not done when job is discarded")
+    {
+      (void)queue.pop();
+      REQUIRE_FALSE(token.done());
+    }
     THEN("token is not done before job is invoked")
     {
       REQUIRE_FALSE(token.done());
