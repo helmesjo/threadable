@@ -92,7 +92,7 @@ namespace threadable
       requires std::invocable<callable_t, arg_ts...>
     void set(callable_t&& func, arg_ts&&... args) noexcept
     {
-      set([func = FWD(func), ...args = FWD(args)] mutable noexcept {
+      set([func = FWD(func), ...args = FWD(args)]() mutable noexcept {
         std::invoke(FWD(func), FWD(args)...);
       });
     }
