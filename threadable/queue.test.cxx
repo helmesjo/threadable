@@ -278,36 +278,7 @@ SCENARIO("queue (concurrent): execution")
 
 SCENARIO("queue (sequential): execution")
 {
-  auto queuePtr = std::make_shared<threadable::queue<>>(threadable::execution_policy::sequential);
-  auto& queue = *queuePtr;
-  int called = 0;
-  GIVEN("push two jobs")
-  {
-    WHEN("queue is destroyed")
-    {
-      queue.push([&called]{ ++called; });
-      queue.push([&called]{ ++called; });
-      queuePtr = nullptr;
-      THEN("queued job(s) are not executed")
-      {
-        REQUIRE(called == 0);
-      }
-    }
-    WHEN("stolen")
-    {
-      queue.push([]{});
-      auto job = queue.steal();
-      THEN("job is true before invoked")
-      {
-        REQUIRE(job);
-      }
-      THEN("job is false after invoked")
-      {
-        job();
-        REQUIRE_FALSE(job);
-      }
-    }
-  }
+  auto queue = threadable::queue(threadable::execution_policy::sequential);
 
   std::vector<int> order;
   GIVEN("push two jobs")
