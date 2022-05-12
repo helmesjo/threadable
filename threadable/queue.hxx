@@ -230,7 +230,12 @@ namespace threadable
     concurrent
   };
 
-  template<std::size_t max_nr_of_jobs = 4096>
+  namespace details
+  {
+    constexpr std::size_t default_max_nr_of_jobs = 1024;
+  }
+
+  template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class queue
   {
     static_assert((max_nr_of_jobs & (max_nr_of_jobs - 1)) == 0, "number of jobs must be a power of 2");
@@ -288,10 +293,11 @@ namespace threadable
       std::atomic_thread_fence(std::memory_order::seq_cst);
       const auto t = top_.load();
 
+      auto* job = &null_job;
       if(t <= b)
       {
         // non-empty queue
-        auto* job = &jobs_[b & MASK];
+        job = &jobs_[b & MASK];
         if(t != b)
         {
           // there's still more than one item left in the queue
@@ -310,13 +316,12 @@ namespace threadable
           job = &null_job;
         }
         bottom_ = t+1;
-        return *job;
       }
       else
       {
         bottom_ = t;
       }
-      return null_job;
+      return *job;
     }
 
     job_ref steal() noexcept
