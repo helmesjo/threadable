@@ -9,6 +9,7 @@
 
 namespace threadable
 {
+  template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class pool
   {
   public:
@@ -47,7 +48,7 @@ namespace threadable
 
   private:
     std::atomic_bool run_{true};
-    std::unique_ptr<queue<524288>> queue_ = std::make_unique<queue<524288>>();
+    std::unique_ptr<queue<max_nr_of_jobs>> queue_ = std::make_unique<queue<max_nr_of_jobs>>();
     std::vector<std::thread> threads_;
   };
 }

@@ -5,17 +5,17 @@
 
 SCENARIO("pool:")
 {
-  auto threadPool = threadable::pool(std::thread::hardware_concurrency());
-  
-  std::size_t jobCount = 524288;
-  std::latch jobLatch{static_cast<std::ptrdiff_t>(jobCount)};
-  
-  for(std::size_t i = 0; i < jobCount; ++i)
+  constexpr std::size_t nr_of_jobs = 1 << 16;
+  auto threadPool = threadable::pool<nr_of_jobs>(std::thread::hardware_concurrency());
+
+  std::latch jobLatch{static_cast<std::ptrdiff_t>(nr_of_jobs)};
+
+  for(std::size_t i = 0; i < nr_of_jobs; ++i)
   {
     threadPool.push([&jobLatch]{
       jobLatch.count_down();
     });
   }
-  
+
   jobLatch.wait();
 }
