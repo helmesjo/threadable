@@ -56,12 +56,6 @@ namespace threadable
         }
       }
       using invoke_func_t = decltype(&invoke_func<void(*)()>);
-
-      struct job_base
-      {
-        std::atomic_flag done;
-        std::atomic_flag* child_done = nullptr;
-      };
   }
 
   template<std::size_t buffer_size = details::cache_line_size>
@@ -134,6 +128,11 @@ namespace threadable
 
   namespace details
   {
+    struct job_base
+    {
+      std::atomic_flag done;
+      std::atomic_flag* child_done = nullptr;
+    };
     static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
 
