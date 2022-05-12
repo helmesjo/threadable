@@ -350,7 +350,7 @@ namespace threadable
 
   private:
     execution_policy policy_ = execution_policy::concurrent;
-    std::array<job, max_nr_of_jobs> jobs_;
+    std::vector<job> jobs_{max_nr_of_jobs};
     std::atomic_ptrdiff_t top_{0};
     std::atomic_ptrdiff_t bottom_{0};
   };
