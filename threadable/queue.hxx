@@ -154,6 +154,7 @@ namespace threadable
     void reset() noexcept
     {
       func.reset();
+      done.clear();
     }
 
     void operator()()
@@ -271,6 +272,8 @@ namespace threadable
       requires std::invocable<callable_t, arg_ts...>
     job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
+      assert(size() < max_nr_of_jobs);
+    
       const auto b = bottom_.load();
       auto& job = jobs_[b & MASK];
       job.set(FWD(func), FWD(args)...);

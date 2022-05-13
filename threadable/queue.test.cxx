@@ -8,10 +8,27 @@
 #include <type_traits>
 #include <thread>
 
-SCENARIO("queue (concurrent): push, pop, steal")
+SCENARIO("queue: push, pop, steal")
 {
-  auto queue = threadable::queue{};
+  GIVEN("queue job buffer wraps around")
+  {
+    auto queue = threadable::queue<1>{};
+    
+    WHEN("push + pop + exec + push + pop")
+    {
+      queue.push([]{});
+      auto job1 = queue.pop();
+      job1();
+      auto token2 = queue.push([]{});
+      (void)queue.pop();
+      THEN("last job token is not done")
+      {
+        REQUIRE_FALSE(token2.done());
+      }
+    }
+  }
 
+  auto queue = threadable::queue{};
   GIVEN("queue is empty")
   {
     THEN("size is 0")
@@ -311,7 +328,12 @@ SCENARIO("queue (sequential): execution")
     // }
     WHEN("steal & execute jobs")
     {
-      while(!queue.empty())
+      // while(!queue.empty())
+      {
+        auto job = queue.steal();
+        REQUIRE(job);
+        job();
+      }
       {
         auto job = queue.steal();
         REQUIRE(job);
