@@ -130,15 +130,15 @@ namespace threadable
   {
     struct job_base
     {
-      std::atomic_flag done;
-      std::atomic_flag* child_done = nullptr;
+      std::atomic_flag active;
+      std::atomic_flag* child_active = nullptr;
     };
     static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
 
   struct alignas(details::cache_line_size) job final: details::job_base
   {
-    constexpr job() = default;
+    job() = default;
     job(job&&) = delete;
     job(const job&) = delete;
     auto operator=(job&&) = delete;
@@ -149,79 +149,83 @@ namespace threadable
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
       this->func.set(FWD(func), FWD(args)...);
+      active.test_and_set();
     }
 
     void reset() noexcept
     {
-      func.reset();
-      done.clear();
+      child_active = nullptr;
+      active.clear();
+      active.notify_all();
     }
 
     void operator()()
     {
-      if(child_done)
+      if(child_active)
       {
-        child_done->wait(false);
+        child_active->wait(true);
       }
       func();
-      done.test_and_set();
-      done.notify_all();
+      reset();
     }
 
     operator bool() const
     {
-      return func;
+      return active.test();
     }
 
   private:
     function<details::job_buffer_size> func;
   };
   static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
-  static job null_job;
 
   struct job_ref
   {
-    job_ref(job& ref):
+    job_ref(job* ref):
       ref(ref)
     {}
 
     ~job_ref()
     {
-      ref.reset();
+      if(ref)
+      {
+        ref->reset();
+      }
     }
 
     void operator()()
     {
-      ref();
+      (*ref)();
+      ref = nullptr;
     }
 
     operator bool() const
     {
-      return ref;
+      return ref && *ref;
     }
 
   private:
-    job& ref;
+    job* ref;
   };
 
   struct job_token
   {
-    job_token(std::atomic_flag& flag):
-      flag(flag)
+    job_token(std::atomic_flag& active):
+      active(active)
     {}
   
     bool done() const
     {
-      return flag.test();
+      return !active.test();
     }
 
     void wait() const
     {
-      flag.wait(false);
+      active.wait(true);
     }
 
   private:
-    std::atomic_flag& flag;
+    std::atomic_flag& active;
   };
 
   enum class execution_policy
@@ -240,6 +244,7 @@ namespace threadable
   {
     static_assert((max_nr_of_jobs & (max_nr_of_jobs - 1)) == 0, "number of jobs must be a power of 2");
     static constexpr auto MASK = max_nr_of_jobs - 1u;
+    static constexpr job* null_job = nullptr;
 
   public:
     queue(execution_policy policy = execution_policy::concurrent) noexcept:
@@ -261,10 +266,7 @@ namespace threadable
       // wait for any active (stolen) jobs
       for(auto& job : jobs_)
       {
-        if(job)
-        {
-          job.done.wait(false);
-        }
+        job.active.wait(true);
       }
     }
 
@@ -280,12 +282,12 @@ namespace threadable
       if(policy_ == execution_policy::sequential && b > 0)
       {
         const auto prev = b-1;
-        job.child_done = &jobs_[prev & MASK].done;
+        job.child_active = &jobs_[prev & MASK].active;
       }
       std::atomic_thread_fence(std::memory_order_release);
       bottom_ = b + 1;
 
-      return job.done;
+      return job.active;
     }
 
     job_ref pop() noexcept
@@ -295,7 +297,7 @@ namespace threadable
       std::atomic_thread_fence(std::memory_order::seq_cst);
       const auto t = top_.load();
 
-      auto* job = &null_job;
+      auto* job = null_job;
       if(t <= b)
       {
         // non-empty queue
@@ -303,7 +305,7 @@ namespace threadable
         if(t != b)
         {
           // there's still more than one item left in the queue
-          return *job;
+          return job;
         }
 
         // this is the last item in the queue
@@ -315,7 +317,7 @@ namespace threadable
         if(!top_.compare_exchange_weak(expected, t+1))
         {
           // lost race against steal()
-          job = &null_job;
+          job = null_job;
         }
         bottom_ = t+1;
       }
@@ -323,7 +325,7 @@ namespace threadable
       {
         bottom_ = t;
       }
-      return *job;
+      return job;
     }
 
     job_ref steal() noexcept
@@ -334,7 +336,7 @@ namespace threadable
 
       if(t < b)
       {
-        auto& job = jobs_[t & MASK];
+        auto* job = &jobs_[t & MASK];
         auto expected = t;
         if(top_.compare_exchange_weak(expected, t+1))
         {

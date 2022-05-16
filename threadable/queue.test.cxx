@@ -20,7 +20,7 @@ SCENARIO("queue: push, pop, steal")
       auto job1 = queue.pop();
       job1();
       auto token2 = queue.push([]{});
-      (void)queue.pop();
+      auto job2 = queue.pop();
       THEN("last job token is not done")
       {
         REQUIRE_FALSE(token2.done());
@@ -328,12 +328,7 @@ SCENARIO("queue (sequential): execution")
     // }
     WHEN("steal & execute jobs")
     {
-      // while(!queue.empty())
-      {
-        auto job = queue.steal();
-        REQUIRE(job);
-        job();
-      }
+      while(!queue.empty())
       {
         auto job = queue.steal();
         REQUIRE(job);
@@ -415,13 +410,14 @@ SCENARIO("queue: synchronization")
 SCENARIO("queue: completion token")
 {
   auto queue = threadable::queue{};
+  REQUIRE(queue.empty());
   GIVEN("push job & store token")
   {
     auto token = queue.push([]{});
-    THEN("token is not done when job is discarded")
+    THEN("token is done when job is discarded")
     {
       (void)queue.pop();
-      REQUIRE_FALSE(token.done());
+      REQUIRE(token.done());
     }
     THEN("token is not done before job is invoked")
     {
