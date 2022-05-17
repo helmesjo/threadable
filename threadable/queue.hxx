@@ -14,12 +14,34 @@ namespace threadable
 {
   namespace details
   {
+    using atomic_flag = std::atomic_bool;
+
     struct job_base
     {
-      std::atomic_flag active;
-      std::atomic_flag* child_active = nullptr;
+      atomic_flag active;
+      atomic_flag* child_active = nullptr;
     };
     static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
+
+    struct job_token
+    {
+      job_token(details::atomic_flag& active):
+        active(active)
+      {}
+
+      bool done() const
+      {
+        return !active;
+      }
+
+      void wait() const
+      {
+        active.wait(true);
+      }
+
+    private:
+      details::atomic_flag& active;
+    };
   }
 
   struct alignas(details::cache_line_size) job final: details::job_base
@@ -35,13 +57,13 @@ namespace threadable
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
       this->func.set(FWD(func), FWD(args)...);
-      active.test_and_set();
+      active = true;
     }
 
     void reset() noexcept
     {
       child_active = nullptr;
-      active.clear();
+      active = false;
       active.notify_all();
     }
 
@@ -57,7 +79,7 @@ namespace threadable
 
     operator bool() const
     {
-      return active.test();
+      return active;
     }
 
   private:
@@ -92,26 +114,6 @@ namespace threadable
 
   private:
     job* ref;
-  };
-
-  struct job_token
-  {
-    job_token(std::atomic_flag& active):
-      active(active)
-    {}
-  
-    bool done() const
-    {
-      return !active.test();
-    }
-
-    void wait() const
-    {
-      active.wait(true);
-    }
-
-  private:
-    std::atomic_flag& active;
   };
 
   enum class execution_policy
@@ -161,7 +163,7 @@ namespace threadable
 
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-    job_token push(callable_t&& func, arg_ts&&... args) noexcept
+    details::job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
       assert(size() < max_nr_of_jobs);
     
