@@ -243,6 +243,9 @@ namespace threadable
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class queue
   {
+    using atomic_index_t = std::atomic_ptrdiff_t;
+    using index_t = typename atomic_index_t::value_type;
+
     static_assert((max_nr_of_jobs & (max_nr_of_jobs - 1)) == 0, "number of jobs must be a power of 2");
     static constexpr auto MASK = max_nr_of_jobs - 1u;
     static constexpr job* null_job = nullptr;
@@ -277,12 +280,12 @@ namespace threadable
     {
       assert(size() < max_nr_of_jobs);
     
-      const auto b = bottom_.load();
+      const index_t b = bottom_;
       auto& job = jobs_[b & MASK];
       job.set(FWD(func), FWD(args)...);
       if(policy_ == execution_policy::sequential && b > 0)
       {
-        const auto prev = b-1;
+        const index_t prev = b-1;
         job.child_active = &jobs_[prev & MASK].active;
       }
       std::atomic_thread_fence(std::memory_order_release);
@@ -293,10 +296,10 @@ namespace threadable
 
     job_ref pop() noexcept
     {
-      const auto b = bottom_.load() - 1;
+      const index_t b = bottom_ - 1;
       bottom_ = b;
       std::atomic_thread_fence(std::memory_order::seq_cst);
-      const auto t = top_.load();
+      const index_t t = top_;
 
       auto* job = null_job;
       if(t <= b)
@@ -314,7 +317,7 @@ namespace threadable
         // whether we win or lose a race against steal() we still set
         // the queue to 'empty' (bottom = newTop), because either way it
         // implies that the last job has been taken.
-        auto expected = t;
+        index_t expected = t;
         if(!top_.compare_exchange_weak(expected, t+1))
         {
           // lost race against steal()
@@ -331,14 +334,14 @@ namespace threadable
 
     job_ref steal() noexcept
     {
-      const auto t = top_.load();
+      const index_t t = top_;
       std::atomic_thread_fence(std::memory_order_release);
-      const auto b = bottom_.load();
+      const index_t b = bottom_;
 
       if(t < b)
       {
         auto* job = &jobs_[t & MASK];
-        auto expected = t;
+        index_t expected = t;
         if(top_.compare_exchange_weak(expected, t+1))
         {
           // won race against pop()
@@ -361,8 +364,8 @@ namespace threadable
   private:
     execution_policy policy_ = execution_policy::concurrent;
     std::vector<job> jobs_{max_nr_of_jobs};
-    std::atomic_ptrdiff_t top_{0};
-    std::atomic_ptrdiff_t bottom_{0};
+    atomic_index_t top_{0};
+    atomic_index_t bottom_{0};
   };
 }
 
