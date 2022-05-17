@@ -1,4 +1,4 @@
-#include <threadable/queue.hxx>
+#include <threadable/function.hxx>
 #include <threadable/doctest_include.hxx>
 
 #include <type_traits>
