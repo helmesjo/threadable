@@ -12,6 +12,7 @@
 #include <mutex>
 #include <new>
 #include <tuple>
+#include <vector>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
@@ -47,7 +48,7 @@ namespace threadable
 #endif
 
       template<typename callable_t>
-      void invoke_func(void* addr)
+      static inline void invoke_func(void* addr)
       {
         callable_t& func = *static_cast<callable_t*>(addr);
         std::invoke(func);
