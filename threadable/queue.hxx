@@ -17,6 +17,42 @@ namespace threadable
   {
     using atomic_flag = std::atomic_bool;
 
+#if __cpp_lib_atomic_wait >= 201907 && !defined(__APPLE__)
+    template<typename atomic_t, typename obj_t>
+    inline void atomic_wait(atomic_t&& atomic, obj_t&& old) noexcept
+    {
+      FWD(atomic).wait(FWD(old));
+    }
+
+    template<typename atomic_t>
+    inline void atomic_notify_one(atomic_t&& atomic) noexcept
+    {
+      FWD(atomic).notify_one();
+    }
+
+    template<typename atomic_t>
+    inline void atomic_notify_all(atomic_t&& atomic) noexcept
+    {
+      FWD(atomic).notify_all();
+    }
+#else
+    template<typename atomic_t, typename obj_t>
+    inline void atomic_wait(atomic_t&& atomic, obj_t&& old) noexcept
+    {
+      while(FWD(atomic).load() == old);
+    }
+
+    template<typename atomic_t>
+    inline void atomic_notify_one(atomic_t&& atomic) noexcept
+    {
+    }
+
+    template<typename atomic_t>
+    inline void atomic_notify_all(atomic_t&& atomic) noexcept
+    {
+    }
+#endif
+
     struct job_base
     {
       atomic_flag active;
@@ -45,7 +81,7 @@ namespace threadable
     {
       child_active = nullptr;
       active = false;
-      active.notify_all();
+      details::atomic_notify_all(active);
     }
 
     void operator()()
@@ -53,7 +89,7 @@ namespace threadable
       if(child_active)
       [[unlikely]]
       {
-        child_active->wait(true);
+        details::atomic_wait(*child_active, true);
       }
       func();
       reset();
@@ -112,7 +148,7 @@ namespace threadable
 
     void wait() const noexcept
     {
-      active.wait(true);
+      details::atomic_wait(active, true);
     }
 
   private:
@@ -162,7 +198,7 @@ namespace threadable
       // wait for any active (stolen) jobs
       for(auto& job : jobs_)
       {
-        job.active.wait(true);
+        details::atomic_wait(job.active, true);
       }
       quit();
     }
@@ -172,8 +208,8 @@ namespace threadable
       bottom_ = -1;
       top_ = -1;
       // release potentially waiting threads
-      bottom_.notify_all();
-      top_.notify_all();
+      details::atomic_notify_all(bottom_);
+      details::atomic_notify_all(top_);
 
       while(waiters_ > 0)
       {
@@ -205,7 +241,7 @@ namespace threadable
       }
       std::atomic_thread_fence(std::memory_order_release);
       bottom_ = b + 1;
-      bottom_.notify_one();
+      details::atomic_notify_one(bottom_);
 
       return job.active;
     }
@@ -288,7 +324,7 @@ namespace threadable
 
       if(t == b && b != -1)
       {
-        bottom_.wait(b);
+        details::atomic_wait(bottom_, b);
       }
 
       return steal();

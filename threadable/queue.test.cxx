@@ -3,8 +3,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <functional>
-#include <latch>
 #include <type_traits>
 #include <thread>
 
@@ -432,10 +432,11 @@ SCENARIO("queue: synchronization")
     using clock_t = std::chrono::steady_clock;
     auto stealerDoneTime = clock_t::now();
     auto destroyerDoneTime = clock_t::now();
-    std::latch barrier{2};
+    std::atomic_size_t barrier{2};
 
     auto queuePtr = std::shared_ptr<threadable::queue<2>>(new threadable::queue<2>(threadable::execution_policy::concurrent), [&](auto* ptr){
-      barrier.arrive_and_wait();
+      --barrier;
+      while(barrier != 0);
       delete ptr;
       destroyerDoneTime = clock_t::now();
     });
@@ -444,7 +445,8 @@ SCENARIO("queue: synchronization")
     // job stolen (steal() == FIFO) and executed by stealer
     queue.push([&]{
       // stealer: wait until destroyer is inside destructor
-      barrier.arrive_and_wait();
+      --barrier;
+      while(barrier != 0);
       stealerDoneTime = clock_t::now(); 
     });
     // job popped (pop() == LIFO) & implicitly executed by destroyer (see queue::dtor)
