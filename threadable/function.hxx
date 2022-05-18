@@ -111,7 +111,6 @@ namespace threadable
     void operator()()
     {
       unwrap_func(buffer.data());
-      reset();
     }
 
     operator bool() const noexcept

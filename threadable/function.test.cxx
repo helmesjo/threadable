@@ -30,9 +30,9 @@ SCENARIO("function: set/reset")
         AND_WHEN("function was invoked")
         {
           func();
-          THEN("function is unset")
+          THEN("function is set")
           {
-            REQUIRE_FALSE(func);
+            REQUIRE(func);
           }
         }
       }
