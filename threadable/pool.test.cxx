@@ -1,21 +1,36 @@
 #include <threadable/pool.hxx>
 #include <threadable/doctest_include.hxx>
 
-#include <latch>
+#include <cstddef>
+#include <thread>
+#include <vector>
 
-SCENARIO("pool:")
+SCENARIO("pool: stress-test")
 {
-  constexpr std::size_t nr_of_jobs = 1 << 16;
-  auto threadPool = threadable::pool<nr_of_jobs>(std::thread::hardware_concurrency());
-
-  std::latch jobLatch{static_cast<std::ptrdiff_t>(nr_of_jobs)};
-
-  for(std::size_t i = 0; i < nr_of_jobs; ++i)
+  static constexpr std::size_t nr_of_jobs = 1 << 16;
+  auto pool = threadable::pool<nr_of_jobs>(std::thread::hardware_concurrency());
+  GIVEN("pool with multiple threads")
   {
-    threadPool.push([&jobLatch]{
-      jobLatch.count_down();
-    });
-  }
+    WHEN("a large amount of jobs are pushed")
+    {
+      std::atomic_size_t counter{0};
+      std::vector<threadable::job_token> tokens;
+      tokens.reserve(nr_of_jobs);
 
-  jobLatch.wait();
+      for(std::size_t i = 0; i < nr_of_jobs; ++i)
+      {
+        tokens.push_back(pool.push([&counter]{ ++counter; }));
+      }
+
+      for(const auto& token : tokens)
+      {
+        token.wait();
+      }
+
+      THEN("all gets executed")
+      {
+        REQUIRE(counter.load() == nr_of_jobs);
+      }
+    }
+  }
 }

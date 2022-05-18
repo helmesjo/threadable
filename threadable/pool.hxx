@@ -13,7 +13,6 @@ namespace threadable
   class pool
   {
   public:
-  
     pool(std::size_t threads)
     {
       for(std::size_t i = 0; i < threads; ++i)
@@ -21,7 +20,7 @@ namespace threadable
         threads_.emplace_back([this]{
           while(run_)
           {
-            if(auto job = queue_->steal())
+            if(auto job = queue_.steal_or_wait())
             {
               job();
             }
@@ -33,6 +32,7 @@ namespace threadable
     ~pool()
     {
       run_ = false;
+      queue_.quit();
       for(auto& thread : threads_)
       {
         thread.join();
@@ -43,12 +43,12 @@ namespace threadable
       requires std::invocable<callable_t, arg_ts...>
     decltype(auto) push(callable_t&& func, arg_ts&&... args) noexcept
     {
-      return queue_->push(FWD(func), FWD(args)...);
+      return queue_.push(FWD(func), FWD(args)...);
     }
 
   private:
     std::atomic_bool run_{true};
-    std::unique_ptr<queue<max_nr_of_jobs>> queue_ = std::make_unique<queue<max_nr_of_jobs>>();
+    queue<max_nr_of_jobs> queue_;
     std::vector<std::thread> threads_;
   };
 }
