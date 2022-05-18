@@ -11,6 +11,14 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
+#if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely)
+#define LIKELY [[likely]]
+#define UNLIKELY [[unlikely]]
+#else
+#define LIKELY
+#define UNLIKELY
+#endif
+
 namespace threadable
 {
   namespace details
@@ -87,7 +95,7 @@ namespace threadable
     void operator()()
     {
       if(child_active)
-      [[unlikely]]
+      UNLIKELY
       {
         details::atomic_wait(*child_active, true);
       }
@@ -114,7 +122,7 @@ namespace threadable
     ~job_ref()
     {
       if(ref)
-      [[unlikely]]
+      UNLIKELY
       {
         ref->reset();
       }
@@ -226,7 +234,7 @@ namespace threadable
       const index_t b = bottom_;
 
       if(b == -1)
-      [[unlikely]]
+      UNLIKELY
       {
         return null_flag;
       }
@@ -234,7 +242,7 @@ namespace threadable
       auto& job = jobs_[b & index_mask];
       job.set(FWD(func), FWD(args)...);
       if(policy_ == execution_policy::sequential && b > 0)
-      [[unlikely]]
+      UNLIKELY
       {
         const index_t prev = b-1;
         job.child_active = &jobs_[prev & index_mask].active;
@@ -255,12 +263,12 @@ namespace threadable
 
       auto* job = null_job;
       if(t <= b)
-      [[likely]]
+      LIKELY
       {
         // non-empty queue
         job = &jobs_[b & index_mask];
         if(t != b)
-        [[likely]]
+        LIKELY
         {
           // there's still more than one item left in the queue
           return job;
@@ -273,7 +281,7 @@ namespace threadable
         // implies that the last job has been taken.
         index_t expected = t;
         if(!top_.compare_exchange_weak(expected, t+1))
-        [[unlikely]]
+        UNLIKELY
         {
           // lost race against steal()
           job = null_job;
@@ -281,7 +289,7 @@ namespace threadable
         bottom_ = t+1;
       }
       else
-      [[unlikely]]
+      UNLIKELY
       {
         bottom_ = t;
       }
@@ -295,12 +303,12 @@ namespace threadable
       const index_t b = bottom_;
 
       if(t < b)
-      [[likely]]
+      LIKELY
       {
         auto* job = &jobs_[t & index_mask];
         index_t expected = t;
         if(top_.compare_exchange_weak(expected, t+1))
-        [[likely]]
+        LIKELY
         {
           // won race against pop()
           return job;
@@ -323,6 +331,7 @@ namespace threadable
       const index_t b = bottom_;
 
       if(t == b && b != -1)
+      UNLIKELY
       {
         details::atomic_wait(bottom_, b);
       }
@@ -350,3 +359,5 @@ namespace threadable
 }
 
 #undef FWD
+#undef LIKELY
+#undef UNLIKELY
