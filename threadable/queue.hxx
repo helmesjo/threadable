@@ -70,6 +70,7 @@ namespace threadable
     void operator()()
     {
       if(child_active)
+      [[unlikely]]
       {
         child_active->wait(true);
       }
@@ -96,6 +97,7 @@ namespace threadable
     ~job_ref()
     {
       if(ref)
+      [[unlikely]]
       {
         ref->reset();
       }
@@ -172,6 +174,7 @@ namespace threadable
       auto& job = jobs_[b & index_mask];
       job.set(FWD(func), FWD(args)...);
       if(policy_ == execution_policy::sequential && b > 0)
+      [[unlikely]]
       {
         const index_t prev = b-1;
         job.child_active = &jobs_[prev & index_mask].active;
@@ -191,10 +194,12 @@ namespace threadable
 
       auto* job = null_job;
       if(t <= b)
+      [[likely]]
       {
         // non-empty queue
         job = &jobs_[b & index_mask];
         if(t != b)
+        [[likely]]
         {
           // there's still more than one item left in the queue
           return job;
@@ -207,6 +212,7 @@ namespace threadable
         // implies that the last job has been taken.
         index_t expected = t;
         if(!top_.compare_exchange_weak(expected, t+1))
+        [[unlikely]]
         {
           // lost race against steal()
           job = null_job;
@@ -214,6 +220,7 @@ namespace threadable
         bottom_ = t+1;
       }
       else
+      [[unlikely]]
       {
         bottom_ = t;
       }
@@ -227,10 +234,12 @@ namespace threadable
       const index_t b = bottom_;
 
       if(t < b)
+      [[likely]]
       {
         auto* job = &jobs_[t & index_mask];
         index_t expected = t;
         if(top_.compare_exchange_weak(expected, t+1))
+        [[likely]]
         {
           // won race against pop()
           return job;
