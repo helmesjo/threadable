@@ -25,22 +25,22 @@ namespace threadable
 
     struct job_token
     {
-      job_token(details::atomic_flag& active):
+      job_token(atomic_flag& active):
         active(active)
       {}
 
-      bool done() const
+      bool done() const noexcept
       {
         return !active;
       }
 
-      void wait() const
+      void wait() const noexcept
       {
         active.wait(true);
       }
 
     private:
-      details::atomic_flag& active;
+      atomic_flag& active;
     };
   }
 
@@ -78,7 +78,7 @@ namespace threadable
       reset();
     }
 
-    operator bool() const
+    operator bool() const noexcept
     {
       return active;
     }
@@ -109,7 +109,7 @@ namespace threadable
       ref = nullptr;
     }
 
-    operator bool() const
+    operator bool() const noexcept
     {
       return ref && *ref;
     }
