@@ -363,6 +363,50 @@ SCENARIO("queue (sequential): execution")
 
 SCENARIO("queue: synchronization")
 {
+  GIVEN("waiting for job to steal")
+  {
+    auto queuePtr = std::make_unique<threadable::queue<>>();
+    auto& queue = *queuePtr;
+
+    WHEN("push job")
+    {
+      auto waiter = std::thread([&queue]{
+        if(auto job = queue.steal_or_wait())
+        {
+          job();
+        }
+      });
+
+      std::this_thread::sleep_for(std::chrono::milliseconds{ 2 });
+
+      int called = 0;
+      queue.push([&called]{ ++called; });
+      waiter.join();
+
+      THEN("job is waited for")
+      {
+        REQUIRE(called == 1);
+      }
+    }
+    WHEN("queue is destroyed")
+    {
+      auto waiter = std::thread([&queue]{
+        if(auto job = queue.steal_or_wait())
+        {
+          job();
+        }
+      });
+
+      std::this_thread::sleep_for(std::chrono::milliseconds{ 2 });
+
+      queuePtr = nullptr;
+      waiter.join();
+
+      THEN("waiting thread is released")
+      {
+      }
+    }
+  }
   GIVEN("stolen job is executed")
   {
     using clock_t = std::chrono::steady_clock;

@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstddef>
 #include <concepts>
+#include <thread>
 #include <vector>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -149,7 +150,7 @@ namespace threadable
     queue(const queue&) = delete;
     auto operator=(queue&&) = delete;
     auto operator=(const queue&) = delete;
-  
+
     ~queue()
     {
       // pop & discard (reset) remaining jobs
@@ -161,6 +162,17 @@ namespace threadable
       for(auto& job : jobs_)
       {
         job.active.wait(true);
+      }
+
+      // release potentially waiting threads
+      bottom_ = -1;
+      top_ = -1;
+      bottom_.notify_all();
+      top_.notify_all();
+
+      while(waiters_ > 0)
+      {
+        std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
       }
     }
 
@@ -181,6 +193,7 @@ namespace threadable
       }
       std::atomic_thread_fence(std::memory_order_release);
       bottom_ = b + 1;
+      bottom_.notify_one();
 
       return job.active;
     }
@@ -248,6 +261,27 @@ namespace threadable
       return null_job;
     }
 
+    job_ref steal_or_wait() noexcept
+    {
+      struct raii
+      {
+          raii(std::atomic_size_t& counter): counter_(counter) { ++counter_; }
+          ~raii() { --counter_; }
+          std::atomic_size_t& counter_;
+      } waiting(waiters_);
+
+      const index_t t = top_;
+      std::atomic_thread_fence(std::memory_order_release);
+      const index_t b = bottom_;
+
+      if(t == b && b != -1)
+      {
+        bottom_.wait(b);
+      }
+
+      return steal();
+    }
+
     std::size_t size() const noexcept
     {
       return bottom_ - top_;
@@ -263,6 +297,7 @@ namespace threadable
     std::vector<job> jobs_{max_nr_of_jobs};
     atomic_index_t top_{0};
     atomic_index_t bottom_{0};
+    std::atomic_size_t waiters_;
   };
 }
 
