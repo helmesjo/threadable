@@ -63,6 +63,27 @@ SCENARIO("queue: push, pop, steal")
       }
     }
   }
+  GIVEN("queue has quit")
+  {
+    queue.quit();
+    WHEN("push job")
+    {
+      auto token = queue.push([]{});
+      THEN("size is 0")
+      {
+        REQUIRE(queue.size() == 0);
+        REQUIRE(queue.empty());
+      }      
+      THEN("token is done")
+      {
+        REQUIRE(token.done());
+      }
+      THEN("wait instantly returns")
+      {
+        token.wait();
+      }
+    }
+  }
   GIVEN("push two jobs")
   {
     queue.push([]{});
@@ -365,8 +386,7 @@ SCENARIO("queue: synchronization")
 {
   GIVEN("waiting for job to steal")
   {
-    auto queuePtr = std::make_unique<threadable::queue<>>();
-    auto& queue = *queuePtr;
+    auto queue = threadable::queue();
 
     WHEN("push job")
     {
@@ -388,7 +408,7 @@ SCENARIO("queue: synchronization")
         REQUIRE(called == 1);
       }
     }
-    WHEN("queue is destroyed")
+    WHEN("queue is quit")
     {
       auto waiter = std::thread([&queue]{
         if(auto job = queue.steal_or_wait())
@@ -399,7 +419,7 @@ SCENARIO("queue: synchronization")
 
       std::this_thread::sleep_for(std::chrono::milliseconds{ 2 });
 
-      queuePtr = nullptr;
+      queue.quit();
       waiter.join();
 
       THEN("waiting thread is released")

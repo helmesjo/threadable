@@ -23,26 +23,6 @@ namespace threadable
       atomic_flag* child_active = nullptr;
     };
     static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
-
-    struct job_token
-    {
-      job_token(atomic_flag& active):
-        active(active)
-      {}
-
-      bool done() const noexcept
-      {
-        return !active;
-      }
-
-      void wait() const noexcept
-      {
-        active.wait(true);
-      }
-
-    private:
-      atomic_flag& active;
-    };
   }
 
   struct alignas(details::cache_line_size) job final: details::job_base
@@ -119,6 +99,26 @@ namespace threadable
     job* ref;
   };
 
+  struct job_token
+  {
+    job_token(const details::atomic_flag& active):
+      active(active)
+    {}
+
+    bool done() const noexcept
+    {
+      return !active;
+    }
+
+    void wait() const noexcept
+    {
+      active.wait(true);
+    }
+
+  private:
+    const details::atomic_flag& active;
+  };
+
   enum class execution_policy
   {
     sequential,
@@ -140,6 +140,7 @@ namespace threadable
 
     static constexpr auto index_mask = max_nr_of_jobs - 1u;
     static constexpr job* null_job = nullptr;
+    static constexpr details::atomic_flag null_flag{false};
 
   public:
     queue(execution_policy policy = execution_policy::concurrent) noexcept:
@@ -163,10 +164,14 @@ namespace threadable
       {
         job.active.wait(true);
       }
+      quit();
+    }
 
-      // release potentially waiting threads
+    void quit() noexcept
+    {
       bottom_ = -1;
       top_ = -1;
+      // release potentially waiting threads
       bottom_.notify_all();
       top_.notify_all();
 
@@ -178,11 +183,18 @@ namespace threadable
 
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-    details::job_token push(callable_t&& func, arg_ts&&... args) noexcept
+    const job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
       assert(size() < max_nr_of_jobs);
     
       const index_t b = bottom_;
+
+      if(b == -1)
+      [[unlikely]]
+      {
+        return null_flag;
+      }
+
       auto& job = jobs_[b & index_mask];
       job.set(FWD(func), FWD(args)...);
       if(policy_ == execution_policy::sequential && b > 0)
