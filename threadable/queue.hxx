@@ -130,11 +130,12 @@ namespace threadable
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class queue
   {
+    static_assert((max_nr_of_jobs& (max_nr_of_jobs - 1)) == 0, "number of jobs must be a power of 2");
+
     using atomic_index_t = std::atomic_ptrdiff_t;
     using index_t = typename atomic_index_t::value_type;
 
-    static_assert((max_nr_of_jobs & (max_nr_of_jobs - 1)) == 0, "number of jobs must be a power of 2");
-    static constexpr auto MASK = max_nr_of_jobs - 1u;
+    static constexpr auto index_mask = max_nr_of_jobs - 1u;
     static constexpr job* null_job = nullptr;
 
   public:
@@ -168,12 +169,12 @@ namespace threadable
       assert(size() < max_nr_of_jobs);
     
       const index_t b = bottom_;
-      auto& job = jobs_[b & MASK];
+      auto& job = jobs_[b & index_mask];
       job.set(FWD(func), FWD(args)...);
       if(policy_ == execution_policy::sequential && b > 0)
       {
         const index_t prev = b-1;
-        job.child_active = &jobs_[prev & MASK].active;
+        job.child_active = &jobs_[prev & index_mask].active;
       }
       std::atomic_thread_fence(std::memory_order_release);
       bottom_ = b + 1;
@@ -192,7 +193,7 @@ namespace threadable
       if(t <= b)
       {
         // non-empty queue
-        job = &jobs_[b & MASK];
+        job = &jobs_[b & index_mask];
         if(t != b)
         {
           // there's still more than one item left in the queue
@@ -227,7 +228,7 @@ namespace threadable
 
       if(t < b)
       {
-        auto* job = &jobs_[t & MASK];
+        auto* job = &jobs_[t & index_mask];
         index_t expected = t;
         if(top_.compare_exchange_weak(expected, t+1))
         {
