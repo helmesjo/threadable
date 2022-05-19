@@ -354,7 +354,7 @@ namespace threadable
     std::vector<job> jobs_{max_nr_of_jobs};
     atomic_index_t top_{0};
     atomic_index_t bottom_{0};
-    std::atomic_size_t waiters_;
+    std::atomic_size_t waiters_{0};
   };
 }
 
