@@ -500,6 +500,7 @@ SCENARIO("queue: completion token")
       THEN("it releases after job has executed")
       {
         using clock_t = std::chrono::steady_clock;
+        const auto start = clock_t::now();
 
         auto waiterDoneTime = clock_t::now();
         std::thread waiter([&token, &waiterDoneTime]{ 
@@ -512,6 +513,11 @@ SCENARIO("queue: completion token")
         auto jobDoneTime = clock_t::now();
         waiter.join();
 
+        INFO(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(jobDoneTime - start).count(),
+          "us < ", 
+          std::chrono::duration_cast<std::chrono::nanoseconds>(waiterDoneTime - start).count(),
+          "us");
         REQUIRE(jobDoneTime <= waiterDoneTime);
       }
     }
