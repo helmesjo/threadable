@@ -8,7 +8,8 @@
 SCENARIO("pool: stress-test")
 {
   static constexpr std::size_t nr_of_jobs = 1 << 16;
-  auto pool = threadable::pool<nr_of_jobs>(std::thread::hardware_concurrency());
+  static constexpr std::size_t nr_of_threads = 4;
+  auto pool = threadable::pool<nr_of_jobs>(nr_of_threads);
   GIVEN("pool with multiple threads")
   {
     WHEN("a large amount of jobs are pushed")

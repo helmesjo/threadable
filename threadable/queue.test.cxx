@@ -512,7 +512,7 @@ SCENARIO("queue: completion token")
         auto jobDoneTime = clock_t::now();
         waiter.join();
 
-        REQUIRE(jobDoneTime < waiterDoneTime);
+        REQUIRE(jobDoneTime <= waiterDoneTime);
       }
     }
   }
