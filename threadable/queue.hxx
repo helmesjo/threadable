@@ -5,7 +5,6 @@
 #include <atomic>
 #include <cassert>
 #include <cstddef>
-#include <concepts>
 #include <thread>
 #include <vector>
 
@@ -185,12 +184,21 @@ namespace threadable
     static constexpr auto index_mask = max_nr_of_jobs - 1u;
     static constexpr job* null_job = nullptr;
     static constexpr details::atomic_flag null_flag{false};
+    static constexpr auto null_callback = [](queue&){};
 
   public:
-    queue(execution_policy policy = execution_policy::concurrent) noexcept:
+    template<std::invocable<queue&> callable_t>
+    queue(execution_policy policy, callable_t&& onJobReady) noexcept:
       policy_(policy)
     {
+      on_job_ready.set(FWD(onJobReady), std::ref(*this));
     }
+
+    queue(execution_policy policy = execution_policy::concurrent):
+      queue(policy, null_callback)
+    {    
+    }
+
     queue(queue&&) = delete;
     queue(const queue&) = delete;
     auto operator=(queue&&) = delete;
@@ -250,6 +258,8 @@ namespace threadable
       std::atomic_thread_fence(std::memory_order_release);
       bottom_ = b + 1;
       details::atomic_notify_one(bottom_);
+
+      on_job_ready();
 
       return job.active;
     }
@@ -355,6 +365,7 @@ namespace threadable
     atomic_index_t top_{0};
     atomic_index_t bottom_{0};
     std::atomic_size_t waiters_{0};
+    function<details::job_buffer_size> on_job_ready;
   };
 }
 
