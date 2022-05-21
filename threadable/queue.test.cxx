@@ -29,7 +29,7 @@ SCENARIO("queue: push, pop, steal")
   }
 
   int pushCounter = 0;
-  auto queue = threadable::queue([&pushCounter](auto&& queue){ ++pushCounter; });
+  auto queue = threadable::queue([&pushCounter](...){ ++pushCounter; });
   GIVEN("queue is empty")
   {
     THEN("size is 0")

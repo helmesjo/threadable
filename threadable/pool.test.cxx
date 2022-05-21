@@ -5,6 +5,25 @@
 #include <thread>
 #include <vector>
 
+SCENARIO("pool: create queues")
+{
+  auto threadPool = threadable::pool(1);
+  GIVEN("queue is created")
+  {
+    auto queue = threadPool.create();
+    WHEN("job is pushed")
+    {
+      int called = 0;
+      auto token = queue->push([&called]{ ++called; });
+      THEN("it gets executed")
+      {
+        token.wait();
+        REQUIRE(called == 1);
+      }
+    }
+  }
+}
+
 SCENARIO("pool: stress-test")
 {
   static constexpr std::size_t nr_of_jobs = 1 << 16;
