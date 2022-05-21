@@ -194,9 +194,15 @@ namespace threadable
       on_job_ready.set(FWD(onJobReady), std::ref(*this));
     }
 
-    queue(execution_policy policy = execution_policy::concurrent):
+    queue(execution_policy policy = execution_policy::concurrent) noexcept:
       queue(policy, null_callback)
     {    
+    }
+
+    template<std::invocable<queue&> callable_t>
+    queue(callable_t&& onJobReady) noexcept:
+      queue(execution_policy::concurrent, FWD(onJobReady))
+    {
     }
 
     queue(queue&&) = delete;

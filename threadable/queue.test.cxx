@@ -28,7 +28,8 @@ SCENARIO("queue: push, pop, steal")
     }
   }
 
-  auto queue = threadable::queue{};
+  int pushCounter = 0;
+  auto queue = threadable::queue([&pushCounter](auto&& queue){ ++pushCounter; });
   GIVEN("queue is empty")
   {
     THEN("size is 0")
@@ -92,6 +93,10 @@ SCENARIO("queue: push, pop, steal")
     {
       REQUIRE(queue.size() == 2);
       REQUIRE_FALSE(queue.empty());
+    }
+    THEN("notifier is invoked twice")
+    {
+      REQUIRE(pushCounter == 2);
     }
     WHEN("pop two jobs")
     {
