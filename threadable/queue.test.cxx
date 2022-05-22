@@ -532,24 +532,25 @@ SCENARIO("queue: completion token")
 SCENARIO("queue: stress-test")
 {
   static constexpr std::size_t nr_of_jobs = 1 << 18;
-  auto queue = threadable::queue<nr_of_jobs>();
+  std::atomic_size_t notify_counter = 0;
+  auto queue = threadable::queue<nr_of_jobs>([&notify_counter](...){ ++notify_counter; });
   GIVEN("one producer/consumer & multiple stealers")
   {
     THEN("there are no race conditions")
     {
-      std::atomic_size_t counter{0};
+      std::atomic_size_t jobs_executed{0};
       // pre-fill half
       for(std::size_t i = 0; i < nr_of_jobs/2; ++i)
       {
-        queue.push([&counter]{ ++counter; });
+        queue.push([&jobs_executed]{ ++jobs_executed; });
       }
       {
         // start pusher/popper
-        std::thread producer([&queue, &counter]{
+        std::thread producer([&queue, &jobs_executed]{
           // push remaining half
           for(std::size_t i = 0; i < nr_of_jobs/2; ++i)
           {
-            queue.push([&counter]{ ++counter; });
+            queue.push([&jobs_executed]{ ++jobs_executed; });
           }
           while(!queue.empty())
           {
@@ -577,7 +578,8 @@ SCENARIO("queue: stress-test")
         producer.join();
         std::for_each(stealers.begin(), stealers.end(), [](auto& thread) { thread.join(); });
       }
-      REQUIRE(counter.load() == nr_of_jobs);
+      REQUIRE(jobs_executed.load() == nr_of_jobs);
+      REQUIRE(notify_counter.load() == nr_of_jobs);
     }
   }
 }
