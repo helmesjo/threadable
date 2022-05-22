@@ -32,7 +32,7 @@ namespace threadable
             bool ranJob = false;
             // aquire available jobs (decrement counter)
             sem_.acquire();
-            auto queues = queues_.load(std::memory_order_acquire);
+            auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
             for(auto& queue : *queues)
             {
               if(auto job = queue->steal())
@@ -54,7 +54,7 @@ namespace threadable
     ~pool()
     {
       run_ = false;
-      for(auto& queue : *queues_.load())
+      for(auto& queue : *queues_)
       {
         queue->quit();
       }
@@ -67,14 +67,14 @@ namespace threadable
 
     auto create(execution_policy policy = threadable::execution_policy::concurrent) noexcept
     {
-      auto& oldQueues = *queues_.load();
+      auto oldQueues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
       auto newQueues = std::make_shared<queues_t>();
-      std::copy(std::cbegin(oldQueues), std::cend(oldQueues), std::back_inserter(*newQueues));
+      std::copy(std::cbegin(*oldQueues), std::cend(*oldQueues), std::back_inserter(*newQueues));
       newQueues->emplace_back(std::make_shared<queue_t>(policy, [this](...){
         // whenever a new job is pushed, release a thread (increment counter)
         sem_.release();
       }));
-      queues_.store(newQueues, std::memory_order_release);
+      std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release); 
       return newQueues->back();
     }
 
@@ -87,7 +87,7 @@ namespace threadable
 
   private:
     std::shared_ptr<queue<max_nr_of_jobs>> defaultQueue_;
-    std::atomic<std::shared_ptr<queues_t>> queues_ = std::make_shared<queues_t>();
+    std::shared_ptr<queues_t> queues_ = std::make_shared<queues_t>();
     std::counting_semaphore<max_nr_of_jobs> sem_{0};
     std::atomic_bool run_{true};
     std::vector<std::thread> threads_;
