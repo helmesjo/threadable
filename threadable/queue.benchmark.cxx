@@ -4,8 +4,39 @@
 
 #include <benchmark/benchmark.h>
 
+#include <atomic>
 #include <functional>
+#include <thread>
 #include <queue>
+
+namespace
+{
+  // just some random semi-heavy but consistent function
+  std::size_t prime_total(std::size_t ubound)
+  {
+    std::size_t total = 0;
+    std::size_t lbound = 0;
+    while (lbound <= ubound)
+    {
+      bool found = false;
+      for(std::size_t i = 2; i <= lbound/2; i++)
+      {
+        if(lbound % i == 0)
+        {
+          found = true;
+          break;
+        }
+      }
+      if (found == 0)
+      {
+        total += lbound;
+      }
+      lbound++;
+    }
+
+    return total;
+  }
+}
 
 static void threadable_function(benchmark::State& state)
 {
@@ -59,48 +90,48 @@ static void std_queue(benchmark::State& state)
   }
 }
 
-static void threadable_pool(benchmark::State& state)
+static void threadable_pool_4_threads(benchmark::State& state)
 {
-  static constexpr std::size_t nr_of_jobs = 1 << 16;
-  static constexpr std::size_t nr_of_threads = 8;
-  auto pool = threadable::pool<nr_of_jobs>(nr_of_threads);
-  std::vector<threadable::job_token> tokens;
-  tokens.reserve(nr_of_jobs);
+  static constexpr std::size_t big_val = 200;
+  static constexpr std::size_t nr_of_iterations = 4;
+  static constexpr std::size_t nr_of_threads = 4;
+
+  auto pool = threadable::pool(nr_of_threads);
+  std::queue<threadable::job_token> tokens;
 
   for (auto _ : state)
   {
-    int val = 0;
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
+    std::atomic_size_t val = 0;
+    for(std::size_t i = 0; i < nr_of_iterations; ++i)
     {
-      tokens.push_back(pool.push([&val]{ ++val; }));
+      tokens.emplace(pool.push([&val]{
+        val += prime_total(big_val);
+      }));
     }
 
-    for(const auto& token : tokens)
+    while(!tokens.empty())
     {
-      token.wait();
+      tokens.front().wait();
+      tokens.pop();
     }
 
     benchmark::DoNotOptimize(val);
   }
 }
 
-static void std_no_pool(benchmark::State& state)
+static void std_no_pool_1_thread(benchmark::State& state)
 {
-  static constexpr std::size_t nr_of_jobs = 1 << 16;
-  std::queue<std::function<void()>> queue;
+  static constexpr std::size_t big_val = 200;
+  static constexpr std::size_t nr_of_iterations = 4;
 
+  std::function<void()> job;
   for (auto _ : state)
   {
-    int val = 0;
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
+    std::size_t val = 0;
+    for(std::size_t i = 0; i < nr_of_iterations; ++i)
     {
-      queue.emplace([&val]{ ++val; });
-    }
-    while(!queue.empty())
-    {
-      auto& job = queue.front();
+      job = [&val](){ val += prime_total(big_val); };
       job();
-      queue.pop();
     }
 
     benchmark::DoNotOptimize(val);
@@ -113,7 +144,8 @@ BENCHMARK(std_function);
 BENCHMARK(threadable_queue);
 BENCHMARK(std_queue);
 
-BENCHMARK(threadable_pool);
-BENCHMARK(std_no_pool);
+BENCHMARK(threadable_pool_4_threads);
+BENCHMARK(std_no_pool_1_thread);
 
 BENCHMARK_MAIN();
+

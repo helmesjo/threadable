@@ -29,20 +29,23 @@ namespace threadable
         threads_.emplace_back([this]{
           while(run_)
           {
+            bool ranJob = false;
+            // aquire available jobs (decrement counter)
             sem_.acquire();
-            auto queues = queues_.load();
-            bool got = false;
+            auto queues = queues_.load(std::memory_order_acquire);
             for(auto& queue : *queues)
             {
               if(auto job = queue->steal())
               {
+                ranJob = true;
                 job();
-                got = true;
                 break;
               }
             }
-            if(!got)
+            if(!ranJob)
+            {
               sem_.release();
+            }
           }
         });
       }
@@ -55,7 +58,7 @@ namespace threadable
       {
         queue->quit();
       }
-      sem_.release(max_nr_of_jobs);
+      sem_.release(threads_.size());
       for(auto& thread : threads_)
       {
         thread.join();
@@ -68,9 +71,10 @@ namespace threadable
       auto newQueues = std::make_shared<queues_t>();
       std::copy(std::cbegin(oldQueues), std::cend(oldQueues), std::back_inserter(*newQueues));
       newQueues->emplace_back(std::make_shared<queue_t>(policy, [this](...){
+        // whenever a new job is pushed, release a thread (increment counter)
         sem_.release();
       }));
-      queues_.store(newQueues);
+      queues_.store(newQueues, std::memory_order_release);
       return newQueues->back();
     }
 
