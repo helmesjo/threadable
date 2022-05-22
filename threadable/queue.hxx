@@ -50,12 +50,12 @@ namespace threadable
     }
 
     template<typename atomic_t>
-    inline void atomic_notify_one(atomic_t&& atomic) noexcept
+    inline void atomic_notify_one(atomic_t&&) noexcept
     {
     }
 
     template<typename atomic_t>
-    inline void atomic_notify_all(atomic_t&& atomic) noexcept
+    inline void atomic_notify_all(atomic_t&&) noexcept
     {
     }
 #endif
