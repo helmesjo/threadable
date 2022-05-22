@@ -354,17 +354,30 @@ namespace threadable
           std::atomic_size_t& counter_;
       } waiting(waiters_);
 
-      const index_t t = top_.load(std::memory_order_acquire);
-      const index_t b = bottom_.load(std::memory_order_acquire);
+      index_t t = top_.load(std::memory_order_acquire);
+      index_t b = bottom_.load(std::memory_order_acquire);
 
-      if(t == b && b != -1)
-      UNLIKELY
+      job_ref job = steal();
+      while(!job)
       {
-        // wait until bottom changes
-        details::atomic_wait(bottom_, b);
+        if(t == b && b != -1)
+        LIKELY
+        {
+          // wait until bottom changes
+          details::atomic_wait(bottom_, b);
+        }
+        else if(b == -1)
+        UNLIKELY
+        {
+          break;
+        }
+
+        t = top_.load(std::memory_order_acquire);
+        b = bottom_.load(std::memory_order_acquire);
+        job = steal();
       }
 
-      return steal();
+      return job;
     }
 
     std::size_t size() const noexcept
