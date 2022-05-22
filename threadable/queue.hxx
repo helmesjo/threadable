@@ -118,6 +118,21 @@ namespace threadable
       ref(ref)
     {}
 
+    job_ref(const job_ref& other) = delete;
+    job_ref(job_ref&& other):
+      ref(other.ref)
+    {
+      other.ref = nullptr;
+    }
+
+    auto& operator=(const job_ref& other) = delete;
+    auto& operator=(job_ref&& other)
+    {
+      ref = other.ref;
+      other.ref = nullptr;
+      return *this;
+    }
+
     ~job_ref()
     {
       if(ref)
