@@ -245,7 +245,7 @@ namespace threadable
     {
       assert(size() < max_nr_of_jobs);
     
-      const index_t b = bottom_;
+      const index_t b = bottom_.load(std::memory_order_acquire);
 
       if(b == -1)
       UNLIKELY
@@ -261,10 +261,9 @@ namespace threadable
         const index_t prev = b-1;
         job.child_active = &jobs_[prev & index_mask].active;
       }
-      std::atomic_thread_fence(std::memory_order_release);
-      bottom_ = b + 1;
-      details::atomic_notify_one(bottom_);
 
+      bottom_.store(b + 1, std::memory_order_release);
+      details::atomic_notify_one(bottom_);
       on_job_ready();
 
       return job.active;
@@ -272,10 +271,9 @@ namespace threadable
 
     job_ref pop() noexcept
     {
-      const index_t b = bottom_ - 1;
-      bottom_ = b;
-      std::atomic_thread_fence(std::memory_order::seq_cst);
-      const index_t t = top_;
+      const index_t b = bottom_.load(std::memory_order_acquire) - 1;
+      bottom_.store(b, std::memory_order_release);
+      const index_t t = top_.load(std::memory_order_acquire);
 
       auto* job = null_job;
       if(t <= b)
@@ -302,21 +300,20 @@ namespace threadable
           // lost race against steal()
           job = null_job;
         }
-        bottom_ = t+1;
+        bottom_.store(t+1, std::memory_order_release);
       }
       else
       UNLIKELY
       {
-        bottom_ = t;
+        bottom_.store(t, std::memory_order_release);
       }
       return job;
     }
 
     job_ref steal() noexcept
     {
-      const index_t t = top_;
-      std::atomic_thread_fence(std::memory_order_release);
-      const index_t b = bottom_;
+      const index_t t = top_.load(std::memory_order_acquire);
+      const index_t b = bottom_.load(std::memory_order_acquire);
 
       if(t < b)
       LIKELY
@@ -342,13 +339,13 @@ namespace threadable
           std::atomic_size_t& counter_;
       } waiting(waiters_);
 
-      const index_t t = top_;
-      std::atomic_thread_fence(std::memory_order_release);
-      const index_t b = bottom_;
+      const index_t t = top_.load(std::memory_order_acquire);
+      const index_t b = bottom_.load(std::memory_order_acquire);
 
       if(t == b && b != -1)
       UNLIKELY
       {
+        // wait until bottom changes
         details::atomic_wait(bottom_, b);
       }
 
