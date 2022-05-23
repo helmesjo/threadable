@@ -90,11 +90,10 @@ static void std_queue(benchmark::State& state)
   }
 }
 
-static void threadable_pool_4_threads(benchmark::State& state)
+static void threadable_pool(benchmark::State& state, std::size_t nr_of_threads)
 {
   static constexpr std::size_t big_val = 200;
   static constexpr std::size_t nr_of_iterations = 16;
-  static constexpr std::size_t nr_of_threads = 4;
 
   auto pool = threadable::pool(nr_of_threads);
   std::queue<threadable::job_token> tokens;
@@ -119,7 +118,7 @@ static void threadable_pool_4_threads(benchmark::State& state)
   }
 }
 
-static void std_no_pool_1_thread(benchmark::State& state)
+static void std_no_pool(benchmark::State& state)
 {
   static constexpr std::size_t big_val = 200;
   static constexpr std::size_t nr_of_iterations = 16;
@@ -144,8 +143,10 @@ BENCHMARK(std_function);
 BENCHMARK(threadable_queue);
 BENCHMARK(std_queue);
 
-BENCHMARK(threadable_pool_4_threads);
-BENCHMARK(std_no_pool_1_thread);
+BENCHMARK_CAPTURE(threadable_pool, threads: 1, 1);
+BENCHMARK_CAPTURE(threadable_pool, threads: 2, 2);
+BENCHMARK_CAPTURE(threadable_pool, threads: 4, 4);
+BENCHMARK(std_no_pool);
 
 BENCHMARK_MAIN();
 
