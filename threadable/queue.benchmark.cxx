@@ -93,7 +93,7 @@ static void std_queue(benchmark::State& state)
 static void threadable_pool_4_threads(benchmark::State& state)
 {
   static constexpr std::size_t big_val = 200;
-  static constexpr std::size_t nr_of_iterations = 4;
+  static constexpr std::size_t nr_of_iterations = 16;
   static constexpr std::size_t nr_of_threads = 4;
 
   auto pool = threadable::pool(nr_of_threads);
@@ -122,7 +122,7 @@ static void threadable_pool_4_threads(benchmark::State& state)
 static void std_no_pool_1_thread(benchmark::State& state)
 {
   static constexpr std::size_t big_val = 200;
-  static constexpr std::size_t nr_of_iterations = 4;
+  static constexpr std::size_t nr_of_iterations = 16;
 
   std::function<void()> job;
   for (auto _ : state)
