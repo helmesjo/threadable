@@ -9,6 +9,7 @@
 #include <memory>
 #include <new>
 #include <type_traits>
+#include <version>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
