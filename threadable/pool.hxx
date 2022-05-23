@@ -1,5 +1,6 @@
 #pragma once
 
+#include <threadable/atomic_wait.hxx>
 #include <threadable/queue.hxx>
 
 #include <atomic>
@@ -38,7 +39,7 @@ namespace threadable
               old = readyCount_.load(std::memory_order_acquire);
               if(old == 0)
               {
-                readyCount_.wait(old);
+                details::atomic_wait(readyCount_, old);
               }
             }
             while(old == 0 || !readyCount_.compare_exchange_weak(old, old-1, std::memory_order_release));
@@ -57,7 +58,7 @@ namespace threadable
             {
               // if we never ran a job, we need to reverse our decrement
               readyCount_.fetch_add(1, std::memory_order_release);
-              readyCount_.notify_one();
+              details::atomic_notify_one(readyCount_);
             }
           }
         });
@@ -74,7 +75,7 @@ namespace threadable
 
       // release all waiting threads
       readyCount_.fetch_add(threads_.size(), std::memory_order_release);
-      readyCount_.notify_all();
+      details::atomic_notify_all(readyCount_);
       for(auto& thread : threads_)
       {
         thread.join();
@@ -90,7 +91,7 @@ namespace threadable
       newQueues->emplace_back(std::make_shared<queue_t>(policy, [this](...){
         // whenever a new job is pushed, release a thread (increment counter)
         readyCount_.fetch_add(1, std::memory_order_release);
-        readyCount_.notify_one();
+        details::atomic_notify_one(readyCount_);
       }));
       std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release); 
       return newQueues->back();

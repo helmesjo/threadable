@@ -1,6 +1,7 @@
 #pragma once
 
 #include <threadable/function.hxx>
+#include <threadable/atomic_wait.hxx>
 
 #include <atomic>
 #include <cassert>
@@ -23,42 +24,6 @@ namespace threadable
   namespace details
   {
     using atomic_flag = std::atomic_bool;
-
-#if __cpp_lib_atomic_wait >= 201907 && !defined(__APPLE__)
-    template<typename atomic_t, typename obj_t>
-    inline void atomic_wait(atomic_t&& atomic, obj_t&& old) noexcept
-    {
-      FWD(atomic).wait(FWD(old));
-    }
-
-    template<typename atomic_t>
-    inline void atomic_notify_one(atomic_t&& atomic) noexcept
-    {
-      FWD(atomic).notify_one();
-    }
-
-    template<typename atomic_t>
-    inline void atomic_notify_all(atomic_t&& atomic) noexcept
-    {
-      FWD(atomic).notify_all();
-    }
-#else
-    template<typename atomic_t, typename obj_t>
-    inline void atomic_wait(atomic_t&& atomic, obj_t&& old) noexcept
-    {
-      while(FWD(atomic).load() == old);
-    }
-
-    template<typename atomic_t>
-    inline void atomic_notify_one(atomic_t&&) noexcept
-    {
-    }
-
-    template<typename atomic_t>
-    inline void atomic_notify_all(atomic_t&&) noexcept
-    {
-    }
-#endif
 
     struct job_base
     {
