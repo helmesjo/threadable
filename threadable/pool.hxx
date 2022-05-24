@@ -84,10 +84,8 @@ namespace threadable
 
     auto create(execution_policy policy = threadable::execution_policy::concurrent) noexcept
     {
-      // make a new list of queues, copy from old list & append new queue, then atomically swap
-      auto oldQueues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
-      auto newQueues = std::make_shared<queues_t>();
-      std::copy(std::cbegin(*oldQueues), std::cend(*oldQueues), std::back_inserter(*newQueues));
+      // create copy of queues & append queue, then atomically swap
+      auto newQueues = copy_queues();
       newQueues->emplace_back(std::make_shared<queue_t>(policy, [this](...){
         // whenever a new job is pushed, release a thread (increment counter)
         readyCount_.fetch_add(1, std::memory_order_release);
@@ -97,6 +95,22 @@ namespace threadable
       return newQueues->back();
     }
 
+    bool remove(queue<max_nr_of_jobs>& q) noexcept
+    {
+      // create copy of queues & remove queue, then atomically swap
+      auto newQueues = copy_queues();
+      if(std::erase_if(*newQueues, [&q](const auto& q2){ return q2.get() == &q; }) > 0)
+      {
+        std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
+        q.set_notify(nullptr);
+        return true;
+      }
+      else
+      {
+        return false;
+      }
+    }
+
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
     decltype(auto) push(callable_t&& func, arg_ts&&... args) noexcept
@@ -104,7 +118,22 @@ namespace threadable
       return defaultQueue_->push(FWD(func), FWD(args)...);
     }
 
+    std::size_t size() const noexcept
+    {
+      return readyCount_;
+    }
+
   private:
+
+    auto copy_queues() noexcept
+    {
+      // make a new list of queues, copy from old list
+      auto oldQueues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
+      auto newQueues = std::make_shared<queues_t>();
+      std::copy(std::cbegin(*oldQueues), std::cend(*oldQueues), std::back_inserter(*newQueues));
+      return newQueues;
+    }
+
     std::atomic_bool run_{true};
     std::atomic_size_t readyCount_{0};
     std::shared_ptr<queue<max_nr_of_jobs>> defaultQueue_;

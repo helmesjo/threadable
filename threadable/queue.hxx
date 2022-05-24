@@ -171,7 +171,7 @@ namespace threadable
     queue(execution_policy policy, callable_t&& onJobReady) noexcept:
       policy_(policy)
     {
-      on_job_ready.set(FWD(onJobReady), std::ref(*this));
+      set_notify(FWD(onJobReady));
     }
 
     queue(execution_policy policy = execution_policy::concurrent) noexcept:
@@ -217,6 +217,17 @@ namespace threadable
       {
         std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
       }
+    }
+
+    template<std::invocable<queue&> callable_t>
+    void set_notify(callable_t&& onJobReady) noexcept
+    {
+      on_job_ready.set(FWD(onJobReady), std::ref(*this));
+    }
+
+    void set_notify(std::nullptr_t) noexcept
+    {
+      on_job_ready.set(null_callback, std::ref(*this));
     }
 
     template<typename callable_t, typename... arg_ts>

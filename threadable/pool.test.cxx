@@ -5,20 +5,33 @@
 #include <thread>
 #include <vector>
 
-SCENARIO("pool: create queues")
+SCENARIO("pool: create/remove queues")
 {
   auto threadPool = threadable::pool(1);
   GIVEN("queue is created")
   {
     auto queue = threadPool.create();
+    int called = 0;
     WHEN("job is pushed")
     {
-      int called = 0;
       auto token = queue->push([&called]{ ++called; });
       THEN("it gets executed")
       {
         token.wait();
         REQUIRE(called == 1);
+      }
+    }
+    WHEN("queue is removed")
+    {
+      REQUIRE(threadPool.remove(*queue));
+      AND_WHEN("job is pushed")
+      {
+        (void)queue->push([&called]{ ++called; });
+        THEN("it is not executed")
+        {
+          REQUIRE(threadPool.size() == 0);
+          REQUIRE(called == 0);
+        }
       }
     }
   }
