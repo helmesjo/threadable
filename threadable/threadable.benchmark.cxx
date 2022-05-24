@@ -90,11 +90,8 @@ static void std_queue(benchmark::State& state)
   }
 }
 
-static void threadable_pool(benchmark::State& state, std::size_t nr_of_threads)
+static void threadable_pool(benchmark::State& state, std::size_t big_val, std::size_t nr_of_iterations, std::size_t nr_of_threads)
 {
-  static constexpr std::size_t big_val = 200;
-  static constexpr std::size_t nr_of_iterations = 16;
-
   auto pool = threadable::pool(nr_of_threads);
   std::queue<threadable::job_token> tokens;
 
@@ -103,7 +100,7 @@ static void threadable_pool(benchmark::State& state, std::size_t nr_of_threads)
     std::atomic_size_t val = 0;
     for(std::size_t i = 0; i < nr_of_iterations; ++i)
     {
-      tokens.emplace(pool.push([&val]{
+      tokens.emplace(pool.push([&val, &big_val]{
         val += prime_total(big_val);
       }));
     }
@@ -118,18 +115,15 @@ static void threadable_pool(benchmark::State& state, std::size_t nr_of_threads)
   }
 }
 
-static void std_no_pool(benchmark::State& state)
+static void std_no_pool(benchmark::State& state, std::size_t big_val, std::size_t nr_of_iterations)
 {
-  static constexpr std::size_t big_val = 200;
-  static constexpr std::size_t nr_of_iterations = 16;
-
   std::function<void()> job;
   for (auto _ : state)
   {
     std::size_t val = 0;
     for(std::size_t i = 0; i < nr_of_iterations; ++i)
     {
-      job = [&val](){ val += prime_total(big_val); };
+      job = [&val, &big_val](){ val += prime_total(big_val); };
       job();
     }
 
@@ -143,10 +137,12 @@ BENCHMARK(std_function);
 BENCHMARK(threadable_queue);
 BENCHMARK(std_queue);
 
-BENCHMARK_CAPTURE(threadable_pool, threads: 1, 1);
-BENCHMARK_CAPTURE(threadable_pool, threads: 2, 2);
-BENCHMARK_CAPTURE(threadable_pool, threads: 4, 4);
-BENCHMARK(std_no_pool);
+static constexpr std::size_t big_val = 200;
+static constexpr std::size_t nr_of_iterations = 16;
+BENCHMARK_CAPTURE(threadable_pool, threads: 1, big_val, nr_of_iterations, 1);
+BENCHMARK_CAPTURE(threadable_pool, threads: 2, big_val, nr_of_iterations, 2);
+BENCHMARK_CAPTURE(threadable_pool, threads: 4, big_val, nr_of_iterations, 4);
+BENCHMARK_CAPTURE(std_no_pool, threads: 1,big_val, nr_of_iterations);
 
 BENCHMARK_MAIN();
 
