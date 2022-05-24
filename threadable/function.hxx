@@ -1,7 +1,8 @@
 #pragma once
 
+#include <threadable/std_concepts.hxx>
+
 #include <array>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -12,25 +13,6 @@
 #include <version>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
-
-// Workarounds for unimplemented concepts & type traits (specifically with libc++)
-// NOTE: Intentionally placed in 'std' to be easily removed when no longer needed
-//       since below definitions aren't as conforming as std equivalents).
-#if defined(__clang__) && defined(_LIBCPP_VERSION) // libc++
-
-namespace std
-{
-#if (__clang_major__ <= 13 && (defined(__APPLE__) || defined(__EMSCRIPTEN__))) || __clang_major__ < 13
-  // Credit: https://en.cppreference.com
-  template<class F, class... Args>
-  concept invocable =
-    requires(F&& f, Args&&... args) {
-      std::invoke(std::forward<F>(f), std::forward<Args>(args)...);
-      /* not required to be equality preserving */
-    };
-#endif
-}
-#endif
 
 namespace threadable
 {

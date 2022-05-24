@@ -1,7 +1,7 @@
 #pragma once
 
 #include <threadable/function.hxx>
-#include <threadable/atomic_wait.hxx>
+#include <threadable/std_atomic_wait.hxx>
 
 #include <atomic>
 #include <cassert>

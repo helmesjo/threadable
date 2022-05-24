@@ -1,14 +1,12 @@
 #pragma once
 
-#include <thread>
-#include <utility>
 #include <version>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
+#if __cpp_lib_atomic_wait >= 201907 && !defined(__APPLE__) // apple-clang defines it without supplying the functions
 namespace threadable::details
 {
-#if __cpp_lib_atomic_wait >= 201907 && !defined(__APPLE__)
   template<typename atomic_t, typename obj_t>
   inline void atomic_wait(atomic_t& atomic, obj_t&& old) noexcept
   {
@@ -26,7 +24,13 @@ namespace threadable::details
   {
     atomic.notify_all();
   }
+}
 #else
+#include <thread>
+#include <utility>
+
+namespace threadable::details
+{
   template<typename atomic_t, typename obj_t>
   inline void atomic_wait(atomic_t& atomic, obj_t&& old) noexcept
   {
@@ -42,7 +46,7 @@ namespace threadable::details
   inline void atomic_notify_all(atomic_t&) noexcept
   {
   }
-#endif
 }
+#endif
 
 #undef FWD

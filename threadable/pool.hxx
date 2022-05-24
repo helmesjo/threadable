@@ -1,10 +1,10 @@
 #pragma once
 
-#include <threadable/atomic_wait.hxx>
 #include <threadable/queue.hxx>
+#include <threadable/std_atomic_wait.hxx>
+#include <threadable/std_concepts.hxx>
 
 #include <atomic>
-#include <concepts>
 #include <cstddef>
 #include <iterator>
 #include <thread>
