@@ -2,41 +2,12 @@
 #include <threadable/pool.hxx>
 #include <threadable/queue.hxx>
 
+#include <threadable/threadable.benchmark.util.hxx>
 #include <benchmark/benchmark.h>
 
-#include <atomic>
 #include <functional>
-#include <thread>
 #include <queue>
-
-namespace
-{
-  // just some random semi-heavy but consistent function
-  std::size_t prime_total(std::size_t ubound)
-  {
-    std::size_t total = 0;
-    std::size_t lbound = 0;
-    while (lbound <= ubound)
-    {
-      bool found = false;
-      for(std::size_t i = 2; i <= lbound/2; i++)
-      {
-        if(lbound % i == 0)
-        {
-          found = true;
-          break;
-        }
-      }
-      if (found == 0)
-      {
-        total += lbound;
-      }
-      lbound++;
-    }
-
-    return total;
-  }
-}
+#include <vector>
 
 static void threadable_function(benchmark::State& state)
 {
@@ -44,11 +15,12 @@ static void threadable_function(benchmark::State& state)
   threadable_func_t func;
   for (auto _ : state)
   {
-    int val = 0;
-    func = [&val]{ ++val; };
+    func = [val = 0]() mutable {
+      benchmark::DoNotOptimize(threadable::benchmark::do_work(val));
+    };
     func();
-    benchmark::DoNotOptimize(val);
   }
+  state.SetItemsProcessed(state.iterations());
 }
 
 static void std_function(benchmark::State& state)
@@ -56,11 +28,12 @@ static void std_function(benchmark::State& state)
   std::function<void()> func;
   for (auto _ : state)
   {
-    int val = 0;
-    func = [&val]{ ++val; };
+    func = [val = 0]() mutable {
+      benchmark::DoNotOptimize(threadable::benchmark::do_work(val));
+    };
     func();
-    benchmark::DoNotOptimize(val);
   }
+  state.SetItemsProcessed(state.iterations());
 }
 
 static void threadable_queue(benchmark::State& state)
@@ -68,67 +41,83 @@ static void threadable_queue(benchmark::State& state)
   threadable::queue queue;
   for (auto _ : state)
   {
-    int val = 0;
-    queue.push([&val]{ ++val; });
-    auto job = queue.pop();
+    queue.push([val = 0]() mutable {
+      benchmark::DoNotOptimize(threadable::benchmark::do_work(val));
+    });
+    auto job = queue.steal();
     job();
-    benchmark::DoNotOptimize(val);
   }
+  state.SetItemsProcessed(state.iterations());
 }
 
 static void std_queue(benchmark::State& state)
 {
   std::queue<std::function<void()>> queue;
+
   for (auto _ : state)
   {
-    int val = 0;
-    queue.emplace([&val]{ ++val; });
+    queue.emplace([val = 0]() mutable {
+      benchmark::DoNotOptimize(threadable::benchmark::do_work(val));
+    });
     auto& job = queue.front();
     job();
     queue.pop();
-    benchmark::DoNotOptimize(val);
   }
+  state.SetItemsProcessed(state.iterations());
 }
 
-static void threadable_pool(benchmark::State& state, std::size_t big_val, std::size_t nr_of_iterations, std::size_t nr_of_threads)
+static void threadable_pool(benchmark::State& state, std::size_t nr_of_threads)
 {
   auto pool = threadable::pool(nr_of_threads);
-  std::queue<threadable::job_token> tokens;
+  std::vector<threadable::job_token> tokens;
+  tokens.reserve(state.range(0));
 
   for (auto _ : state)
   {
-    std::atomic_size_t val = 0;
-    for(std::size_t i = 0; i < nr_of_iterations; ++i)
+    for(std::int64_t i = 0; i < state.range(0); ++i)
     {
-      tokens.emplace(pool.push([&val, &big_val]{
-        val += prime_total(big_val);
+      tokens.emplace_back(pool.push([val = 0]() mutable {
+        benchmark::DoNotOptimize(threadable::benchmark::do_work(val));
       }));
     }
 
-    while(!tokens.empty())
+    for(const auto& token : tokens)
     {
-      tokens.front().wait();
-      tokens.pop();
+      token.wait();
     }
 
-    benchmark::DoNotOptimize(val);
+    state.PauseTiming();
+    tokens.clear();
+    state.ResumeTiming();
   }
+  
+  state.SetItemsProcessed(state.range(0) * state.iterations());
 }
 
-static void std_no_pool(benchmark::State& state, std::size_t big_val, std::size_t nr_of_iterations)
+static void std_no_pool(benchmark::State& state)
 {
-  std::function<void()> job;
+  std::vector<std::function<void()>> queue;
+  queue.reserve(state.range(0));
+
   for (auto _ : state)
   {
-    std::size_t val = 0;
-    for(std::size_t i = 0; i < nr_of_iterations; ++i)
+    for(std::int64_t i = 0; i < state.range(0); ++i)
     {
-      job = [&val, &big_val](){ val += prime_total(big_val); };
+      queue.emplace_back([val = 0]() mutable {
+        benchmark::DoNotOptimize(threadable::benchmark::do_work(val));
+      });
+    }
+
+    for(auto& job : queue)
+    {
       job();
     }
 
-    benchmark::DoNotOptimize(val);
+    state.PauseTiming();
+    queue.clear();
+    state.ResumeTiming();
   }
+  state.SetItemsProcessed(state.range(0) * state.iterations());
 }
 
 BENCHMARK(threadable_function);
@@ -137,12 +126,11 @@ BENCHMARK(std_function);
 BENCHMARK(threadable_queue);
 BENCHMARK(std_queue);
 
-static constexpr std::size_t big_val = 200;
-static constexpr std::size_t nr_of_iterations = 16;
-BENCHMARK_CAPTURE(threadable_pool, threads: 1, big_val, nr_of_iterations, 1);
-BENCHMARK_CAPTURE(threadable_pool, threads: 2, big_val, nr_of_iterations, 2);
-BENCHMARK_CAPTURE(threadable_pool, threads: 4, big_val, nr_of_iterations, 4);
-BENCHMARK_CAPTURE(std_no_pool, threads: 1,big_val, nr_of_iterations);
+static constexpr std::size_t jobs_per_iteration = 1024;
+BENCHMARK_CAPTURE(threadable_pool, threads: 1, 1)->Arg(jobs_per_iteration);
+BENCHMARK_CAPTURE(threadable_pool, threads: 2, 2)->Arg(jobs_per_iteration);
+BENCHMARK_CAPTURE(threadable_pool, threads: 3, 3)->Arg(jobs_per_iteration);
+BENCHMARK(std_no_pool)->Arg(jobs_per_iteration);
 
 BENCHMARK_MAIN();
 
