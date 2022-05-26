@@ -5,7 +5,7 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-#if defined(__cpp_lib_atomic_flag_test)
+#if __cpp_lib_atomic_flag_test >= 201907
 namespace threadable::details
 {
   using atomic_flag = std::atomic_flag;
