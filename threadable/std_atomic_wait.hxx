@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <utility>
 #include <version>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
