@@ -5,7 +5,7 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-#if __cpp_lib_atomic_flag_test >= 201907
+#if 0// __cpp_lib_atomic_flag_test >= 201907 // a bunch of compilers define this without supporting it.
 namespace threadable::details
 {
   using atomic_flag = std::atomic_flag;
@@ -74,11 +74,6 @@ namespace threadable::details
 
 namespace threadable::details
 {
-  inline void atomic_wait(const std::atomic_flag& atomic, bool old) noexcept
-  {
-    while(atomic.test() == old){ std::this_thread::yield(); }
-  }
-
   template<typename T, typename obj_t>
   inline void atomic_wait(const std::atomic<T>& atomic, obj_t old) noexcept
   {
