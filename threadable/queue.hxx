@@ -46,13 +46,13 @@ namespace threadable
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
       this->func.set(FWD(func), FWD(args)...);
-      active = true;
+      active.store(true, std::memory_order_release);
     }
 
     void reset() noexcept
     {
       child_active = nullptr;
-      active = false;
+      active.store(false, std::memory_order_release);
       details::atomic_notify_all(active);
     }
 
@@ -207,8 +207,8 @@ namespace threadable
 
     void quit() noexcept
     {
-      bottom_ = -1;
-      top_ = -1;
+      bottom_.store(-1, std::memory_order_release);
+      top_.store(-1, std::memory_order_release);
       // release potentially waiting threads
       details::atomic_notify_all(bottom_);
       details::atomic_notify_all(top_);
