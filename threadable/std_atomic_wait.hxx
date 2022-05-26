@@ -1,8 +1,51 @@
 #pragma once
 
+#include <atomic>
 #include <version>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
+
+#if defined(__cpp_lib_atomic_flag_test)
+namespace threadable::details
+{
+  using atomic_flag = std::atomic_flag;
+
+  inline auto atomic_test(const atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  {
+    return atomic.test(order);
+  }
+
+  inline auto atomic_test_and_set(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  {
+    return atomic.test_and_set(order);
+  }
+
+  inline auto atomic_clear(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  {
+    return atomic.clear(order);
+  }
+}
+#else
+namespace threadable::details
+{
+  using atomic_flag = std::atomic_bool;
+
+  inline auto atomic_test(const atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  {
+    return atomic.load(order);
+  }
+
+  inline auto atomic_test_and_set(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  {
+    return atomic.store(true, order);
+  }
+
+  inline auto atomic_clear(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  {
+    return atomic.store(false, order);
+  }
+}
+#endif
 
 #if __cpp_lib_atomic_wait >= 201907 && !defined(__APPLE__) // apple-clang defines it without supplying the functions
 namespace threadable::details

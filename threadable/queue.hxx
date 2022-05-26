@@ -24,8 +24,6 @@ namespace threadable
 {
   namespace details
   {
-    using atomic_flag = std::atomic_flag;
-
     struct job_base
     {
       atomic_flag active;
@@ -47,13 +45,13 @@ namespace threadable
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
       this->func.set(FWD(func), FWD(args)...);
-      active.test_and_set(std::memory_order_release);
+      details::atomic_test_and_set(active, std::memory_order_release);
     }
 
     void reset() noexcept
     {
       child_active = nullptr;
-      active.clear(std::memory_order_release);
+      details::atomic_clear(active, std::memory_order_release);
       details::atomic_notify_all(active);
     }
 
@@ -70,7 +68,7 @@ namespace threadable
 
     operator bool() const noexcept
     {
-      return active.test(std::memory_order_acquire);
+      return details::atomic_test(active, std::memory_order_acquire);
     }
 
   private:
@@ -131,7 +129,7 @@ namespace threadable
 
     bool done() const noexcept
     {
-      return !active.test(std::memory_order_acquire);
+      return !details::atomic_test(active, std::memory_order_acquire);
     }
 
     void wait() const noexcept
@@ -163,7 +161,6 @@ namespace threadable
     using index_t = typename atomic_index_t::value_type;
 
     static constexpr auto index_mask = max_nr_of_jobs - 1u;
-    static constexpr details::atomic_flag null_flag{false};
     static constexpr job* null_job = nullptr;
     static constexpr auto null_callback = [](queue&){};
 
@@ -172,6 +169,7 @@ namespace threadable
     queue(execution_policy policy, callable_t&& onJobReady) noexcept:
       policy_(policy)
     {
+      details::atomic_clear(quit_);
       set_notify(FWD(onJobReady));
     }
 
@@ -202,7 +200,7 @@ namespace threadable
 
     void quit() noexcept
     {
-      quit_.test_and_set(std::memory_order_seq_cst);
+      details::atomic_test_and_set(quit_, std::memory_order_seq_cst);
       details::atomic_notify_all(quit_);
 
       while(waiters_ > 0)
@@ -344,7 +342,7 @@ namespace threadable
         const index_t t = top_.load(std::memory_order_acquire);
         const index_t b = bottom_.load(std::memory_order_acquire);
 
-        if(const auto quit = quit_.test(std::memory_order_acquire); !quit && t == b)
+        if(const auto quit = details::atomic_test(quit_, std::memory_order_acquire); !quit && t == b)
         LIKELY
         {
           // wait until bottom changes
@@ -385,7 +383,7 @@ namespace threadable
     atomic_index_t bottom_{std::numeric_limits<index_t>::max()};
     execution_policy policy_ = execution_policy::concurrent;
     function<details::job_buffer_size> on_job_ready;
-    std::atomic_flag quit_;
+    details::atomic_flag quit_;
     std::vector<job> jobs_{max_nr_of_jobs};
     std::atomic_size_t waiters_{0};
   };

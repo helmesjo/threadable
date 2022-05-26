@@ -1,5 +1,6 @@
 #pragma once
 
+#include "std_atomic_wait.hxx"
 #include <threadable/queue.hxx>
 #include <threadable/std_atomic_wait.hxx>
 #include <threadable/std_concepts.hxx>
@@ -29,19 +30,20 @@ namespace threadable
 
     pool(std::size_t threads) noexcept
     {
+      details::atomic_clear(quit_);
       defaultQueue_ = create();
 
       for(std::size_t i = 0; i < threads; ++i)
       {
         threads_.emplace_back([this, i]{
           auto prevCount = readyCount_.load(std::memory_order_acquire);
-          while(!quit_.test(std::memory_order_relaxed))
+          while(!details::atomic_test(quit_, std::memory_order_relaxed))
           {
             // claim job as soon as it becomes available, and wait in the meantime
             details::atomic_wait(readyCount_, 0);
             while(prevCount == 0 || !readyCount_.compare_exchange_weak(prevCount, prevCount-1))
             {
-              if(quit_.test(std::memory_order_acquire))
+              if(details::atomic_test(quit_, std::memory_order_relaxed))
               UNLIKELY
               {
                 return;
@@ -56,7 +58,7 @@ namespace threadable
 
             auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
             // now we have reserved one job, so run until we acqire it.
-            while(!quit_.test(std::memory_order_relaxed))
+            while(!details::atomic_test(quit_, std::memory_order_relaxed))
             LIKELY
             {
               for(auto& queue : *queues)
@@ -76,7 +78,7 @@ namespace threadable
 
     ~pool()
     {
-      quit_.test_and_set(std::memory_order_seq_cst);
+      details::atomic_test_and_set(quit_, std::memory_order_seq_cst);
       // release all waiting threads
       readyCount_.fetch_add(threads_.size(), std::memory_order_release);
       details::atomic_notify_all(readyCount_);
@@ -154,7 +156,7 @@ namespace threadable
       return newQueues;
     }
 
-    std::atomic_flag quit_;
+    details::atomic_flag quit_;
     std::atomic_size_t readyCount_{0};
     std::shared_ptr<queue<max_nr_of_jobs>> defaultQueue_;
     std::shared_ptr<queues_t> queues_ = std::make_shared<queues_t>();
