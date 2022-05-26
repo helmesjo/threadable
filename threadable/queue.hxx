@@ -206,7 +206,10 @@ namespace threadable
       while(waiters_ > 0)
       {
         // push dummy jobs to release any waiting threads
-        (void)push([]{});
+        if(empty())
+        {
+          (void)push([]{});
+        }
         std::this_thread::yield();
       }
       // pop & discard (reset) remaining jobs
