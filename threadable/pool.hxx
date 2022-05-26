@@ -6,19 +6,26 @@
 
 #include <atomic>
 #include <cstddef>
-#include <iterator>
 #include <thread>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
+
+#if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely)
+#define LIKELY [[likely]]
+#define UNLIKELY [[unlikely]]
+#else
+#define LIKELY
+#define UNLIKELY
+#endif
 
 namespace threadable
 {
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class pool
   {
+  public:
     using queue_t = queue<max_nr_of_jobs>;
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
-  public:
 
     pool(std::size_t threads) noexcept
     {
@@ -26,39 +33,41 @@ namespace threadable
 
       for(std::size_t i = 0; i < threads; ++i)
       {
-        threads_.emplace_back([this]{
-          while(run_)
+        threads_.emplace_back([this, i]{
+          auto prevCount = readyCount_.load(std::memory_order_acquire);
+          while(!quit_.test(std::memory_order_relaxed))
           {
-            bool ranJob = false;
-
-            std::size_t old;
-
-            // claim job as soon as it becomes available
-            do
+            // claim job as soon as it becomes available, and wait in the meantime
+            details::atomic_wait(readyCount_, 0);
+            while(prevCount == 0 || !readyCount_.compare_exchange_weak(prevCount, prevCount-1))
             {
-              old = readyCount_.load(std::memory_order_acquire);
-              if(old == 0)
+              if(quit_.test(std::memory_order_acquire))
+              UNLIKELY
               {
-                details::atomic_wait(readyCount_, old);
+                return;
+              }
+              else if(prevCount == 0)
+              LIKELY
+              {
+                details::atomic_wait(readyCount_, 0);
+                prevCount = readyCount_.load(std::memory_order_acquire);
               }
             }
-            while(old == 0 || !readyCount_.compare_exchange_weak(old, old-1, std::memory_order_release));
 
             auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
-            for(auto& queue : *queues)
+            // now we have reserved one job, so run until we acqire it.
+            while(!quit_.test(std::memory_order_relaxed))
+            LIKELY
             {
-              if(auto job = queue->steal())
+              for(auto& queue : *queues)
               {
-                ranJob = true;
-                job();
-                break;
+                if(auto job = queue->steal())
+                LIKELY
+                {
+                  job();
+                  break;
+                }
               }
-            }
-            if(!ranJob)
-            {
-              // if we never ran a job, we need to reverse our decrement
-              readyCount_.fetch_add(1, std::memory_order_release);
-              details::atomic_notify_one(readyCount_);
             }
           }
         });
@@ -67,18 +76,18 @@ namespace threadable
 
     ~pool()
     {
-      run_ = false;
-      for(auto& queue : *queues_)
-      {
-        queue->quit();
-      }
-
+      quit_.test_and_set(std::memory_order_seq_cst);
       // release all waiting threads
       readyCount_.fetch_add(threads_.size(), std::memory_order_release);
       details::atomic_notify_all(readyCount_);
       for(auto& thread : threads_)
       {
         thread.join();
+      }
+
+      for(auto& queue : *queues_)
+      {
+        queue->quit();
       }
     }
 
@@ -95,7 +104,17 @@ namespace threadable
       return newQueues->back();
     }
 
-    bool remove(queue<max_nr_of_jobs>& q) noexcept
+    void add(std::shared_ptr<queue_t> q)
+    {
+      // create copy of queues & append queue, then atomically swap
+      auto newQueues = copy_queues();
+      const auto newJobs = q->size();
+      newQueues->emplace_back(std::move(q));
+      std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
+      readyCount_.fetch_add(newJobs, std::memory_order_release);
+    }
+
+    bool remove(queue_t& q) noexcept
     {
       // create copy of queues & remove queue, then atomically swap
       auto newQueues = copy_queues();
@@ -120,7 +139,7 @@ namespace threadable
 
     std::size_t size() const noexcept
     {
-      return readyCount_;
+      return readyCount_.load(std::memory_order_acquire);
     }
 
   private:
@@ -134,7 +153,7 @@ namespace threadable
       return newQueues;
     }
 
-    std::atomic_bool run_{true};
+    std::atomic_flag quit_;
     std::atomic_size_t readyCount_{0};
     std::shared_ptr<queue<max_nr_of_jobs>> defaultQueue_;
     std::shared_ptr<queues_t> queues_ = std::make_shared<queues_t>();
@@ -143,3 +162,5 @@ namespace threadable
 }
 
 #undef FWD
+#undef LIKELY
+#undef UNLIKELY
