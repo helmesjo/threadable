@@ -4,5 +4,6 @@
 
 namespace threadable::benchmark
 {
-  THREADABLE_SYMEXPORT int do_work(int& val);
+  THREADABLE_SYMEXPORT int do_trivial_work(int& val);
+  THREADABLE_SYMEXPORT int do_non_trivial_work(int& val);
 }
