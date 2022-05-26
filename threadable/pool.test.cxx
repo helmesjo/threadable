@@ -7,10 +7,10 @@
 
 SCENARIO("pool: create/remove queues")
 {
-  auto threadPool = threadable::pool(1);
+  auto pool = threadable::pool(1);
   GIVEN("queue is created")
   {
-    auto queue = threadPool.create();
+    auto queue = pool.create();
     int called = 0;
     WHEN("job is pushed")
     {
@@ -21,17 +21,37 @@ SCENARIO("pool: create/remove queues")
         REQUIRE(called == 1);
       }
     }
-    WHEN("queue is removed")
+    THEN("queue can be removed")
     {
-      REQUIRE(threadPool.remove(*queue));
+      REQUIRE(pool.remove(*queue));
+    }
+  }
+  GIVEN("queue is pre-created")
+  {
+    auto queue = std::make_shared<decltype(pool)::queue_t>();
+    WHEN("added to pool")
+    {
+      int called = 0;
+      auto token = queue->push([&called]{ ++called; });
+      pool.add(queue);
+      token.wait();
+      THEN("existing jobs are executed")
+      {
+        REQUIRE(called == 1);
+      }
+      called = 0; 
       AND_WHEN("job is pushed")
       {
-        (void)queue->push([&called]{ ++called; });
-        THEN("it is not executed")
+        auto token2 = queue->push([&called]{ ++called; });
+        THEN("it gets executed")
         {
-          REQUIRE(threadPool.size() == 0);
-          REQUIRE(called == 0);
+          token2.wait();
+          REQUIRE(called == 1);
         }
+      }
+      THEN("queue can be removed")
+      {
+        REQUIRE(pool.remove(*queue));
       }
     }
   }

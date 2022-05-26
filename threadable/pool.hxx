@@ -112,6 +112,7 @@ namespace threadable
       newQueues->emplace_back(std::move(q));
       std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
       readyCount_.fetch_add(newJobs, std::memory_order_release);
+      details::atomic_notify_all(readyCount_);
     }
 
     bool remove(queue_t& q) noexcept
