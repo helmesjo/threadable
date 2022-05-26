@@ -51,7 +51,7 @@ namespace threadable::details
 namespace threadable::details
 {
   template<typename atomic_t, typename obj_t>
-  inline void atomic_wait(atomic_t& atomic, obj_t&& old) noexcept
+  inline void atomic_wait(const atomic_t& atomic, obj_t&& old) noexcept
   {
     atomic.wait(FWD(old));
   }
@@ -74,10 +74,15 @@ namespace threadable::details
 
 namespace threadable::details
 {
-  template<typename atomic_t, typename obj_t>
-  inline void atomic_wait(atomic_t& atomic, obj_t&& old) noexcept
+  inline void atomic_wait(const std::atomic_flag& atomic, bool old) noexcept
   {
-    while(atomic.load() == FWD(old)){ std::this_thread::yield(); }
+    while(atomic.test() == old){ std::this_thread::yield(); }
+  }
+
+  template<typename T, typename obj_t>
+  inline void atomic_wait(const std::atomic<T>& atomic, obj_t old) noexcept
+  {
+    while(atomic.load() == old){ std::this_thread::yield(); }
   }
 
   template<typename atomic_t>

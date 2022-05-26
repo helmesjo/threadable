@@ -720,7 +720,6 @@ SCENARIO("queue: stress-test")
           }
           while(!queue.empty())
           {
-            const auto size = queue.size();
             if(auto job = queue.pop(); job)
             {
               job();
@@ -731,7 +730,7 @@ SCENARIO("queue: stress-test")
         std::vector<std::thread> stealers;
         for(std::size_t i = 0; i < std::min(10u, std::thread::hardware_concurrency()); ++i)
         {
-          stealers.emplace_back([&queue, &producer, i]{
+          stealers.emplace_back([&queue, &producer]{
             while(producer.joinable() || !queue.empty())
             {
               const auto size = queue.size();

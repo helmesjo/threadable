@@ -35,12 +35,12 @@ namespace threadable
 
       for(std::size_t i = 0; i < threads; ++i)
       {
-        threads_.emplace_back([this, i]{
+        threads_.emplace_back([this]{
           auto prevCount = readyCount_.load(std::memory_order_acquire);
           while(!details::atomic_test(quit_, std::memory_order_relaxed))
           {
             // claim job as soon as it becomes available, and wait in the meantime
-            details::atomic_wait(readyCount_, 0);
+            details::atomic_wait(readyCount_, std::size_t{0});
             while(prevCount == 0 || !readyCount_.compare_exchange_weak(prevCount, prevCount-1))
             {
               if(details::atomic_test(quit_, std::memory_order_relaxed))
@@ -51,7 +51,7 @@ namespace threadable
               else if(prevCount == 0)
               LIKELY
               {
-                details::atomic_wait(readyCount_, 0);
+                details::atomic_wait(readyCount_, std::size_t{0});
                 prevCount = readyCount_.load(std::memory_order_acquire);
               }
             }

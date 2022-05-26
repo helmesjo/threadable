@@ -1,18 +1,16 @@
 #include <threadable/threadable.benchmark.util.hxx>
 
-#include <cstddef>
-
 namespace
 {
-  std::size_t non_trivial_work(auto& val)
+  int non_trivial_work(int& val)
   {
-    std::size_t total = val;
-    std::size_t lbound = 1;
-    std::size_t ubound = 100;
+    int total = val;
+    int lbound = 1;
+    int ubound = 100;
     while (lbound <= ubound)
     {
       bool found = false;
-      for(std::size_t i = 2; i <= lbound/2; i++)
+      for(int i = 2; i <= lbound/2; i++)
       {
         if(lbound % i == 0)
         {
@@ -30,7 +28,7 @@ namespace
     return total;
   }
 
-  std::size_t trivial_work(auto& val)
+  int trivial_work(int& val)
   {
     return val;
   }
