@@ -1,6 +1,8 @@
 #pragma once
 
+#include <threadable/export.hxx>
+
 namespace threadable::benchmark
 {
-  int do_work(int& val);
+  THREADABLE_SYMEXPORT int do_work(int& val);
 }
