@@ -10,17 +10,181 @@
 
 SCENARIO("queue: push, pop, steal")
 {
-  GIVEN("queue job buffer wraps around")
+  GIVEN("queue of max 1 job")
   {
     auto queue = threadable::queue<1>{};
-    
+
+    WHEN("push + pop + pop")
+    {
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job1 = queue.pop();
+      REQUIRE(queue.size() == 0);
+      auto job2 = queue.pop();
+      REQUIRE(queue.size() == 0);
+
+      THEN("first job is non-empty")
+      {
+        REQUIRE(job1);
+        AND_THEN("last job is empty")
+        {
+          REQUIRE_FALSE(job2);
+        }
+      }
+    }
+
+    WHEN("push + steal + steal")
+    {
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job1 = queue.steal();
+      REQUIRE(queue.size() == 0);
+      auto job2 = queue.steal();
+      REQUIRE(queue.size() == 0);
+
+      THEN("first job is non-empty")
+      {
+        REQUIRE(job1);
+        AND_THEN("last job is empty")
+        {
+          REQUIRE_FALSE(job2);
+        }
+      }
+    }
+
+    WHEN("push + pop + steal")
+    {
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job1 = queue.pop();
+      REQUIRE(queue.size() == 0);
+      auto job2 = queue.steal();
+      REQUIRE(queue.size() == 0);
+
+      THEN("first job is non-empty")
+      {
+        REQUIRE(job1);
+        AND_THEN("last job is empty")
+        {
+          REQUIRE_FALSE(job2);
+        }
+      }
+    }
+
+    WHEN("push + steal + pop")
+    {
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job1 = queue.steal();
+      REQUIRE(queue.size() == 0);
+      auto job2 = queue.pop();
+      REQUIRE(queue.size() == 0);
+
+      THEN("first job is non-empty")
+      {
+        REQUIRE(job1);
+        AND_THEN("last job is empty")
+        {
+          REQUIRE_FALSE(job2);
+        }
+      }
+    }
+
+    WHEN("push + pop + push + pop")
+    {
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job1 = queue.pop();
+      REQUIRE(queue.size() == 0);
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job2 = queue.pop();
+      REQUIRE(queue.size() == 0);
+
+      THEN("first job is non-empty")
+      {
+        REQUIRE(job1);
+        THEN("last job is non-empty")
+        {
+          REQUIRE(job2);
+        }
+      }
+    }
+
+    WHEN("push + steal + push + steal")
+    {
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job1 = queue.steal();
+      REQUIRE(queue.size() == 0);
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job2 = queue.steal();
+      REQUIRE(queue.size() == 0);
+
+      THEN("first job is non-empty")
+      {
+        REQUIRE(job1);
+        THEN("last job is non-empty")
+        {
+          REQUIRE(job2);
+        }
+      }
+    }
+
+    WHEN("push + pop + push + steal")
+    {
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job1 = queue.pop();
+      REQUIRE(queue.size() == 0);
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job2 = queue.steal();
+      REQUIRE(queue.size() == 0);
+
+      THEN("first job is non-empty")
+      {
+        REQUIRE(job1);
+        THEN("last job is non-empty")
+        {
+          REQUIRE(job2);
+        }
+      }
+    }
+
+    WHEN("push + steal + push + pop")
+    {
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job1 = queue.steal();
+      REQUIRE(queue.size() == 0);
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      auto job2 = queue.pop();
+      REQUIRE(queue.size() == 0);
+
+      THEN("first job is non-empty")
+      {
+        REQUIRE(job1);
+        THEN("last job is non-empty")
+        {
+          REQUIRE(job2);
+        }
+      }
+    }
+
     WHEN("push + pop + exec + push + pop")
     {
       queue.push([]{});
+      REQUIRE(queue.size() == 1);
       auto job1 = queue.pop();
+      REQUIRE(queue.size() == 0);
       job1();
       auto token2 = queue.push([]{});
+      REQUIRE(queue.size() == 1);
       auto job2 = queue.pop();
+      REQUIRE(queue.size() == 0);
       THEN("last job token is not done")
       {
         REQUIRE_FALSE(token2.done());
@@ -64,27 +228,28 @@ SCENARIO("queue: push, pop, steal")
       }
     }
   }
-  GIVEN("queue has quit")
-  {
-    queue.quit();
-    WHEN("push job")
-    {
-      auto token = queue.push([]{});
-      THEN("size is 0")
-      {
-        REQUIRE(queue.size() == 0);
-        REQUIRE(queue.empty());
-      }      
-      THEN("token is done")
-      {
-        REQUIRE(token.done());
-      }
-      THEN("wait instantly returns")
-      {
-        token.wait();
-      }
-    }
-  }
+  // NOTE: quit is now only used to signal 'waiters' to bail out, nothing else.
+  // GIVEN("queue has quit")
+  // {
+  //   queue.quit();
+  //   WHEN("push job")
+  //   {
+  //     auto token = queue.push([]{});
+  //     THEN("size is 0")
+  //     {
+  //       REQUIRE(queue.size() == 0);
+  //       REQUIRE(queue.empty());
+  //     }      
+  //     THEN("token is done")
+  //     {
+  //       REQUIRE(token.done());
+  //     }
+  //     THEN("wait instantly returns")
+  //     {
+  //       token.wait();
+  //     }
+  //   }
+  // }
   GIVEN("push two jobs")
   {
     queue.push([]{});
@@ -429,6 +594,7 @@ SCENARIO("queue: synchronization")
 
       THEN("waiting thread is released")
       {
+        REQUIRE(true);
       }
     }
   }
@@ -554,6 +720,7 @@ SCENARIO("queue: stress-test")
           }
           while(!queue.empty())
           {
+            const auto size = queue.size();
             if(auto job = queue.pop(); job)
             {
               job();
@@ -564,9 +731,11 @@ SCENARIO("queue: stress-test")
         std::vector<std::thread> stealers;
         for(std::size_t i = 0; i < std::min(10u, std::thread::hardware_concurrency()); ++i)
         {
-          stealers.emplace_back([&queue]{
-            while(!queue.empty())
+          stealers.emplace_back([&queue, &producer, i]{
+            while(producer.joinable() || !queue.empty())
             {
+              const auto size = queue.size();
+              if(size > nr_of_jobs)
               if(auto job = queue.steal(); job)
               {
                 job();

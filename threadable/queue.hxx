@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstddef>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -23,7 +24,7 @@ namespace threadable
 {
   namespace details
   {
-    using atomic_flag = std::atomic_bool;
+    using atomic_flag = std::atomic_flag;
 
     struct job_base
     {
@@ -46,13 +47,13 @@ namespace threadable
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
       this->func.set(FWD(func), FWD(args)...);
-      active.store(true, std::memory_order_release);
+      active.test_and_set(std::memory_order_release);
     }
 
     void reset() noexcept
     {
       child_active = nullptr;
-      active.store(false, std::memory_order_release);
+      active.clear(std::memory_order_release);
       details::atomic_notify_all(active);
     }
 
@@ -69,7 +70,7 @@ namespace threadable
 
     operator bool() const noexcept
     {
-      return active;
+      return active.test(std::memory_order_acquire);
     }
 
   private:
@@ -130,7 +131,7 @@ namespace threadable
 
     bool done() const noexcept
     {
-      return !active;
+      return !active.test(std::memory_order_acquire);
     }
 
     void wait() const noexcept
@@ -162,8 +163,8 @@ namespace threadable
     using index_t = typename atomic_index_t::value_type;
 
     static constexpr auto index_mask = max_nr_of_jobs - 1u;
-    static constexpr job* null_job = nullptr;
     static constexpr details::atomic_flag null_flag{false};
+    static constexpr job* null_job = nullptr;
     static constexpr auto null_callback = [](queue&){};
 
   public:
@@ -192,30 +193,28 @@ namespace threadable
 
     ~queue()
     {
-      // pop & discard (reset) remaining jobs
-      while(!empty())
-      {
-        (void)pop();
-      }
-      // wait for any active (stolen) jobs
+      quit();
       for(auto& job : jobs_)
       {
         details::atomic_wait(job.active, true);
       }
-      quit();
     }
 
     void quit() noexcept
     {
-      bottom_.store(-1, std::memory_order_release);
-      top_.store(-1, std::memory_order_release);
-      // release potentially waiting threads
-      details::atomic_notify_all(bottom_);
-      details::atomic_notify_all(top_);
+      quit_.test_and_set(std::memory_order_seq_cst);
+      details::atomic_notify_all(quit_);
 
       while(waiters_ > 0)
       {
-        std::this_thread::sleep_for(std::chrono::milliseconds{ 1 });
+        // push dummy jobs to release any waiting threads
+        (void)push([]{});
+        std::this_thread::yield();
+      }
+      // pop & discard (reset) remaining jobs
+      while(!empty())
+      {
+        (void)pop();
       }
     }
 
@@ -238,19 +237,13 @@ namespace threadable
     
       const index_t b = bottom_.load(std::memory_order_acquire);
 
-      if(b == -1)
-      UNLIKELY
-      {
-        return null_flag;
-      }
-
-      auto& job = jobs_[b & index_mask];
+      auto& job = jobs_[index(b)];
       job.set(FWD(func), FWD(args)...);
       if(policy_ == execution_policy::sequential && b > 0)
       UNLIKELY
       {
         const index_t prev = b-1;
-        job.child_active = &jobs_[prev & index_mask].active;
+        job.child_active = &jobs_[index(prev)].active;
       }
 
       bottom_.store(b + 1, std::memory_order_release);
@@ -266,39 +259,47 @@ namespace threadable
       bottom_.store(b, std::memory_order_release);
       const index_t t = top_.load(std::memory_order_acquire);
 
-      auto* job = null_job;
-      if(t <= b)
+      if(t != b+1)
       LIKELY
       {
-        // non-empty queue
-        job = &jobs_[b & index_mask];
+        // there are jobs available
+        auto* job = &jobs_[index(b)];
         if(t != b)
         LIKELY
         {
           // there's still more than one item left in the queue
           return job;
         }
-
         // this is the last item in the queue
-        //
+
         // whether we win or lose a race against steal() we still set
-        // the queue to 'empty' (bottom = newTop), because either way it
+        // the queue to 'empty' (bottom = new top), because either way it
         // implies that the last job has been taken.
-        index_t expected = t;
-        if(!top_.compare_exchange_weak(expected, t+1))
+        // bottom_.store(t+1, std::memory_order_release);
+        // NOTE: it's important that it happens before the exchange for 
+        //       top & bottom to remain consistent
+        index_t expectedOrActual = t;
+        bottom_.store(t+1, std::memory_order_release);
+        if(top_.compare_exchange_strong(expectedOrActual, t+1))
+        LIKELY
+        {
+          // won race against steal()
+          return job;
+        }
+        else
         UNLIKELY
         {
           // lost race against steal()
-          job = null_job;
+          return null_job;
         }
-        bottom_.store(t+1, std::memory_order_release);
       }
       else
       UNLIKELY
       {
+        // restore bottom since we never got a job
         bottom_.store(t, std::memory_order_release);
+        return null_job;
       }
-      return job;
     }
 
     job_ref steal() noexcept
@@ -306,16 +307,23 @@ namespace threadable
       const index_t t = top_.load(std::memory_order_acquire);
       const index_t b = bottom_.load(std::memory_order_acquire);
 
-      if(t < b)
+      // if there are jobs available
+      if(t != b)
       LIKELY
       {
-        auto* job = &jobs_[t & index_mask];
-        index_t expected = t;
-        if(top_.compare_exchange_weak(expected, t+1))
+        auto* job = &jobs_[index(t)];
+        index_t expectedOrActual = t;
+        if(top_.compare_exchange_strong(expectedOrActual, t+1))
         LIKELY
         {
           // won race against pop()
           return job;
+        }
+        else if(expectedOrActual != b)
+        UNLIKELY
+        {
+          // we still expect more jobs to be available
+          return steal();
         }
       }
       return null_job;
@@ -330,26 +338,24 @@ namespace threadable
           std::atomic_size_t& counter_;
       } waiting(waiters_);
 
-      index_t t = top_.load(std::memory_order_acquire);
-      index_t b = bottom_.load(std::memory_order_acquire);
-
       job_ref job = steal();
       while(!job)
       {
-        if(t == b && b != -1)
+        const index_t t = top_.load(std::memory_order_acquire);
+        const index_t b = bottom_.load(std::memory_order_acquire);
+
+        if(const auto quit = quit_.test(std::memory_order_acquire); !quit && t == b)
         LIKELY
         {
           // wait until bottom changes
           details::atomic_wait(bottom_, b);
         }
-        else if(b == -1)
+        else if(quit)
         UNLIKELY
         {
-          break;
+          return null_job;
         }
 
-        t = top_.load(std::memory_order_acquire);
-        b = bottom_.load(std::memory_order_acquire);
         job = steal();
       }
 
@@ -358,7 +364,9 @@ namespace threadable
 
     std::size_t size() const noexcept
     {
-      return bottom_ - top_;
+      const index_t b = bottom_.load(std::memory_order_acquire);
+      const index_t t = top_.load(std::memory_order_acquire);
+      return static_cast<std::size_t>(b - t);
     }
 
     bool empty() const noexcept
@@ -367,12 +375,19 @@ namespace threadable
     }
 
   private:
+    inline auto index(index_t val) const
+    {
+      return val & index_mask;
+    }
+
+    // max() is intentional to easily detect wrap-around issues
+    atomic_index_t top_{std::numeric_limits<index_t>::max()};
+    atomic_index_t bottom_{std::numeric_limits<index_t>::max()};
     execution_policy policy_ = execution_policy::concurrent;
-    std::vector<job> jobs_{max_nr_of_jobs};
-    atomic_index_t top_{0};
-    atomic_index_t bottom_{0};
-    std::atomic_size_t waiters_{0};
     function<details::job_buffer_size> on_job_ready;
+    std::atomic_flag quit_;
+    std::vector<job> jobs_{max_nr_of_jobs};
+    std::atomic_size_t waiters_{0};
   };
 }
 
