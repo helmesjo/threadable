@@ -104,8 +104,16 @@ namespace threadable
       return newQueues->back();
     }
 
-    void add(std::shared_ptr<queue_t> q)
+    bool add(std::shared_ptr<queue_t> q)
     {
+      if(std::find_if(std::begin(*queues_), std::end(*queues_), [&q](const auto& q2){
+        return q2.get() == q.get();
+      }) != std::end(*queues_))
+      {
+        // queue already exists
+        return false;
+      }
+
       // create copy of queues & append queue, then atomically swap
       auto newQueues = copy_queues();
       const auto newJobs = q->size();
@@ -113,6 +121,8 @@ namespace threadable
       std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
       readyCount_.fetch_add(newJobs, std::memory_order_release);
       details::atomic_notify_all(readyCount_);
+      
+      return true;
     }
 
     bool remove(queue_t& q) noexcept

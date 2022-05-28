@@ -33,7 +33,7 @@ SCENARIO("pool: create/remove queues")
     {
       int called = 0;
       auto token = queue->push([&called]{ ++called; });
-      pool.add(queue);
+      REQUIRE(pool.add(queue));
       token.wait();
       THEN("existing jobs are executed")
       {
@@ -47,6 +47,13 @@ SCENARIO("pool: create/remove queues")
         {
           token2.wait();
           REQUIRE(called == 1);
+        }
+      }
+      AND_WHEN("added to pool again")
+      {
+        THEN("it's not added")
+        {
+          REQUIRE_FALSE(pool.add(queue));
         }
       }
       THEN("queue can be removed")
