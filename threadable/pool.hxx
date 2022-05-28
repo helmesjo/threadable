@@ -35,7 +35,7 @@ namespace threadable
       {
         threads_.emplace_back([this]{
           auto prevCount = readyCount_.load(std::memory_order_acquire);
-          while(!details::atomic_test(quit_, std::memory_order_relaxed))
+          while(true)
           {
             // claim job as soon as it becomes available, and wait in the meantime
             details::atomic_wait(readyCount_, std::size_t{0});
@@ -44,6 +44,7 @@ namespace threadable
               if(details::atomic_test(quit_, std::memory_order_relaxed))
               UNLIKELY
               {
+                // thread exit
                 return;
               }
               else if(prevCount == 0)
@@ -54,9 +55,15 @@ namespace threadable
               }
             }
 
-            auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
+            const auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
+            if(queues->empty())
+            UNLIKELY
+            {
+              continue;
+            }
             // now we have reserved one job, so run until we acqire it.
-            while(!details::atomic_test(quit_, std::memory_order_relaxed))
+            bool ran = false;
+            while(!ran && !details::atomic_test(quit_, std::memory_order_relaxed))
             LIKELY
             {
               for(auto& queue : *queues)
@@ -65,6 +72,7 @@ namespace threadable
                 LIKELY
                 {
                   job();
+                  ran = true;
                   break;
                 }
               }
@@ -78,16 +86,11 @@ namespace threadable
     {
       details::atomic_test_and_set(quit_, std::memory_order_seq_cst);
       // release all waiting threads
-      readyCount_.fetch_add(threads_.size(), std::memory_order_release);
+      readyCount_.fetch_add(threads_.size() * 1000, std::memory_order_release);
       details::atomic_notify_all(readyCount_);
       for(auto& thread : threads_)
       {
         thread.join();
-      }
-
-      for(auto& queue : *queues_)
-      {
-        queue->quit();
       }
     }
 
@@ -96,11 +99,9 @@ namespace threadable
       // create copy of queues & append queue, then atomically swap
       auto newQueues = copy_queues();
       newQueues->emplace_back(std::make_shared<queue_t>(policy, [this](...){
-        // whenever a new job is pushed, release a thread (increment counter)
-        readyCount_.fetch_add(1, std::memory_order_release);
-        details::atomic_notify_one(readyCount_);
+        notify_jobs(1);
       }));
-      std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release); 
+      std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
       return newQueues->back();
     }
 
@@ -114,14 +115,17 @@ namespace threadable
         return false;
       }
 
+      q->set_notify([this](...){
+        notify_jobs(1);
+      });
+
       // create copy of queues & append queue, then atomically swap
+      const auto jobs = q->size();
       auto newQueues = copy_queues();
-      const auto newJobs = q->size();
       newQueues->emplace_back(std::move(q));
       std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
-      readyCount_.fetch_add(newJobs, std::memory_order_release);
+      readyCount_.fetch_add(jobs, std::memory_order_release);
       details::atomic_notify_all(readyCount_);
-      
       return true;
     }
 
@@ -131,8 +135,11 @@ namespace threadable
       auto newQueues = copy_queues();
       if(std::erase_if(*newQueues, [&q](const auto& q2){ return q2.get() == &q; }) > 0)
       {
-        std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
         q.set_notify(nullptr);
+        const auto jobs = q.size();
+        auto old = readyCount_.load(std::memory_order_acquire);
+        std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
+        while(!readyCount_.compare_exchange_weak(old, old - std::min(old, jobs)));
         return true;
       }
       else
@@ -154,6 +161,12 @@ namespace threadable
     }
 
   private:
+    inline void notify_jobs(std::size_t jobs)
+    {
+      // whenever a new job is pushed, release a thread (increment counter)
+      readyCount_.fetch_add(jobs, std::memory_order_release);
+      details::atomic_notify_one(readyCount_);
+    }
 
     auto copy_queues() noexcept
     {

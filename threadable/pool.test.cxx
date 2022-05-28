@@ -29,19 +29,12 @@ SCENARIO("pool: create/remove queues")
   GIVEN("queue is pre-created")
   {
     auto queue = std::make_shared<decltype(pool)::queue_t>();
-    WHEN("added to pool")
+    WHEN("added (without jobs) to pool")
     {
-      int called = 0;
-      auto token = queue->push([&called]{ ++called; });
       REQUIRE(pool.add(queue));
-      token.wait();
-      THEN("existing jobs are executed")
-      {
-        REQUIRE(called == 1);
-      }
-      called = 0; 
       AND_WHEN("job is pushed")
       {
+        int called = 0;
         auto token2 = queue->push([&called]{ ++called; });
         THEN("it gets executed")
         {
@@ -56,9 +49,44 @@ SCENARIO("pool: create/remove queues")
           REQUIRE_FALSE(pool.add(queue));
         }
       }
-      THEN("queue can be removed")
+      AND_WHEN("removed from pool")
       {
         REQUIRE(pool.remove(*queue));
+        THEN("it can be readded")
+        {
+          REQUIRE(pool.add(queue));
+        }
+      }
+    }
+    WHEN("added (with jobs) to pool")
+    {
+      THEN("existing jobs are executed")
+      {
+        int called = 0;
+        auto token = queue->push([&called]{ ++called; });
+        REQUIRE(pool.add(queue));
+        token.wait();
+        REQUIRE(called == 1);
+      }
+      AND_WHEN("removed from pool")
+      {
+        int called = 0;
+        std::atomic_int latch{2};
+        auto token1 = queue->push([&called, &latch]{ --latch; while(latch != 0); ++called; });
+        auto token2 = queue->push([&called]{ ++called; });
+        REQUIRE(pool.add(queue));
+        while(latch > 1);
+
+        pool.remove(*queue);
+        REQUIRE(pool.size() == 0);
+
+        latch = 0;
+        token1.wait();
+        THEN("pending jobs are not executed")
+        {
+          std::this_thread::sleep_for(std::chrono::milliseconds{5});
+          REQUIRE_FALSE(token2.done());
+        }
       }
     }
   }
