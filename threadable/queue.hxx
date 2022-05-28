@@ -1,9 +1,8 @@
 #pragma once
 
 #include <threadable/function.hxx>
-#include <threadable/std_atomic_wait.hxx>
+#include <threadable/std_atomic.hxx>
 
-#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <limits>
