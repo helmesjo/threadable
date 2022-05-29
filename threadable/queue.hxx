@@ -246,7 +246,7 @@ namespace threadable
         job.child_active = &jobs_[index(prev)].active;
       }
 
-      bottom_.store(b + 1, std::memory_order_release);
+      bottom_.store(b+1, std::memory_order_release);
       details::atomic_notify_one(bottom_);
       on_job_ready();
 
@@ -275,12 +275,11 @@ namespace threadable
         // whether we win or lose a race against steal() we still set
         // the queue to 'empty' (bottom = new top), because either way it
         // implies that the last job has been taken.
-        // bottom_.store(t+1, std::memory_order_release);
         // NOTE: it's important that it happens before the exchange for 
         //       top & bottom to remain consistent
-        index_t expectedOrActual = t;
+        index_t previous = t;
         bottom_.store(t+1, std::memory_order_release);
-        if(top_.compare_exchange_strong(expectedOrActual, t+1))
+        if(top_.compare_exchange_strong(previous, t+1))
         LIKELY
         {
           // won race against steal()
@@ -311,18 +310,23 @@ namespace threadable
       if(t != b)
       LIKELY
       {
-        auto* job = &jobs_[index(t)];
-        index_t expectedOrActual = t;
-        if(top_.compare_exchange_strong(expectedOrActual, t+1))
+        job* job = nullptr;
+        index_t previous = t;
+        do
+        {
+          job = &jobs_[index(previous)];
+        }
+        while(previous != b && !top_.compare_exchange_weak(previous, previous+1));
+
+        if(previous != b)
         LIKELY
         {
-          // won race against pop()
           return job;
         }
-        else if(expectedOrActual != b)
+        else
         UNLIKELY
         {
-          // we still expect more jobs to be available
+          // try steal again (with updated values)
           return steal();
         }
       }
@@ -333,9 +337,9 @@ namespace threadable
     {
       struct raii
       {
-          raii(std::atomic_size_t& counter): counter_(counter) { ++counter_; }
-          ~raii() { --counter_; }
-          std::atomic_size_t& counter_;
+        raii(std::atomic_size_t& counter): counter_(counter) { ++counter_; }
+        ~raii() { --counter_; }
+        std::atomic_size_t& counter_;
       } waiting(waiters_);
 
       job_ref job = steal();
@@ -344,7 +348,7 @@ namespace threadable
         const index_t t = top_.load(std::memory_order_acquire);
         const index_t b = bottom_.load(std::memory_order_acquire);
 
-        if(const auto quit = details::atomic_test(quit_, std::memory_order_acquire); !quit && t == b)
+        if(const auto quit = details::atomic_test(quit_, std::memory_order_relaxed); !quit && t == b)
         LIKELY
         {
           // wait until bottom changes
