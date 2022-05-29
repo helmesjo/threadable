@@ -4,6 +4,7 @@
 #include <threadable/std_atomic.hxx>
 #include <threadable/std_concepts.hxx>
 
+#include <atomic>
 #include <cstddef>
 #include <thread>
 
@@ -153,6 +154,11 @@ namespace threadable
     decltype(auto) push(callable_t&& func, arg_ts&&... args) noexcept
     {
       return defaultQueue_->push(FWD(func), FWD(args)...);
+    }
+
+    void wait() const noexcept
+    {
+      while(readyCount_.load(std::memory_order_relaxed) > 0){ std::this_thread::yield(); };
     }
 
     std::size_t size() const noexcept
