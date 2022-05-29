@@ -210,34 +210,6 @@ static void threadable_pool(benchmark::State& state)
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
 }
 
-static void std_no_pool(benchmark::State& state)
-{
-  const std::size_t nr_of_jobs = state.range(0);
-  // const std::size_t nr_of_threads = state.range(1);
-  std::vector<std::function<void()>> queue;
-  queue.reserve(nr_of_jobs);
-
-  for (auto _ : state)
-  {
-    // pre-fill queue
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      queue.emplace_back([]() mutable {
-        benchmark::DoNotOptimize(threadable::benchmark::do_trivial_work(val));
-      });
-    }
-    time_block(state, [&]{
-      for(auto& job : queue)
-      {
-        job();
-      }
-    });
-
-    queue.clear();
-  }
-  state.SetItemsProcessed(nr_of_jobs * state.iterations());
-}
-
 static void std_parallel_for(benchmark::State& state)
 {
   const std::size_t nr_of_jobs = state.range(0);
@@ -275,7 +247,6 @@ BENCHMARK(std_queue)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualT
 // thread pool
 BENCHMARK(threadable_pool)->Args({jobs_per_iteration, 1})->ArgNames({"jobs", "threads"})->UseManualTime();
 BENCHMARK(std_thread)->Args({jobs_per_iteration, 1})->ArgNames({"jobs", "threads"})->UseManualTime();
-BENCHMARK(std_no_pool)->Args({jobs_per_iteration, 1})->ArgNames({"jobs", "threads"})->UseManualTime();
 BENCHMARK(std_parallel_for)->Args({jobs_per_iteration, std::thread::hardware_concurrency()})->ArgNames({"jobs", "threads"})->UseManualTime();
 
 BENCHMARK_MAIN();
