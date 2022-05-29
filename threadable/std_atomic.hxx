@@ -71,14 +71,13 @@ namespace threadable::details
 }
 #else
 #include <thread>
-#include <utility>
 
 namespace threadable::details
 {
   template<typename T, typename obj_t>
   inline void atomic_wait(const std::atomic<T>& atomic, obj_t old) noexcept
   {
-    while(atomic.load() == old){ std::this_thread::yield(); }
+    while(atomic.load(std::memory_order_relaxed) == old){ std::this_thread::yield(); }
   }
 
   template<typename atomic_t>
