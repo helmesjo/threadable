@@ -1,5 +1,5 @@
 #include <threadable/pool.hxx>
-#include <threadable/doctest_include.hxx>
+#include <threadable-tests/doctest_include.hxx>
 
 #include <cstddef>
 #include <thread>

@@ -20,4 +20,4 @@ hxx{*}: cxx.importable = true
 test.target = $cxx.target
 
 # Enable benchmarks tests
-config [bool] config.threadable.benchmarks ?= false
+config [bool] config.threadable_benchmarks.run ?= false

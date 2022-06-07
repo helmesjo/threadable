@@ -1,4 +1,4 @@
-#include <threadable/threadable.benchmark.util.hxx>
+#include <threadable-benchmarks/util.hxx>
 
 namespace
 {

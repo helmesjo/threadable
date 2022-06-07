@@ -1,3 +1,0 @@
-import libs = threadable%lib{threadable}
-
-exe{driver}: {hxx ixx txx cxx}{**} $libs testscript{**}

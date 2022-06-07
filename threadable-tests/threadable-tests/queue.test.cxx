@@ -1,5 +1,5 @@
 #include <threadable/queue.hxx>
-#include <threadable/doctest_include.hxx>
+#include <threadable-tests/doctest_include.hxx>
 
 #include <algorithm>
 #include <chrono>

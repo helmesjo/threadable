@@ -3,7 +3,7 @@
 #include <threadable/pool.hxx>
 #include <threadable/queue.hxx>
 
-#include <threadable/threadable.benchmark.util.hxx>
+#include <threadable-benchmarks/util.hxx>
 #include <benchmark/benchmark.h>
 
 #include <execution>

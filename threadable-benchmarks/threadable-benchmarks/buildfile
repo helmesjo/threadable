@@ -1,0 +1,12 @@
+libs =
+import libs += threadable%lib{threadable} google-benchmark%lib{benchmark}
+
+exe{*}:
+{
+  test = true
+  install = false
+}
+
+exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
+
+cxx.poptions =+ "-I$out_root" "-I$src_root"

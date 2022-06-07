@@ -1,0 +1,13 @@
+: 1
+name: threadable-benchmarks
+version: 0.1.0-a.0.z
+project: threadable
+summary: threadable-benchmarks C++ executable
+license: MIT ; MIT License.
+description-file: README.md
+url: https://github.com/helmesjo/threadable
+email: helmesjo@gmail.com
+#build-error-email: helmesjo@gmail.com
+depends: * build2 >= 0.14.0
+depends: * bpkg >= 0.14.0
+depends: google-benchmark ^1.6.0+1
