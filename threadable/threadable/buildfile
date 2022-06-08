@@ -36,8 +36,8 @@ cxx.poptions =+ "-I$out_root" "-I$src_root"
 #
 lib{threadable}:
 {
-  cxx.export.poptions = "-I$out_root" "-I$src_root"
-  cxx.export.libs = $intf_libs
+  cxx.export.poptions += "-I$out_root" "-I$src_root"
+  cxx.export.libs += $intf_libs
 }
 
 liba{threadable}: cxx.export.poptions += -DTHREADABLE_STATIC
