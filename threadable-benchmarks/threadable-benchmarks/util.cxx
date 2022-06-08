@@ -34,7 +34,7 @@ namespace
   }
 }
 
-namespace threadable::benchmark
+namespace threadable::utils
 {
   int do_trivial_work(int& val)
   {

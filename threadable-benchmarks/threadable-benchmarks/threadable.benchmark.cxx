@@ -18,19 +18,6 @@ namespace
 {
   int val;
   constexpr std::size_t jobs_per_iteration = 1 << 16;
-
-  template<std::invocable block_t>
-  inline void time_block(benchmark::State& state, block_t&& block)
-  {
-    auto start = std::chrono::high_resolution_clock::now();
-
-    block();
-
-    auto end = std::chrono::high_resolution_clock::now();
-    auto elapsed_seconds = std::chrono::duration_cast<std::chrono::duration<double>>(
-        end - start);
-    state.SetIterationTime(elapsed_seconds.count());
-  }
 }
 
 static void threadable_function(benchmark::State& state)
@@ -40,11 +27,11 @@ static void threadable_function(benchmark::State& state)
   threadable_func_t func;
   for (auto _ : state)
   {
-    time_block(state, [&]{
+    threadable::utils::time_block(state, [&]{
       for(std::size_t i = 0; i < nr_of_jobs; ++i)
       {
         func = []() mutable {
-          benchmark::DoNotOptimize(val = threadable::benchmark::do_trivial_work(val));
+          benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
         };
         func();
       }
@@ -59,11 +46,11 @@ static void std_function(benchmark::State& state)
   std::function<void()> func;
   for (auto _ : state)
   {
-    time_block(state, [&]{
+    threadable::utils::time_block(state, [&]{
       for(std::size_t i = 0; i < nr_of_jobs; ++i)
       {
         func = []() mutable {
-          benchmark::DoNotOptimize(val = threadable::benchmark::do_trivial_work(val));
+          benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
         };
         func();
       }
@@ -84,11 +71,11 @@ static void threadable_queue(benchmark::State& state)
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       queue->push([]() mutable {
-        benchmark::DoNotOptimize(threadable::benchmark::do_trivial_work(val));
+        benchmark::DoNotOptimize(threadable::utils::do_trivial_work(val));
       });
     }
 
-    time_block(state, [&]{
+    threadable::utils::time_block(state, [&]{
       while(auto job = queue->steal())
       {
         job();
@@ -108,10 +95,10 @@ static void std_queue(benchmark::State& state)
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       queue.emplace([]() mutable {
-        benchmark::DoNotOptimize(val = threadable::benchmark::do_trivial_work(val));
+        benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
       });
     }
-    time_block(state, [&]{
+    threadable::utils::time_block(state, [&]{
       while(!queue.empty())
       {
         auto& job = queue.front();
@@ -159,10 +146,10 @@ static void std_thread(benchmark::State& state)
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       tokens.emplace_back(q->push([&]() mutable {
-        benchmark::DoNotOptimize(threadable::benchmark::do_trivial_work(val));
+        benchmark::DoNotOptimize(threadable::utils::do_trivial_work(val));
       }));
     }
-    time_block(state, [&]{
+    threadable::utils::time_block(state, [&]{
       std::atomic_store(&queue, q);
       for(const auto& token : tokens)
       {
@@ -199,10 +186,10 @@ static void threadable_pool(benchmark::State& state)
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       tokens.emplace_back(queue->push([&]() mutable {
-        benchmark::DoNotOptimize(threadable::benchmark::do_trivial_work(val));
+        benchmark::DoNotOptimize(threadable::utils::do_trivial_work(val));
       }));
     }
-    time_block(state, [&]{
+    threadable::utils::time_block(state, [&]{
       pool.add(queue);
 
       for(const auto& token : tokens)
@@ -236,11 +223,11 @@ static void std_parallel_for(benchmark::State& state)
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       queue.emplace_back([]() mutable {
-        benchmark::DoNotOptimize(threadable::benchmark::do_trivial_work(val));
+        benchmark::DoNotOptimize(threadable::utils::do_trivial_work(val));
       });
     }
 
-    time_block(state, [&]{
+    threadable::utils::time_block(state, [&]{
       std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
         job();
       });
