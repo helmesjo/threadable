@@ -6,7 +6,9 @@
 #include <threadable-benchmarks/util.hxx>
 #include <benchmark/benchmark.h>
 
+#if __has_include(<execution>)
 #include <execution>
+#endif
 #include <functional>
 #include <queue>
 #include <thread>
@@ -69,6 +71,9 @@ static void std_function(benchmark::State& state)
   }
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
 }
+// function
+BENCHMARK(threadable_function)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
+BENCHMARK(std_function)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
 
 static void threadable_queue(benchmark::State& state)
 {
@@ -117,6 +122,9 @@ static void std_queue(benchmark::State& state)
   }
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
 }
+// queue
+BENCHMARK(threadable_queue)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
+BENCHMARK(std_queue)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
 
 static void std_thread(benchmark::State& state)
 {
@@ -209,6 +217,11 @@ static void threadable_pool(benchmark::State& state)
   
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
 }
+// thread pool
+BENCHMARK(threadable_pool)->Args({jobs_per_iteration, 1})->ArgNames({"jobs", "threads"})->UseManualTime();
+BENCHMARK(std_thread)->Args({jobs_per_iteration, 1})->ArgNames({"jobs", "threads"})->UseManualTime();
+
+#if defined(__cpp_lib_execution) && defined(__cpp_lib_parallel_algorithm)
 
 static void std_parallel_for(benchmark::State& state)
 {
@@ -237,17 +250,9 @@ static void std_parallel_for(benchmark::State& state)
   }
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
 }
-
-// function
-BENCHMARK(threadable_function)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
-BENCHMARK(std_function)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
-// queue
-BENCHMARK(threadable_queue)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
-BENCHMARK(std_queue)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
-// thread pool
-BENCHMARK(threadable_pool)->Args({jobs_per_iteration, 1})->ArgNames({"jobs", "threads"})->UseManualTime();
-BENCHMARK(std_thread)->Args({jobs_per_iteration, 1})->ArgNames({"jobs", "threads"})->UseManualTime();
 BENCHMARK(std_parallel_for)->Args({jobs_per_iteration, std::thread::hardware_concurrency()})->ArgNames({"jobs", "threads"})->UseManualTime();
+
+#endif
 
 BENCHMARK_MAIN();
 
