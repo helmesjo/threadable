@@ -1,9 +1,8 @@
 #pragma once
 
+#include <threadable/std_concepts.hxx>
 #include <benchmark/benchmark.h>
-
 #include <chrono>
-#include <concepts>
 
 namespace threadable::utils
 {
