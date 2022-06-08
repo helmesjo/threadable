@@ -9,5 +9,5 @@ email: helmesjo@gmail.com
 #build-error-email: helmesjo@gmail.com
 depends: * build2 >= 0.14.0
 depends: * bpkg >= 0.14.0
-tests: * threadable-tests == $
-benchmarks: * threadable-benchmarks == $
+tests: threadable-tests == $
+benchmarks: threadable-benchmarks == $
