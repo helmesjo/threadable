@@ -8,6 +8,8 @@
 #include <type_traits>
 #include <thread>
 
+#include <syncstream>
+
 SCENARIO("queue: push, pop, steal")
 {
   GIVEN("queue of max 1 job")
@@ -679,6 +681,9 @@ SCENARIO("queue: completion token")
           waiterDoneTime = clock_t::now();
         });
 
+        // Give thread some time to start up
+        // std::this_thread::sleep_for(std::chrono::milliseconds{5000});
+
         auto job = queue.pop();
         job();
         auto jobDoneTime = clock_t::now();
@@ -692,6 +697,39 @@ SCENARIO("queue: completion token")
         REQUIRE(jobDoneTime <= waiterDoneTime);
       }
     }
+  }
+  GIVEN("stress-test")
+  {
+    std::atomic_bool run{true};
+    auto worker = std::thread([&]{
+      std::osyncstream(std::cout) << "consumer: Ready.\n";
+      std::size_t i = 0;
+      while(run)
+      {
+        // std::this_thread::sleep_for(std::chrono::milliseconds{500});
+        if(auto job = queue.steal())
+        {
+          std::osyncstream(std::cout) << "consumer: Running job " << i << "...\n";
+          job();
+          std::osyncstream(std::cout) << "consumer: DONE running job " << i << "...\n";
+          ++i;
+        }
+      }
+    });
+
+    for(std::size_t i = 0; i < queue.max_size() * 2; ++i)
+    {
+      std::osyncstream(std::cout) << "producer: Pushing job " << i << "...\n";
+      auto token = queue.push([]{});
+      // adding this sleep (so it waits after job was executed) prevents the deadlock on clang...
+      // std::this_thread::sleep_for(std::chrono::milliseconds{500});
+      std::osyncstream(std::cout) << "producer: Waiting for job " << i << "...\n";
+      token.wait();
+      std::osyncstream(std::cout) << "producer: DONE waiting for job " << i << "...\n";
+    }
+
+    run = false;
+    worker.join();
   }
 }
 
