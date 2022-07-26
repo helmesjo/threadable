@@ -59,7 +59,7 @@ namespace threadable
       if(child_active)
       UNLIKELY
       {
-        details::atomic_wait(*child_active, true);
+        details::atomic_wait(*child_active, true, std::memory_order_acquire);
       }
       func();
       reset();
@@ -133,7 +133,7 @@ namespace threadable
 
     void wait() const noexcept
     {
-      details::atomic_wait(active, true);
+      details::atomic_wait(active, true, std::memory_order_acquire);
     }
 
   private:
