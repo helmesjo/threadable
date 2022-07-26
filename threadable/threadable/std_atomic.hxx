@@ -52,9 +52,9 @@ namespace threadable::details
 namespace threadable::details
 {
   template<typename atomic_t, typename obj_t>
-  inline void atomic_wait(const atomic_t& atomic, obj_t&& old) noexcept
+  inline void atomic_wait(const atomic_t& atomic, obj_t&& old, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
-    atomic.wait(FWD(old));
+    atomic.wait(FWD(old), order);
   }
 
   template<typename atomic_t>
@@ -74,10 +74,16 @@ namespace threadable::details
 
 namespace threadable::details
 {
-  template<typename T, typename obj_t>
-  inline void atomic_wait(const std::atomic<T>& atomic, obj_t old) noexcept
+  template<typename obj_t>
+  inline void atomic_wait(const atomic_flag& atomic, obj_t old, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
-    while(atomic.load(std::memory_order_relaxed) == old){ std::this_thread::yield(); }
+    while(atomic_test(atomic, order) == old){ std::this_thread::yield(); }
+  }
+
+  template<typename T, typename obj_t>
+  inline void atomic_wait(const std::atomic<T>& atomic, obj_t old, std::memory_order order = std::memory_order_seq_cst) noexcept
+  {
+    while(atomic.load(order) == old){ std::this_thread::yield(); }
   }
 
   template<typename atomic_t>
