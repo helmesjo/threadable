@@ -373,6 +373,11 @@ namespace threadable
       return static_cast<std::size_t>(b - t);
     }
 
+    constexpr std::size_t max_size() const noexcept
+    {
+      return max_nr_of_jobs;
+    }
+
     bool empty() const noexcept
     {
       return size() == 0;
