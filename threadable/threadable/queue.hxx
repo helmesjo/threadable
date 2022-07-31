@@ -166,7 +166,8 @@ namespace threadable
   public:
     template<std::invocable<queue&> callable_t>
     queue(execution_policy policy, callable_t&& onJobReady) noexcept:
-      policy_(policy)
+      policy_(policy),
+      jobs_(*jobsPtr_)
     {
       details::atomic_clear(quit_);
       set_notify(FWD(onJobReady));
@@ -395,7 +396,12 @@ namespace threadable
     execution_policy policy_ = execution_policy::concurrent;
     function<details::job_buffer_size> on_job_ready;
     details::atomic_flag quit_;
-    std::vector<job> jobs_{max_nr_of_jobs};
+    using jobs_t = std::array<job, max_nr_of_jobs>;
+    std::unique_ptr<jobs_t> jobsPtr_ = std::make_unique<jobs_t>();
+    jobs_t& jobs_;
+    // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
+    // causing noity_all() to not wake thread(s). See completion token test "stress-test"
+    // std::vector<job> jobs_{max_nr_of_jobs};
     std::atomic_size_t waiters_{0};
   };
 }

@@ -682,7 +682,7 @@ SCENARIO("queue: completion token")
         });
 
         // Give thread some time to start up
-        // std::this_thread::sleep_for(std::chrono::milliseconds{5000});
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
 
         auto job = queue.pop();
         job();
@@ -702,16 +702,16 @@ SCENARIO("queue: completion token")
   {
     std::atomic_bool run{true};
     auto worker = std::thread([&]{
-      std::osyncstream(std::cout) << "consumer: Ready.\n";
+      // std::osyncstream(std::cout) << "consumer: Ready.\n";
       std::size_t i = 0;
       while(run)
       {
         // std::this_thread::sleep_for(std::chrono::milliseconds{500});
         if(auto job = queue.steal())
         {
-          std::osyncstream(std::cout) << "consumer: Running job " << i << "...\n";
+          // std::osyncstream(std::cout) << "consumer: Running job " << i << "...\n";
           job();
-          std::osyncstream(std::cout) << "consumer: DONE running job " << i << "...\n";
+          // std::osyncstream(std::cout) << "consumer: DONE running job " << i << "...\n";
           ++i;
         }
       }
@@ -719,13 +719,11 @@ SCENARIO("queue: completion token")
 
     for(std::size_t i = 0; i < queue.max_size() * 2; ++i)
     {
-      std::osyncstream(std::cout) << "producer: Pushing job " << i << "...\n";
+      // std::osyncstream(std::cout) << "producer: Pushing job " << i << "...\n";
       auto token = queue.push([]{});
-      // adding this sleep (so it waits after job was executed) prevents the deadlock on clang...
-      // std::this_thread::sleep_for(std::chrono::milliseconds{500});
-      std::osyncstream(std::cout) << "producer: Waiting for job " << i << "...\n";
+      // std::osyncstream(std::cout) << "producer: Waiting for job " << i << "...\n";
       token.wait();
-      std::osyncstream(std::cout) << "producer: DONE waiting for job " << i << "...\n";
+      // std::osyncstream(std::cout) << "producer: DONE waiting for job " << i << "...\n";
     }
 
     run = false;
