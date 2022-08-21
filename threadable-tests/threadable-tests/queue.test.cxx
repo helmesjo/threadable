@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <thread>
 
-#include <syncstream>
+// #include <syncstream>
 
 SCENARIO("queue: push, pop, steal")
 {

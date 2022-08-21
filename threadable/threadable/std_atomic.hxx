@@ -48,7 +48,7 @@ namespace threadable::details
 }
 #endif
 
-#if __cpp_lib_atomic_wait >= 201907 && !defined(__APPLE__) // apple-clang defines it without supplying the functions
+#if __cpp_lib_atomic_wait >= 201907 && (!defined(__APPLE__) || (__clang_major__ > 13 || __clang_major__ == 13 && __clang_minor__ == 1 && __clang_patchlevel__ == 6)) // apple-clang defines it without supplying the functions
 namespace threadable::details
 {
   template<typename atomic_t, typename obj_t>
