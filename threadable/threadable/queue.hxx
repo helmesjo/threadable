@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <iterator>
 #include <limits>
 #include <thread>
 #include <vector>
@@ -81,15 +82,15 @@ namespace threadable
       ref(ref)
     {}
 
-    job_ref(const job_ref& other) = delete;
+    job_ref(const job_ref& other) = default;
     job_ref(job_ref&& other):
       ref(other.ref)
     {
       other.ref = nullptr;
     }
 
-    auto& operator=(const job_ref& other) = delete;
-    auto& operator=(job_ref&& other)
+    job_ref& operator=(const job_ref& other) = default;
+    job_ref& operator=(job_ref&& other)
     {
       ref = other.ref;
       other.ref = nullptr;
@@ -103,6 +104,11 @@ namespace threadable
       {
         ref->reset();
       }
+    }
+
+    job& operator*() const
+    {
+      return *ref;
     }
 
     void operator()()
@@ -163,6 +169,57 @@ namespace threadable
     static constexpr job* null_job = nullptr;
     static constexpr auto null_callback = [](queue&){};
 
+    struct iterator
+    {
+      using iterator_category = std::forward_iterator_tag;
+      using difference_type   = index_t;
+      using value_type        = job;
+      using pointer           = value_type*;
+      using reference         = value_type&;
+
+      iterator() = default;
+      iterator(const iterator&) = default;
+      iterator(queue& queue, index_t index):
+        queue_(&queue),
+        index_(index)
+      {}
+
+      reference operator*() const
+      {
+        job_ = queue_->steal();
+        return *job_;
+      }
+
+      iterator& operator++()
+      {
+        ++index_;
+        return *this;
+      }
+
+      iterator operator++(int)
+      {
+        iterator tmp(*queue_, std::move(*job_));
+        ++(*this);
+        return tmp;
+      }
+
+      bool operator==(const iterator& other) const
+      {
+        return index_ == other.index_;
+      }
+
+      bool operator!=(const iterator& other) const
+      {
+        return !(*this == other);
+      }
+
+    private:
+      queue* queue_ = nullptr;
+      index_t index_ = 0;
+      mutable job_ref job_ = {null_job};
+    };
+    static_assert(std::forward_iterator<iterator>, "queue::iterator must be a forward_iterator");
+
   public:
     template<std::invocable<queue&> callable_t>
     queue(execution_policy policy, callable_t&& onJobReady) noexcept:
@@ -175,7 +232,7 @@ namespace threadable
 
     queue(execution_policy policy = execution_policy::concurrent) noexcept:
       queue(policy, null_callback)
-    {    
+    {
     }
 
     template<std::invocable<queue&> callable_t>
@@ -382,6 +439,16 @@ namespace threadable
     bool empty() const noexcept
     {
       return size() == 0;
+    }
+
+    decltype(auto) begin()
+    {
+      return iterator(*this, 0);
+    }
+
+    decltype(auto) end()
+    {
+      return iterator(*this, size());
     }
 
   private:

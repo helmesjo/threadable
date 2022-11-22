@@ -787,3 +787,43 @@ SCENARIO("queue: stress-test")
     }
   }
 }
+
+SCENARIO("queue: iteration")
+{
+  std::size_t job_counter = 0;
+  auto queue = threadable::queue<16>();
+  GIVEN("push multiple jobs")
+  {
+    for(std::size_t i = 0; i < 3; ++i)
+    {
+      queue.push([&job_counter](...){ ++job_counter; });
+    }
+
+    WHEN("iterating and executing jobs")
+    {
+      THEN("range-based loop works")
+      {
+        for(auto& job : queue)
+        {
+          if(job)
+          {
+            job();
+          }
+        }
+
+        REQUIRE(job_counter == 3);
+      }
+      THEN("std::for_each loop works")
+      {
+        std::for_each(queue.begin(), queue.end(), [](auto& job){
+          if(job)
+          {
+            job();
+          }
+        });
+
+        REQUIRE(job_counter == 3);
+      }
+    }
+  }
+}
