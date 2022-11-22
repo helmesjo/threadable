@@ -1,6 +1,12 @@
 libs =
 import libs += threadable%lib{threadable} google-benchmark%lib{benchmark}
 
+switch $cxx.class
+{
+  case 'gcc' | 'clang' | 'clang-apple'
+    import libs += libtbb%lib{tbb}
+}
+
 exe{*}:
 {
   test = true
