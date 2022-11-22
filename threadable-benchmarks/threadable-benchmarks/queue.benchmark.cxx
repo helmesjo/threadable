@@ -8,27 +8,48 @@
 
 namespace
 {
-  int val;
   constexpr std::size_t jobs_per_iteration = 1 << 16;
 }
 
-static void queue_threadable(benchmark::State& state)
+static void queue_threadable_pop(benchmark::State& state)
 {
   const std::size_t nr_of_jobs = state.range(0);
-  auto queue = std::make_shared<threadable::queue<jobs_per_iteration>>();
+  auto queue = threadable::queue<jobs_per_iteration>();
   for (auto _ : state)
   {
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
-      queue->push([]() mutable {
-        benchmark::DoNotOptimize(threadable::utils::do_trivial_work(val));
-      });
+      queue.push([]() mutable {});
     }
 
     threadable::utils::time_block(state, [&]{
-      while(auto job = queue->steal())
+      while(auto job = queue.pop())
       {
-        job();
+        benchmark::DoNotOptimize(job);
+      }
+    });
+  }
+  state.SetItemsProcessed(nr_of_jobs * state.iterations());
+}
+
+static void queue_threadable_steal(benchmark::State& state)
+{
+  const std::size_t nr_of_jobs = state.range(0);
+  auto queue = threadable::queue<jobs_per_iteration>();
+  for (auto _ : state)
+  {
+    for(std::size_t i = 0; i < nr_of_jobs; ++i)
+    {
+      queue.push([]() mutable {});
+    }
+
+    threadable::utils::time_block(state, [&]{
+      while(!queue.empty())
+      {
+        if(auto job = queue.steal())
+        {
+          benchmark::DoNotOptimize(job);
+        }
       }
     });
   }
@@ -44,15 +65,13 @@ static void queue_std(benchmark::State& state)
   {
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
-      queue.emplace([]() mutable {
-        benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
-      });
+      queue.emplace([]() mutable {});
     }
     threadable::utils::time_block(state, [&]{
       while(!queue.empty())
       {
         auto& job = queue.front();
-        job();
+        benchmark::DoNotOptimize(job);
         queue.pop();
       }
     });
@@ -60,5 +79,6 @@ static void queue_std(benchmark::State& state)
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
 }
 
-BENCHMARK(queue_threadable)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
+BENCHMARK(queue_threadable_pop)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
+BENCHMARK(queue_threadable_steal)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
 BENCHMARK(queue_std)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
