@@ -2,9 +2,6 @@
 
 #include <threadable-benchmarks/util.hxx>
 
-#if __has_include(<execution>)
-#include <execution>
-#endif
 #include <functional>
 #include <queue>
 #include <thread>
@@ -12,7 +9,6 @@
 
 namespace
 {
-  int val;
   constexpr std::size_t jobs_per_iteration = 1 << 16;
 }
 
@@ -35,7 +31,7 @@ static void pool_std_thread(benchmark::State& state)
         {
           while(auto job = q->steal())
           {
-            job();
+            benchmark::DoNotOptimize(job);
           }
         }
       }
@@ -48,9 +44,7 @@ static void pool_std_thread(benchmark::State& state)
 
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
-      tokens.emplace_back(q->push([&]() mutable {
-        benchmark::DoNotOptimize(threadable::utils::do_trivial_work(val));
-      }));
+      tokens.emplace_back(q->push([&]() mutable {}));
     }
     threadable::utils::time_block(state, [&]{
       std::atomic_store(&queue, q);
@@ -89,9 +83,7 @@ static void pool_threadable(benchmark::State& state)
 
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
-      tokens.emplace_back(queue->push([&]() mutable {
-        benchmark::DoNotOptimize(threadable::utils::do_trivial_work(val));
-      }));
+      tokens.emplace_back(queue->push([&]() mutable {}));
     }
     threadable::utils::time_block(state, [&]{
       pool.add(queue);
@@ -109,39 +101,5 @@ static void pool_threadable(benchmark::State& state)
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
 }
 
-#if defined(__cpp_lib_execution) && defined(__cpp_lib_parallel_algorithm)
-
-static void pool_std_parallel_for(benchmark::State& state)
-{
-  const std::size_t nr_of_jobs = state.range(0);
-  // const std::size_t nr_of_threads = state.range(1);
-  std::vector<std::function<void()>> queue;
-  queue.reserve(nr_of_jobs);
-
-  for (auto _ : state)
-  {
-    // pre-fill queue
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      queue.emplace_back([]() mutable {
-        benchmark::DoNotOptimize(threadable::utils::do_trivial_work(val));
-      });
-    }
-
-    threadable::utils::time_block(state, [&]{
-      std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
-        job();
-      });
-    });
-
-    queue.clear();
-  }
-  state.SetItemsProcessed(nr_of_jobs * state.iterations());
-}
-
-BENCHMARK(pool_std_parallel_for)->Args({jobs_per_iteration, std::thread::hardware_concurrency()})->ArgNames({"jobs", "threads"})->UseManualTime();
-#endif
-
 BENCHMARK(pool_threadable)->Args({jobs_per_iteration, 1})->ArgNames({"jobs", "threads"})->UseManualTime();
 BENCHMARK(pool_std_thread)->Args({jobs_per_iteration, 1})->ArgNames({"jobs", "threads"})->UseManualTime();
-
