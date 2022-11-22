@@ -195,7 +195,7 @@ SCENARIO("queue: push, pop, steal")
   }
 
   int pushCounter = 0;
-  auto queue = threadable::queue([&pushCounter](...){ ++pushCounter; });
+  auto queue = threadable::queue<>([&pushCounter](...){ ++pushCounter; });
   GIVEN("queue is empty")
   {
     THEN("size is 0")
@@ -311,7 +311,7 @@ SCENARIO("queue: push, pop, steal")
 
 SCENARIO("queue (sequential): push, pop, steal")
 {
-  auto queue = threadable::queue{threadable::execution_policy::sequential};
+  auto queue = threadable::queue<>(threadable::execution_policy::sequential);
 
   GIVEN("queue is empty")
   {
