@@ -2,13 +2,15 @@
 #include <threadable-tests/doctest_include.hxx>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
+#if __has_include(<execution>)
+#include <execution>
+#endif
 #include <functional>
 #include <type_traits>
 #include <thread>
-
-// #include <syncstream>
 
 SCENARIO("queue: push, pop, steal")
 {
@@ -790,11 +792,12 @@ SCENARIO("queue: stress-test")
 
 SCENARIO("queue: iteration")
 {
-  std::size_t job_counter = 0;
-  auto queue = threadable::queue<16>();
+  static constexpr std::size_t nr_of_jobs = 1 << 18;
+  std::atomic_size_t job_counter = 0;
+  auto queue = threadable::queue<nr_of_jobs>();
   GIVEN("push multiple jobs")
   {
-    for(std::size_t i = 0; i < 3; ++i)
+    for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       queue.push([&job_counter](...){ ++job_counter; });
     }
@@ -811,9 +814,9 @@ SCENARIO("queue: iteration")
           }
         }
 
-        REQUIRE(job_counter == 3);
+        REQUIRE(job_counter.load() == nr_of_jobs);
       }
-      THEN("std::for_each loop works")
+      THEN("std::for_each loop (sequential) works")
       {
         std::for_each(queue.begin(), queue.end(), [](auto& job){
           if(job)
@@ -822,8 +825,21 @@ SCENARIO("queue: iteration")
           }
         });
 
-        REQUIRE(job_counter == 3);
+        REQUIRE(job_counter.load() == nr_of_jobs);
       }
+#if defined(__cpp_lib_execution) && defined(__cpp_lib_parallel_algorithm)
+      THEN("std::for_each loop (parallel) works")
+      {
+        std::for_each(std::execution::par, queue.begin(), queue.end(), [](auto& job){
+          if(job)
+          {
+            job();
+          }
+        });
+
+        REQUIRE(job_counter.load() == nr_of_jobs);
+      }
+#endif
     }
   }
 }
