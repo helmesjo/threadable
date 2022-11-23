@@ -102,7 +102,7 @@ static void queue_threadable_parallel_for(benchmark::State& state)
     }
 
     threadable::utils::time_block(state, [&]{
-      std::for_each(std::execution::seq, std::begin(queue), std::end(queue), [](auto& job){
+      std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
         if(job)
         {
           benchmark::DoNotOptimize(job);
@@ -127,7 +127,7 @@ static void queue_std_parallel_for(benchmark::State& state)
       queue.emplace_back([]() mutable {});
     }
     threadable::utils::time_block(state, [&]{
-      std::for_each(std::execution::seq, std::begin(queue), std::end(queue), [](auto& job){
+      std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
         if(job)
         {
           benchmark::DoNotOptimize(job);
