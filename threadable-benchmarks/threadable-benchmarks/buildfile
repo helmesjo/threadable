@@ -1,9 +1,9 @@
 libs =
 import libs += threadable%lib{threadable} google-benchmark%lib{benchmark}
 
-switch $cxx.class
+switch $cxx.class: regex.match
 {
-  case 'gcc' | 'clang' | 'clang-apple'
+  case 'gcc' | 'clang.*'
     import libs += libtbb%lib{tbb}
 }
 
