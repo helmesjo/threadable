@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <threadable/function.hxx>
 #include <threadable/std_atomic.hxx>
 
@@ -96,6 +97,14 @@ namespace threadable
       other.ref = nullptr;
       return *this;
     }
+    bool operator==(const job_ref& other) const noexcept
+    {
+      return ref == other.ref;
+    }
+    bool operator!=(const job_ref& other) const noexcept
+    {
+      return !(*this == other.ref);
+    }
 
     ~job_ref()
     {
@@ -157,6 +166,160 @@ namespace threadable
     constexpr std::size_t default_max_nr_of_jobs = 1024;
   }
 
+  template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
+  class queue2
+  {
+    static_assert((max_nr_of_jobs& (max_nr_of_jobs - 1)) == 0, "number of jobs must be a power of 2");
+    using atomic_index_t = std::atomic_ptrdiff_t;
+    using index_t = typename atomic_index_t::value_type;
+    static constexpr auto index_mask = max_nr_of_jobs - 1u;
+  public:
+    queue2() noexcept:
+      jobs_(*jobsPtr_)
+    {}
+
+    queue2(queue2&&) = delete;
+    queue2(const queue2&) = delete;
+    auto operator=(queue2&&) = delete;
+    auto operator=(const queue2&) = delete;
+
+    // Push jobs to non-claimed slots.
+    template<typename callable_t, typename... arg_ts>
+      requires std::invocable<callable_t, arg_ts...>
+    const job_token push(callable_t&& func, arg_ts&&... args) noexcept
+    {
+      assert(size() < max_nr_of_jobs);
+      const index_t f = front_.load(std::memory_order_acquire);
+      assert(f != index(back_.load(std::memory_order_acquire)));
+
+      auto& job = jobs_[index(f)];
+      job.set(FWD(func), FWD(args)...);
+
+      front_.store(f+1, std::memory_order_release);
+      // details::atomic_notify_one(front_);
+
+      return job.active;
+    }
+    struct iterator
+    {
+      using iterator_category = std::input_iterator_tag;
+      using difference_type   = index_t;
+      using value_type        = job_ref;
+      using pointer           = job*;
+      using reference         = job&;
+
+      explicit iterator(job* j) noexcept:
+        job_(j)
+      {}
+
+      job_ref operator*() const noexcept
+      {
+        return job_;
+      }
+
+      iterator& operator++() noexcept
+      {
+        ++job_;
+        return *this;
+      }
+
+      iterator operator++(int)
+      {
+        iterator tmp(job_);
+        ++(*this);
+        return tmp;
+      }
+
+      bool operator==(const iterator& other) const noexcept
+      {
+        return job_ == other.job_;
+      }
+
+      bool operator!=(const iterator& other) const noexcept
+      {
+        return !(*this == other);
+      }
+    private:
+      job* job_;
+    };
+    struct range
+    {
+      explicit range(queue2& queue, index_t begin, index_t end) noexcept:
+        queue_(queue),
+        begin_(begin),
+        end_(end)
+      {}
+      ~range()
+      {
+        // Advance back
+        queue_.back_.store(end_+1, std::memory_order_release);
+      }
+      auto begin() noexcept
+      {
+        return iterator(&queue_.jobs_[index(begin_)]);
+      }
+      auto end() noexcept
+      {
+        return iterator(&queue_.jobs_[index(end_)]);
+      }
+      std::size_t size() const noexcept
+      {
+        return static_cast<std::size_t>(end_ - begin_) - 1;
+      }
+    // private:
+      queue2& queue_;
+      index_t begin_;
+      index_t end_;
+    };
+    // Claims and returns a range of jobs, released when range is destructed.
+    // While claimed, new jobs can not be pushed to that range.
+    range claim_range()
+    {
+      const index_t f = front_.load(std::memory_order_acquire);
+      const index_t b = back_.load(std::memory_order_acquire);
+      return range(*this, b, f+1);
+    }
+
+    std::size_t size() const noexcept
+    {
+      const index_t b = front_.load(std::memory_order_acquire);
+      const index_t t = back_.load(std::memory_order_acquire);
+      return static_cast<std::size_t>(b - t);
+    }
+
+    constexpr std::size_t max_size() const noexcept
+    {
+      return max_nr_of_jobs;
+    }
+  private:
+    static inline auto index(index_t val)
+    {
+      return val & index_mask;
+    }
+    /*
+      Circular job buffer. When bottom
+      reaches the end it will wrap around:
+       _
+      |_|
+      |_|
+      |_| ┐→ back  (next claim) - consumer
+      |_| │
+      |_| │
+      |_| ┘
+      |_|  ← front (next push)  - producer
+      |_|
+      |_|
+    */
+    // max() is intentional to easily detect wrap-around issues
+    atomic_index_t back_{std::numeric_limits<index_t>::max()};
+    atomic_index_t front_{std::numeric_limits<index_t>::max()};
+    using jobs_t = std::array<job, max_nr_of_jobs>;
+    std::unique_ptr<jobs_t> jobsPtr_ = std::make_unique<jobs_t>();
+    jobs_t& jobs_;
+    // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
+    // causing noity_all() to not wake thread(s). See completion token test "stress-test"
+    // std::vector<job> jobs_{max_nr_of_jobs};
+  };
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class queue
   {

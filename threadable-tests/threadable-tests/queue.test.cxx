@@ -12,6 +12,47 @@
 #include <type_traits>
 #include <thread>
 
+SCENARIO("queue2: push & claim")
+{
+  GIVEN("queue of max 1 job")
+  {
+    auto queue = threadable::queue2<1>{};
+
+    WHEN("push")
+    {
+      queue.push([]{});
+      REQUIRE(queue.size() == 1);
+      AND_WHEN("claim")
+      {
+        auto range1 = queue.claim_range();
+        THEN("range has one job")
+        {
+          REQUIRE(range1.size() == 1);
+          REQUIRE(range1.begin() != range1.end());
+        }
+
+        THEN("job is non-empty")
+        {
+          REQUIRE(*range1.begin());
+          for(auto job : range1)
+          {
+            job();
+          }
+        }
+
+        AND_WHEN("claim")
+        {
+          auto range2 = queue.claim_range();
+          THEN("range has no job")
+          {
+            REQUIRE(range2.size() == 0);
+            REQUIRE(range2.begin() == range2.end());
+          }
+        }
+      }
+    }
+  }
+}
 SCENARIO("queue: push, pop, steal")
 {
   GIVEN("queue of max 1 job")
