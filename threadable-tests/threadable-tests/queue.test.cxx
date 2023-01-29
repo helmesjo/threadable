@@ -14,39 +14,41 @@
 
 SCENARIO("queue2: push & claim")
 {
-  GIVEN("queue of max 1 job")
+  GIVEN("queue of max 2 job")
   {
-    auto queue = threadable::queue2<1>{};
+    auto queue = threadable::queue2<2>{};
+    REQUIRE(queue.size() == 0);
+    REQUIRE(queue.begin() == queue.end());
 
     WHEN("push")
     {
       queue.push([]{});
       REQUIRE(queue.size() == 1);
-      AND_WHEN("claim")
+      REQUIRE(queue.begin() != queue.end());
+
+      AND_WHEN("iterate")
       {
-        auto range1 = queue.claim_range();
-        THEN("range has one job")
+        auto nrJobs = 0;
+        for(auto job : queue)
         {
-          REQUIRE(range1.size() == 1);
-          REQUIRE(range1.begin() != range1.end());
+          REQUIRE(job);
+          ++nrJobs;
         }
-
-        THEN("job is non-empty")
+        THEN("1 valid job exists")
         {
-          REQUIRE(*range1.begin());
-          for(auto job : range1)
-          {
-            job();
-          }
-        }
+          REQUIRE(nrJobs == 1);
 
-        AND_WHEN("claim")
-        {
-          auto range2 = queue.claim_range();
-          THEN("range has no job")
+          AND_WHEN("iterate")
           {
-            REQUIRE(range2.size() == 0);
-            REQUIRE(range2.begin() == range2.end());
+            nrJobs = 0;
+            for(auto job : queue)
+            {
+              ++nrJobs;
+            }
+            THEN("0 valid jobs exists")
+            {
+              REQUIRE(nrJobs == 0);
+            }
           }
         }
       }
