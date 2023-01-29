@@ -10,6 +10,8 @@
 #include <limits>
 #include <thread>
 #include <vector>
+#include <syncstream>
+#include <iostream>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
@@ -47,6 +49,7 @@ namespace threadable
     {
       this->func.set(FWD(func), FWD(args)...);
       details::atomic_test_and_set(active, std::memory_order_release);
+      details::atomic_notify_all(active);
     }
 
     void reset() noexcept
@@ -172,19 +175,26 @@ namespace threadable
     using atomic_index_t = std::atomic_size_t;
     using index_t = typename atomic_index_t::value_type;
     static constexpr auto index_mask = max_nr_of_jobs - 1u;
+    static constexpr auto null_callback = [](queue2&){};
 
     static_assert(max_nr_of_jobs > 1, "number of jobs must be greater than 1");
     static_assert((max_nr_of_jobs & index_mask) == 0, "number of jobs must be a power of 2");
   public:
-    queue2() noexcept:
+    template<std::invocable<queue2&> callable_t>
+    queue2(callable_t&& onJobReady) noexcept:
       jobs_(*jobsPtr_)
+    {
+      set_notify(FWD(onJobReady));
+    }
+    queue2() noexcept:
+      queue2(null_callback)
     {}
-
     queue2(queue2&&) = delete;
     queue2(const queue2&) = delete;
     auto operator=(queue2&&) = delete;
     auto operator=(const queue2&) = delete;
 
+    struct sentinel { index_t index; };
     struct iterator
     {
       using iterator_category = std::input_iterator_tag;
@@ -193,42 +203,53 @@ namespace threadable
       using pointer           = job*;
       using reference         = job&;
 
-      explicit iterator(job* j, index_t& tail) noexcept:
-        job_(j),
-        tail_(tail)
+      explicit iterator(job* jobs, index_t& index) noexcept:
+        jobs_(jobs),
+        index_(index)
       {}
 
       job_ref operator*() const noexcept
       {
-        return job_;
+        return jobs_;
       }
 
       iterator& operator++() noexcept
       {
-        job_ = &job_[++tail_];
+        ++index_;
+        ++jobs_;
         return *this;
-      }
-
-      iterator operator++(int)
-      {
-        iterator tmp(job_);
-        ++(*this);
-        return tmp;
       }
 
       bool operator==(const iterator& other) const noexcept
       {
-        return job_ == other.job_;
+        return index_ == other.index_;
       }
 
       bool operator!=(const iterator& other) const noexcept
       {
         return !(*this == other);
       }
+
+      bool operator==(const sentinel& other) const noexcept
+      {
+        return index_ == other.index;
+      }
+
     private:
-      job* job_;
-      index_t& tail_;
+      job* jobs_;
+      index_t& index_;
     };
+
+    template<std::invocable<queue2&> callable_t>
+    void set_notify(callable_t&& onJobReady) noexcept
+    {
+      on_job_ready.set(FWD(onJobReady), std::ref(*this));
+    }
+
+    void set_notify(std::nullptr_t) noexcept
+    {
+      on_job_ready.set(null_callback, std::ref(*this));
+    }
 
     // Push jobs to non-claimed slots.
     template<typename callable_t, typename... arg_ts>
@@ -237,26 +258,47 @@ namespace threadable
     {
       assert(size() <= max_nr_of_jobs);
       const index_t i = head_.load(std::memory_order_acquire);
-      assert(mask(tail_) <= mask(i));
+      assert(mask(tail_) <= i);
 
-      auto& job = jobs_[i];
+      auto& job = jobs_[mask(i)];
       job.set(FWD(func), FWD(args)...);
 
       head_.store(i+1, std::memory_order_release);
-      details::atomic_notify_one(head_);
+      on_job_ready();
 
       return job.active;
     }
 
     auto begin() noexcept
     {
-      return iterator(&jobs_[mask(tail_)], tail_);
+      return iterator(&next(), tail_);
     }
 
     auto end() noexcept
     {
-      const index_t end = head_.load(std::memory_order_acquire);
-      return iterator(&jobs_[mask(end)], tail_);
+      return sentinel{head_.load(std::memory_order_acquire)};
+    }
+
+    std::size_t execute()
+    {
+      std::size_t executed = 0;
+      for(auto job : *this)
+      {
+        job();
+        ++executed;
+      }
+      return executed;
+    }
+
+    std::size_t execute_or_wait()
+    {
+      (void)next_or_wait();
+      return execute();
+    }
+
+    static constexpr std::size_t max_size() noexcept
+    {
+      return max_nr_of_jobs;
     }
 
     std::size_t size() const noexcept
@@ -265,15 +307,27 @@ namespace threadable
       return head - tail_;
     }
 
-    static constexpr std::size_t max_size() noexcept
+    bool empty() const noexcept
     {
-      return max_nr_of_jobs;
+      return size() == 0;
     }
 
   private:
     static constexpr inline auto mask(index_t val) noexcept
     {
       return val & index_mask;
+    }
+
+    auto& next()
+    {
+      return jobs_[mask(tail_)];
+    }
+
+    auto& next_or_wait()
+    {
+      auto& job = next();
+      details::atomic_wait(job.active, false, std::memory_order_acquire);
+      return job;
     }
 
     /*
@@ -291,12 +345,14 @@ namespace threadable
       |_|
       |_|
     */
+
     // max() is intentional to easily detect wrap-around issues
     index_t tail_{0};
     atomic_index_t head_{0};
     using jobs_t = std::array<job, max_nr_of_jobs>;
     std::unique_ptr<jobs_t> jobsPtr_ = std::make_unique<jobs_t>();
     jobs_t& jobs_;
+    function<details::job_buffer_size> on_job_ready;
     // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
     // causing noity_all() to not wake thread(s). See completion token test "stress-test"
     // std::vector<job> jobs_{max_nr_of_jobs};
