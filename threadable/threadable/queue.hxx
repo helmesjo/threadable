@@ -5,13 +5,12 @@
 #include <threadable/std_atomic.hxx>
 
 #include <cassert>
+#include <compare>
 #include <cstddef>
 #include <iterator>
 #include <limits>
 #include <thread>
 #include <vector>
-#include <syncstream>
-#include <iostream>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
@@ -201,11 +200,13 @@ namespace threadable
         end(end)
       {}
       sentinel() = default;
-      sentinel(sentinel& other):
+      sentinel(const sentinel& other):
         end(other.end),
         tail(other.tail)
       {
-        other.tail = nullptr;
+        // Glorious hack to make sure there is ever only one
+        // end-iterator changing the tail value;
+        const_cast<sentinel&>(other).tail = nullptr;
       }
       sentinel(sentinel&& other):
         end(other.end),
@@ -213,8 +214,16 @@ namespace threadable
       {
         other.tail = nullptr;
       }
-      sentinel& operator=(const sentinel&) = delete;
-      sentinel& operator=(sentinel&&) = delete;
+      sentinel& operator=(const sentinel& rhs)
+      {
+
+        end = rhs.end;
+        tail = rhs.tail;
+        // Glorious hack to make sure there is ever only one
+        // end-iterator changing the tail value;
+        const_cast<sentinel&>(rhs).tail = nullptr;
+        return *this;
+      }
       ~sentinel()
       {
         if(tail)
@@ -223,17 +232,19 @@ namespace threadable
           *tail = end;
         }
       }
-      const index_t end = 0;
+      index_t end = 0;
     private:
       index_t* tail = nullptr;
     };
     struct iterator
     {
-      using iterator_category = std::forward_iterator_tag;
-      using difference_type   = index_t;
+      using iterator_category = std::random_access_iterator_tag;
+      using difference_type   = std::ptrdiff_t;
       using value_type        = job_ref;
-      using pointer           = job*;
-      using reference         = job&;
+      using pointer           = job_ref;
+      using reference         = job_ref&;
+
+      iterator() = default;
 
       explicit iterator(job* jobs, index_t index) noexcept:
         jobs_(jobs),
@@ -248,31 +259,34 @@ namespace threadable
 
       job_ref operator*() const noexcept
       {
-        std::osyncstream(std::cout) << "thread:: " << std::hash<std::thread::id>{}(std::this_thread::get_id()) << "\n";
         return &jobs_[mask(index_)];
       }
+      inline job_ref operator[](difference_type rhs) const noexcept { return &jobs_[mask(rhs)]; }
 
-      iterator& operator++() noexcept
-      {
-        ++index_;
-        return *this;
-      }
+      inline auto operator<=>(const iterator& rhs) const noexcept { return index_ <=> rhs.index_; }
+      bool operator==(const iterator& other) const noexcept { return index_ == other.index_; }
+      bool operator!=(const iterator& other) const noexcept { return !(*this == other); }
 
-      bool operator==(const iterator& other) const noexcept
-      {
-        return index_ == other.index_;
-      }
-
-      bool operator!=(const iterator& other) const noexcept
-      {
-        return !(*this == other);
-      }
+      inline difference_type operator+ (const iterator& rhs) const noexcept { return index_ - rhs.index_; }
+      inline difference_type operator- (const iterator& rhs) const noexcept { return index_ - rhs.index_; }
+      inline iterator        operator+ (difference_type rhs) const noexcept { return iterator(jobs_, index_ + rhs); }
+      inline iterator        operator- (difference_type rhs) const noexcept { return iterator(jobs_, index_ - rhs); }
+      friend inline iterator operator+(difference_type lhs, const iterator& rhs) { return iterator(rhs.jobs_, rhs + rhs.index_); }
+      friend inline iterator operator-(difference_type lhs, const iterator& rhs) { return iterator(rhs.jobs_, lhs - rhs.index_); }
+      inline iterator&       operator+=(difference_type rhs) noexcept { index_ += rhs; return *this; }
+      inline iterator&       operator-=(difference_type rhs) noexcept { index_ -= rhs; return *this; }
+      inline iterator&       operator++() noexcept { ++index_; return *this; }
+      inline iterator&       operator--() noexcept { --index_; return *this; }
+      inline iterator        operator++(int) noexcept { iterator tmp(jobs_, index_++); return tmp; }
+      inline iterator        operator--(int) noexcept { iterator tmp(jobs_, index_--); return tmp; }
 
     private:
       job* jobs_ = nullptr;
-      index_t index_;
+      index_t index_ = 0;
       sentinel sentinel_;
     };
+    // Make sure iterator is valid for parallelization with the standard algorithms
+    static_assert(std::random_access_iterator<iterator>, "queue::iterator must be a std::random_access_iterator");
 
     template<std::invocable<queue2&> callable_t>
     void set_notify(callable_t&& onJobReady) noexcept

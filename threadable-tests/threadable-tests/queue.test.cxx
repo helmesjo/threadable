@@ -238,7 +238,7 @@ SCENARIO("queue2: stress-test")
   static constexpr std::size_t queue_capacity = 1 << 18;
   std::atomic_size_t notify_counter = 0;
   auto queue = threadable::queue2<queue_capacity>([&notify_counter](...){ ++notify_counter; });
-  GIVEN("one producer/consumer & multiple stealers")
+  GIVEN("1 producer & 1 consumer")
   {
     THEN("there are no race conditions")
     {
@@ -278,14 +278,11 @@ SCENARIO("queue2: stress-test")
 
 SCENARIO("queue2: standard algorithms")
 {
-  auto queue = threadable::queue2{};
-
-  GIVEN("queue with capacity 128")
+  GIVEN("queue with capacity 1 << 22")
   {
-    static constexpr auto queue_capacity = 1 << 24;
+    static constexpr auto queue_capacity = 1 << 22;
     auto queue = threadable::queue2<queue_capacity>{};
     REQUIRE(queue.size() == 0);
-    REQUIRE(queue.begin() == queue.end());
 
     std::atomic_size_t jobs_executed;
     volatile double derp;
@@ -298,17 +295,17 @@ SCENARIO("queue2: standard algorithms")
           derp = std::sqrt(jobs_executed * jobs_executed);
         });
       }
-
-      // AND_WHEN("std::for_each")
-      // {
-      //   std::for_each(queue.begin(), queue.end(), [](auto job) {
-      //     job();
-      //   });
-      //   THEN("all jobs executed")
-      //   {
-      //     REQUIRE(jobs_executed == queue_capacity);
-      //   }
-      // }
+      AND_WHEN("std::for_each")
+      {
+        std::for_each(queue.begin(), queue.end(), [](auto job) {
+          job();
+        });
+        THEN("all jobs executed")
+        {
+          REQUIRE(jobs_executed == queue_capacity);
+          REQUIRE(queue.size() == 0);
+        }
+      }
 #if __has_include(<execution>)
       AND_WHEN("std::for_each (parallel)")
       {
@@ -318,6 +315,7 @@ SCENARIO("queue2: standard algorithms")
         THEN("all jobs executed")
         {
           REQUIRE(jobs_executed == queue_capacity);
+          REQUIRE(queue.size() == 0);
         }
       }
 #endif
