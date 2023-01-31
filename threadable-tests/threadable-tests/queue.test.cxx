@@ -11,7 +11,6 @@
 #include <functional>
 #include <type_traits>
 #include <thread>
-#include <syncstream>
 
 SCENARIO("queue2: push & claim")
 {
@@ -274,6 +273,41 @@ SCENARIO("queue2: stress-test")
       }
       REQUIRE(jobs_executed.load() == queue_capacity);
       REQUIRE(notify_counter.load() == queue_capacity);
+    }
+  }
+}
+
+SCENARIO("queue2: standard algorithms")
+{
+  auto queue = threadable::queue2{};
+
+  GIVEN("queue with capacity 128")
+  {
+    static constexpr auto queue_capacity = 128;
+    auto queue = threadable::queue2<queue_capacity>{};
+    REQUIRE(queue.size() == 0);
+    REQUIRE(queue.begin() == queue.end());
+
+    std::atomic_size_t jobs_executed;
+    WHEN("push all")
+    {
+      while(queue.size() < queue.max_size())
+      {
+        queue.push([&jobs_executed]{
+          ++jobs_executed;
+        });
+      }
+
+      AND_WHEN("std::for_each")
+      {
+        std::for_each(queue.begin(), queue.end(), [](auto job) mutable {
+          job();
+        });
+        THEN("all jobs executed")
+        {
+          REQUIRE(jobs_executed == queue_capacity);
+        }
+      }
     }
   }
 }

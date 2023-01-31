@@ -203,9 +203,15 @@ namespace threadable
       using pointer           = job*;
       using reference         = job&;
 
-      explicit iterator(job* jobs, index_t& index) noexcept:
-        jobs_(jobs),
+      explicit iterator(job& jobs, index_t& index) noexcept:
+        jobs_(&jobs),
         index_(index)
+      {}
+
+      explicit iterator(sentinel sentinel) noexcept:
+        jobs_(nullptr),
+        index_(sentinel_),
+        sentinel_(sentinel.index)
       {}
 
       job_ref operator*() const noexcept
@@ -230,14 +236,10 @@ namespace threadable
         return !(*this == other);
       }
 
-      bool operator==(const sentinel& other) const noexcept
-      {
-        return index_ == other.index;
-      }
-
     private:
-      job* jobs_;
-      index_t& index_;
+      job* jobs_ = nullptr;
+      index_t& index_ = nullptr;
+      index_t sentinel_;
     };
 
     template<std::invocable<queue2&> callable_t>
@@ -271,12 +273,12 @@ namespace threadable
 
     auto begin() noexcept
     {
-      return iterator(&next(), tail_);
+      return iterator(next(), tail_);
     }
 
     auto end() noexcept
     {
-      return sentinel{head_.load(std::memory_order_acquire)};
+      return iterator(sentinel{head_.load(std::memory_order_acquire)});
     }
 
     std::size_t execute()
