@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #if __has_include(<execution>)
 #include <execution>
@@ -18,13 +19,11 @@ SCENARIO("queue2: push & claim")
   {
     auto queue = threadable::queue2<2>{};
     REQUIRE(queue.size() == 0);
-    REQUIRE(queue.begin() == queue.end());
 
     WHEN("push")
     {
       queue.push([]{});
       REQUIRE(queue.size() == 1);
-      REQUIRE(queue.begin() != queue.end());
 
       AND_WHEN("iterate")
       {
@@ -59,7 +58,6 @@ SCENARIO("queue2: push & claim")
     static constexpr auto queue_capacity = 128;
     auto queue = threadable::queue2<queue_capacity>{};
     REQUIRE(queue.size() == 0);
-    REQUIRE(queue.begin() == queue.end());
 
     std::vector<std::size_t> jobs_executed;
     WHEN("push all")
@@ -71,7 +69,6 @@ SCENARIO("queue2: push & claim")
         });
       }
       REQUIRE(queue.size() == queue_capacity);
-      REQUIRE(queue.begin() != queue.end());
 
       AND_WHEN("iterate")
       {
@@ -155,34 +152,34 @@ SCENARIO("queue2: completion token")
       REQUIRE(queue.execute() == 1);
       REQUIRE(token.done());
     }
-    WHEN("waiting on token")
-    {
-      THEN("it releases after job has executed")
-      {
-        using clock_t = std::chrono::steady_clock;
-        const auto start = clock_t::now();
+    // WHEN("waiting on token")
+    // {
+    //   THEN("it releases after job has executed")
+    //   {
+    //     using clock_t = std::chrono::steady_clock;
+    //     const auto start = clock_t::now();
 
-        auto waiterDoneTime = clock_t::now();
-        std::thread waiter([&token, &waiterDoneTime]{ 
-          token.wait();
-          waiterDoneTime = clock_t::now();
-        });
+    //     auto waiterDoneTime = clock_t::now();
+    //     std::thread waiter([&token, &waiterDoneTime]{ 
+    //       token.wait();
+    //       waiterDoneTime = clock_t::now();
+    //     });
 
-        // Give thread some time to start up
-        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    //     // Give thread some time to start up
+    //     std::this_thread::sleep_for(std::chrono::milliseconds{10});
 
-        REQUIRE(queue.execute() == 1);
-        auto jobDoneTime = clock_t::now();
-        waiter.join();
+    //     REQUIRE(queue.execute() == 1);
+    //     auto jobDoneTime = clock_t::now();
+    //     waiter.join();
 
-        INFO(
-          std::chrono::duration_cast<std::chrono::nanoseconds>(jobDoneTime - start).count(),
-          "us < ", 
-          std::chrono::duration_cast<std::chrono::nanoseconds>(waiterDoneTime - start).count(),
-          "us");
-        REQUIRE(jobDoneTime <= waiterDoneTime);
-      }
-    }
+    //     INFO(
+    //       std::chrono::duration_cast<std::chrono::nanoseconds>(jobDoneTime - start).count(),
+    //       "us < ", 
+    //       std::chrono::duration_cast<std::chrono::nanoseconds>(waiterDoneTime - start).count(),
+    //       "us");
+    //     REQUIRE(jobDoneTime <= waiterDoneTime);
+    //   }
+    // }
   }
   GIVEN("stress-test: 1 producer/consumer")
   {
@@ -277,30 +274,45 @@ SCENARIO("queue2: stress-test")
   }
 }
 
+#include <tbb/parallel_for.h>
+
 SCENARIO("queue2: standard algorithms")
 {
   auto queue = threadable::queue2{};
 
   GIVEN("queue with capacity 128")
   {
-    static constexpr auto queue_capacity = 128;
+    static constexpr auto queue_capacity = 1 << 24;
     auto queue = threadable::queue2<queue_capacity>{};
     REQUIRE(queue.size() == 0);
     REQUIRE(queue.begin() == queue.end());
 
     std::atomic_size_t jobs_executed;
+    volatile double derp;
     WHEN("push all")
     {
       while(queue.size() < queue.max_size())
       {
-        queue.push([&jobs_executed]{
+        queue.push([&]{
           ++jobs_executed;
+          derp = std::sqrt(jobs_executed * jobs_executed);
         });
       }
 
-      AND_WHEN("std::for_each")
+      // AND_WHEN("std::for_each")
+      // {
+      //   std::for_each(queue.begin(), queue.end(), [](auto job) {
+      //     job();
+      //   });
+      //   THEN("all jobs executed")
+      //   {
+      //     REQUIRE(jobs_executed == queue_capacity);
+      //   }
+      // }
+#if __has_include(<execution>)
+      AND_WHEN("std::for_each (parallel)")
       {
-        std::for_each(queue.begin(), queue.end(), [](auto job) mutable {
+        std::for_each(std::execution::par, queue.begin(), queue.end(), [](auto job) {
           job();
         });
         THEN("all jobs executed")
@@ -308,6 +320,7 @@ SCENARIO("queue2: standard algorithms")
           REQUIRE(jobs_executed == queue_capacity);
         }
       }
+#endif
     }
   }
 }

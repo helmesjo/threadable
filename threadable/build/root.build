@@ -18,3 +18,21 @@ hxx{*}: cxx.importable = true
 # The test target for cross-testing (running tests under Wine, etc).
 #
 test.target = $cxx.target
+
+# Make system libs importable (eg. libtbb)
+switch $cxx.id: regex.match
+{
+  case 'gcc' | 'clang.*'
+  {
+    if($build.host.class == 'macos')
+    {
+      cxx.poptions += -I/opt/homebrew/include
+      cxx.loptions += -L/opt/homebrew/lib
+    }
+    else
+    {
+      cxx.poptions += -I/usr/include
+      cxx.loptions += -L/usr/lib
+    }
+  }
+}

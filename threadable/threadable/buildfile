@@ -2,6 +2,13 @@ intf_libs = # Interface dependencies.
 impl_libs = # Implementation dependencies.
 #import xxxx_libs += libhello%lib{hello}
 
+switch $cxx.class: regex.match
+{
+  case 'gcc' | 'clang.*'
+  {
+    import intf_libs += libtbb%lib{tbb}
+  }
+}
 switch $cxx.target.class, $cxx.target.system
 {
   case 'linux' | 'bsd' | 'macos'

@@ -194,35 +194,67 @@ namespace threadable
     auto operator=(queue2&&) = delete;
     auto operator=(const queue2&) = delete;
 
-    struct sentinel { index_t index; };
+    struct sentinel
+    {
+      explicit sentinel(index_t* tail, index_t end) noexcept:
+        tail(tail),
+        end(end)
+      {}
+      sentinel() = default;
+      sentinel(sentinel& other):
+        end(other.end),
+        tail(other.tail)
+      {
+        other.tail = nullptr;
+      }
+      sentinel(sentinel&& other):
+        end(other.end),
+        tail(other.tail)
+      {
+        other.tail = nullptr;
+      }
+      sentinel& operator=(const sentinel&) = delete;
+      sentinel& operator=(sentinel&&) = delete;
+      ~sentinel()
+      {
+        if(tail)
+        UNLIKELY
+        {
+          *tail = end;
+        }
+      }
+      const index_t end = 0;
+    private:
+      index_t* tail = nullptr;
+    };
     struct iterator
     {
-      using iterator_category = std::input_iterator_tag;
+      using iterator_category = std::forward_iterator_tag;
       using difference_type   = index_t;
       using value_type        = job_ref;
       using pointer           = job*;
       using reference         = job&;
 
-      explicit iterator(job& jobs, index_t& index) noexcept:
-        jobs_(&jobs),
+      explicit iterator(job* jobs, index_t index) noexcept:
+        jobs_(jobs),
         index_(index)
       {}
 
-      explicit iterator(sentinel sentinel) noexcept:
+      explicit iterator(sentinel&& sentinel) noexcept:
         jobs_(nullptr),
-        index_(sentinel_),
-        sentinel_(sentinel.index)
+        index_(sentinel.end),
+        sentinel_(sentinel)
       {}
 
       job_ref operator*() const noexcept
       {
-        return jobs_;
+        std::osyncstream(std::cout) << "thread:: " << std::hash<std::thread::id>{}(std::this_thread::get_id()) << "\n";
+        return &jobs_[mask(index_)];
       }
 
       iterator& operator++() noexcept
       {
         ++index_;
-        ++jobs_;
         return *this;
       }
 
@@ -238,8 +270,8 @@ namespace threadable
 
     private:
       job* jobs_ = nullptr;
-      index_t& index_ = nullptr;
-      index_t sentinel_;
+      index_t index_;
+      sentinel sentinel_;
     };
 
     template<std::invocable<queue2&> callable_t>
@@ -273,12 +305,12 @@ namespace threadable
 
     auto begin() noexcept
     {
-      return iterator(next(), tail_);
+      return iterator(jobs_.data(), tail_);
     }
 
     auto end() noexcept
     {
-      return iterator(sentinel{head_.load(std::memory_order_acquire)});
+      return iterator(sentinel(&tail_, head_.load(std::memory_order_acquire)));
     }
 
     std::size_t execute()
