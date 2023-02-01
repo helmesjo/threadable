@@ -343,12 +343,6 @@ namespace threadable
       return executed;
     }
 
-    std::size_t execute_or_wait()
-    {
-      (void)next_or_wait();
-      return execute();
-    }
-
     static constexpr std::size_t max_size() noexcept
     {
       return max_nr_of_jobs;
@@ -369,18 +363,6 @@ namespace threadable
     static constexpr inline auto mask(index_t val) noexcept
     {
       return val & index_mask;
-    }
-
-    auto& next()
-    {
-      return jobs_[mask(tail_)];
-    }
-
-    auto& next_or_wait()
-    {
-      auto& job = next();
-      details::atomic_wait(job.active, false, std::memory_order_acquire);
-      return job;
     }
 
     /*
