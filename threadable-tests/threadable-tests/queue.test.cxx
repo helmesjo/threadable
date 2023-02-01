@@ -12,6 +12,9 @@
 #include <functional>
 #include <type_traits>
 #include <thread>
+#if __has_include (<pstld/pstld.h>)
+    #include <pstld/pstld.h>
+#endif
 
 SCENARIO("queue2: push & claim")
 {

@@ -2,11 +2,16 @@ intf_libs = # Interface dependencies.
 impl_libs = # Implementation dependencies.
 #import xxxx_libs += libhello%lib{hello}
 
-switch $cxx.class: regex.match
+switch $cxx.id: regex.match
 {
   case 'gcc' | 'clang.*'
   {
     import intf_libs += libtbb%lib{tbb}
+    if($build.host.class == 'macos')
+    {
+      import intf_libs += pstld%lib{pstld}
+      cxx.export.poptions += -DPSTLD_HACK_INTO_STD
+    }
   }
 }
 switch $cxx.target.class, $cxx.target.system
