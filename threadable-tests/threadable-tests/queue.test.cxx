@@ -277,8 +277,6 @@ SCENARIO("queue2: stress-test")
   }
 }
 
-#include <tbb/parallel_for.h>
-
 SCENARIO("queue2: standard algorithms")
 {
   GIVEN("queue with capacity 1 << 22")
@@ -288,14 +286,12 @@ SCENARIO("queue2: standard algorithms")
     REQUIRE(queue.size() == 0);
 
     std::atomic_size_t jobs_executed;
-    volatile double derp;
     WHEN("push all")
     {
       while(queue.size() < queue.max_size())
       {
-        queue.push([&]{
+        queue.push([&jobs_executed]{
           ++jobs_executed;
-          derp = std::sqrt(jobs_executed * jobs_executed);
         });
       }
       AND_WHEN("std::for_each")
