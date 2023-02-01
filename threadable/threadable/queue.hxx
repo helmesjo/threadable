@@ -171,6 +171,7 @@ namespace threadable
   {
     using atomic_index_t = std::atomic_size_t;
     using index_t = typename atomic_index_t::value_type;
+    using jobs_t = std::array<job, max_nr_of_jobs>;
     static constexpr auto index_mask = max_nr_of_jobs - 1u;
     static constexpr auto null_callback = [](queue2&){};
 
@@ -387,7 +388,6 @@ namespace threadable
     // max() is intentional to easily detect wrap-around issues
     index_t tail_{0};
     atomic_index_t head_{0};
-    using jobs_t = std::array<job, max_nr_of_jobs>;
     std::unique_ptr<jobs_t> jobsPtr_ = std::make_unique<jobs_t>();
     jobs_t& jobs_;
     function<details::job_buffer_size> on_job_ready;
