@@ -194,45 +194,50 @@ namespace threadable
     struct sentinel
     {
       explicit sentinel(index_t* tail, index_t end) noexcept:
-        tail(tail),
-        end(end)
+        tail_(tail),
+        end_(end)
       {}
       sentinel() = default;
       sentinel(const sentinel& other):
-        end(other.end),
-        tail(other.tail)
+        tail_(other.tail_),
+        end_(other.end_)
       {
         // Glorious hack to make sure there is ever only one
-        // end-iterator changing the tail value;
-        const_cast<sentinel&>(other).tail = nullptr;
+        // end-iterator changing the tail_ value;
+        const_cast<sentinel&>(other).tail_ = nullptr;
       }
       sentinel(sentinel&& other):
-        end(other.end),
-        tail(other.tail)
+        tail_(other.tail_),
+        end_(other.end_)
       {
-        other.tail = nullptr;
+        other.tail_ = nullptr;
       }
       sentinel& operator=(const sentinel& rhs)
       {
-
-        end = rhs.end;
-        tail = rhs.tail;
+        tail_ = rhs.tail_;
+        end_ = rhs.end_;
         // Glorious hack to make sure there is ever only one
-        // end-iterator changing the tail value;
-        const_cast<sentinel&>(rhs).tail = nullptr;
+        // end-iterator changing the tail_ value;
+        const_cast<sentinel&>(rhs).tail_ = nullptr;
         return *this;
       }
       ~sentinel()
       {
-        if(tail)
+        if(tail_)
         UNLIKELY
         {
-          *tail = end;
+          *tail_ = end_;
         }
       }
-      index_t end = 0;
+
+      index_t index() const
+      {
+        return end_;
+      }
+  
     private:
-      index_t* tail = nullptr;
+      index_t* tail_ = nullptr;
+      index_t end_ = 0;
     };
     struct iterator
     {
@@ -251,7 +256,7 @@ namespace threadable
 
       explicit iterator(sentinel&& sentinel) noexcept:
         jobs_(nullptr),
-        index_(sentinel.end),
+        index_(sentinel.index()),
         sentinel_(sentinel)
       {}
 
