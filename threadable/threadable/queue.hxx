@@ -84,12 +84,19 @@ namespace threadable
     job_ref(job* ref):
       ref(ref)
     {}
-
     job_ref(const job_ref& other) = default;
     job_ref(job_ref&& other):
       ref(other.ref)
     {
       other.ref = nullptr;
+    }
+    ~job_ref()
+    {
+      if(ref && *ref)
+      UNLIKELY
+      {
+        ref->reset();
+      }
     }
 
     job_ref& operator=(const job_ref& other) = default;
@@ -106,15 +113,6 @@ namespace threadable
     bool operator!=(const job_ref& other) const noexcept
     {
       return !(*this == other.ref);
-    }
-
-    ~job_ref()
-    {
-      if(ref)
-      UNLIKELY
-      {
-        ref->reset();
-      }
     }
 
     job& operator*() const
@@ -286,7 +284,7 @@ namespace threadable
       sentinel sentinel_;
     };
     // Make sure iterator is valid for parallelization with the standard algorithms
-    static_assert(std::random_access_iterator<iterator>, "queue::iterator must be a std::random_access_iterator");
+    static_assert(std::random_access_iterator<iterator>, "queue::iterator must be an std::random_access_iterator");
 
     template<std::invocable<queue2&> callable_t>
     void set_notify(callable_t&& onJobReady) noexcept
