@@ -317,6 +317,11 @@ namespace threadable
       return job.active;
     }
 
+    void clear()
+    {
+      for(auto job : *this){}
+    }
+
     auto begin() noexcept
     {
       return iterator(jobs_.data(), tail_);
