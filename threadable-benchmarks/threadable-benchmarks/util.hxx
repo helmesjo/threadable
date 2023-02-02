@@ -7,7 +7,7 @@
 namespace threadable::utils
 {
   template<std::invocable block_t>
-  static void time_block(benchmark::State& state, block_t&& block)
+  inline void time_block(benchmark::State& state, block_t&& block)
   {
     auto start = std::chrono::high_resolution_clock::now();
 

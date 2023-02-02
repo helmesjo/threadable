@@ -92,7 +92,10 @@ namespace threadable
     }
     ~job_ref()
     {
-      if(ref && *ref)
+      // This slows down a ton, especially when one use iterators.
+      // Commenting it out speeds iteration (single threaded) up by
+      // a factor of 12.
+      if(ref)
       UNLIKELY
       {
         ref->reset();
