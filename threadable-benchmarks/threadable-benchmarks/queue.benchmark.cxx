@@ -8,8 +8,11 @@
 #include <execution>
 #endif
 #include <functional>
-#include <vector>
+#if __has_include (<pstld/pstld.h>)
+    #include <pstld/pstld.h>
+#endif
 #include <queue>
+#include <vector>
 
 namespace
 {
