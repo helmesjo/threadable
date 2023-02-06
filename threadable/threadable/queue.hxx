@@ -276,7 +276,7 @@ namespace threadable
       bool operator==(const iterator& other) const noexcept { return index_ == other.index_; }
       bool operator!=(const iterator& other) const noexcept { return !(*this == other); }
 
-      inline difference_type operator+ (const iterator& rhs) const noexcept { return index_ - rhs.index_; }
+      inline difference_type operator+ (const iterator& rhs) const noexcept { return index_ + rhs.index_; }
       inline difference_type operator- (const iterator& rhs) const noexcept { return index_ - rhs.index_; }
       inline iterator        operator+ (difference_type rhs) const noexcept { return iterator(jobs_, index_ + rhs); }
       inline iterator        operator- (difference_type rhs) const noexcept { return iterator(jobs_, index_ - rhs); }
