@@ -129,11 +129,8 @@ static void queue_std_parallel_for(benchmark::State& state)
     }
     threadable::utils::time_block(state, [&]{
       std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
-        if(job)
-        {
-          benchmark::DoNotOptimize(job);
-          job();
-        }
+        benchmark::DoNotOptimize(job);
+        job();
       });
     });
     queue.clear();
