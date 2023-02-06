@@ -244,11 +244,13 @@ namespace threadable
     };
     struct iterator
     {
-      using iterator_category = std::random_access_iterator_tag;
+      using iterator_category = std::contiguous_iterator_tag;
+      using iterator_concept  = std::contiguous_iterator_tag;
       using difference_type   = std::ptrdiff_t;
       using value_type        = job;
       using pointer           = value_type*;
       using reference         = value_type&;
+      using element_type      = value_type;
 
       iterator() = default;
 
@@ -263,25 +265,30 @@ namespace threadable
         sentinel_(sentinel)
       {}
 
-      inline reference operator*() const noexcept
+      inline reference operator*() noexcept
       {
         return jobs_[mask(index_)];
+      }
+      inline pointer operator->() const noexcept
+      {
+        return &jobs_[mask(index_)];
       }
       inline reference operator[](difference_type rhs) const noexcept
       {
         return jobs_[mask(rhs)];
       }
 
+      friend inline reference operator*(const iterator& it) { return it.jobs_[mask(it.index_)]; }
+
       inline auto operator<=>(const iterator& rhs) const noexcept { return index_ <=> rhs.index_; }
-      bool operator==(const iterator& other) const noexcept { return index_ == other.index_; }
-      bool operator!=(const iterator& other) const noexcept { return !(*this == other); }
+      inline bool operator== (const iterator& other) const noexcept { return index_ == other.index_; }
 
       inline difference_type operator+ (const iterator& rhs) const noexcept { return index_ + rhs.index_; }
       inline difference_type operator- (const iterator& rhs) const noexcept { return index_ - rhs.index_; }
       inline iterator        operator+ (difference_type rhs) const noexcept { return iterator(jobs_, index_ + rhs); }
       inline iterator        operator- (difference_type rhs) const noexcept { return iterator(jobs_, index_ - rhs); }
-      friend inline iterator operator+(difference_type lhs, const iterator& rhs) { return iterator(rhs.jobs_, lhs + rhs.index_); }
-      friend inline iterator operator-(difference_type lhs, const iterator& rhs) { return iterator(rhs.jobs_, lhs - rhs.index_); }
+      friend inline iterator operator+ (difference_type lhs, const iterator& rhs) { return iterator(rhs.jobs_, lhs + rhs.index_); }
+      friend inline iterator operator- (difference_type lhs, const iterator& rhs) { return iterator(rhs.jobs_, lhs - rhs.index_); }
       inline iterator&       operator+=(difference_type rhs) noexcept { index_ += rhs; return *this; }
       inline iterator&       operator-=(difference_type rhs) noexcept { index_ -= rhs; return *this; }
       inline iterator&       operator++() noexcept { ++index_; return *this; }
@@ -295,7 +302,7 @@ namespace threadable
       sentinel sentinel_;
     };
     // Make sure iterator is valid for parallelization with the standard algorithms
-    static_assert(std::random_access_iterator<iterator>, "queue::iterator must be an std::random_access_iterator");
+    static_assert(std::contiguous_iterator<iterator>);
 
     template<std::invocable<queue2&> callable_t>
     void set_notify(callable_t&& onJobReady) noexcept
