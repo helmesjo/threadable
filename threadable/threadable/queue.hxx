@@ -280,7 +280,7 @@ namespace threadable
       inline difference_type operator- (const iterator& rhs) const noexcept { return index_ - rhs.index_; }
       inline iterator        operator+ (difference_type rhs) const noexcept { return iterator(jobs_, index_ + rhs); }
       inline iterator        operator- (difference_type rhs) const noexcept { return iterator(jobs_, index_ - rhs); }
-      friend inline iterator operator+(difference_type lhs, const iterator& rhs) { return iterator(rhs.jobs_, rhs + rhs.index_); }
+      friend inline iterator operator+(difference_type lhs, const iterator& rhs) { return iterator(rhs.jobs_, lhs + rhs.index_); }
       friend inline iterator operator-(difference_type lhs, const iterator& rhs) { return iterator(rhs.jobs_, lhs - rhs.index_); }
       inline iterator&       operator+=(difference_type rhs) noexcept { index_ += rhs; return *this; }
       inline iterator&       operator-=(difference_type rhs) noexcept { index_ -= rhs; return *this; }
@@ -421,7 +421,6 @@ namespace threadable
       using reference         = value_type&;
 
       iterator() = default;
-      iterator(const iterator&) = default;
       iterator(queue& queue, index_t index):
         queue_(&queue),
         index_(index)
