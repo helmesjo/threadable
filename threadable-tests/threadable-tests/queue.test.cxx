@@ -31,7 +31,7 @@ SCENARIO("queue2: push & claim")
       AND_WHEN("iterate")
       {
         auto nrJobs = 0;
-        for(auto job : queue)
+        for(auto& job : queue)
         {
           REQUIRE(job);
           ++nrJobs;
@@ -43,8 +43,9 @@ SCENARIO("queue2: push & claim")
           AND_WHEN("iterate")
           {
             nrJobs = 0;
-            for(auto job : queue)
+            for(auto& job : queue)
             {
+              (void)job;
               ++nrJobs;
             }
             THEN("0 valid jobs exists")
@@ -75,7 +76,7 @@ SCENARIO("queue2: push & claim")
 
       AND_WHEN("iterate")
       {
-        for(auto job : queue)
+        for(auto& job : queue)
         {
           REQUIRE(job);
           job();
@@ -96,8 +97,9 @@ SCENARIO("queue2: push & claim")
           AND_WHEN("iterate")
           {
             jobs_executed.clear();
-            for(auto job : queue)
+            for(auto& job : queue)
             {
+              (void)job;
               jobs_executed.push_back(0);
             }
             THEN("0 jobs were executed")
@@ -143,7 +145,7 @@ SCENARIO("queue2: completion token")
     auto token = queue.push([]{});
     THEN("token is done when job is discarded")
     {
-      for(auto job : queue){ (void)job; /* discard job */}
+      for(auto& job : queue){ (void)job; /* discard job */}
       REQUIRE(token.done());
     }
     THEN("token is not done before job is invoked")
@@ -192,7 +194,7 @@ SCENARIO("queue2: completion token")
     for(std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       auto token = queue.push([]{});
-      for(auto job : queue)
+      for(auto& job : queue)
       {
         if(job)
         {
@@ -213,7 +215,7 @@ SCENARIO("queue2: completion token")
     auto worker = std::thread([&]{
       while(run)
       {
-        for(auto job : queue)
+        for(auto& job : queue)
         {
           if(job)
           {
@@ -296,7 +298,7 @@ SCENARIO("queue2: standard algorithms")
       }
       AND_WHEN("std::for_each")
       {
-        std::for_each(queue.begin(), queue.end(), [](auto job) {
+        std::for_each(queue.begin(), queue.end(), [](auto& job) {
           job();
         });
         THEN("all jobs executed")
@@ -308,7 +310,7 @@ SCENARIO("queue2: standard algorithms")
 #if __has_include(<execution>)
       AND_WHEN("std::for_each (parallel)")
       {
-        std::for_each(std::execution::par, queue.begin(), queue.end(), [](auto job) {
+        std::for_each(std::execution::par, queue.begin(), queue.end(), [](auto& job) {
           job();
         });
         THEN("all jobs executed")

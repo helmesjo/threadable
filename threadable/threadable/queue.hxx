@@ -10,7 +10,6 @@
 #include <iterator>
 #include <limits>
 #include <thread>
-#include <vector>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
@@ -247,9 +246,9 @@ namespace threadable
     {
       using iterator_category = std::random_access_iterator_tag;
       using difference_type   = std::ptrdiff_t;
-      using value_type        = job_ref;
-      using pointer           = job_ref;
-      using reference         = job_ref&;
+      using value_type        = job;
+      using pointer           = value_type*;
+      using reference         = value_type&;
 
       iterator() = default;
 
@@ -264,11 +263,14 @@ namespace threadable
         sentinel_(sentinel)
       {}
 
-      job_ref operator*() const noexcept
+      inline reference operator*() const noexcept
       {
-        return &jobs_[mask(index_)];
+        return jobs_[mask(index_)];
       }
-      inline job_ref operator[](difference_type rhs) const noexcept { return &jobs_[mask(rhs)]; }
+      inline reference operator[](difference_type rhs) const noexcept
+      {
+        return jobs_[mask(rhs)];
+      }
 
       inline auto operator<=>(const iterator& rhs) const noexcept { return index_ <=> rhs.index_; }
       bool operator==(const iterator& other) const noexcept { return index_ == other.index_; }
@@ -326,7 +328,7 @@ namespace threadable
 
     void clear()
     {
-      for(auto job : *this){}
+      for(auto& job : *this){ (void)job; }
     }
 
     auto begin() noexcept
@@ -342,7 +344,7 @@ namespace threadable
     std::size_t execute()
     {
       std::size_t executed = 0;
-      for(auto job : *this)
+      for(auto& job : *this)
       {
         job();
         ++executed;
