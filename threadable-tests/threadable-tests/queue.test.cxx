@@ -143,12 +143,12 @@ SCENARIO("queue2: completion token")
   GIVEN("push job & store token")
   {
     auto token = queue.push([]{});
-    THEN("token is done when job is discarded")
+    THEN("token is NOT done when job is discarded")
     {
       for(auto& job : queue){ (void)job; /* discard job */}
-      REQUIRE(token.done());
+      REQUIRE_FALSE(token.done());
     }
-    THEN("token is not done before job is invoked")
+    THEN("token is NOT done before job is invoked")
     {
       REQUIRE_FALSE(token.done());
     }
