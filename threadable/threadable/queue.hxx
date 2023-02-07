@@ -10,6 +10,7 @@
 #include <iterator>
 #include <limits>
 #include <thread>
+#include <vector>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
@@ -181,8 +182,7 @@ namespace threadable
     static_assert((max_nr_of_jobs & index_mask) == 0, "number of jobs must be a power of 2");
   public:
     template<std::invocable<queue2&> callable_t>
-    queue2(callable_t&& onJobReady) noexcept:
-      jobs_(*jobsPtr_)
+    queue2(callable_t&& onJobReady) noexcept
     {
       set_notify(FWD(onJobReady));
     }
@@ -401,12 +401,10 @@ namespace threadable
     // max() is intentional to easily detect wrap-around issues
     index_t tail_{0};
     atomic_index_t head_{0};
-    std::unique_ptr<jobs_t> jobsPtr_ = std::make_unique<jobs_t>();
-    jobs_t& jobs_;
     function<details::job_buffer_size> on_job_ready;
     // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
     // causing noity_all() to not wake thread(s). See completion token test "stress-test"
-    // std::vector<job> jobs_{max_nr_of_jobs};
+    std::vector<job> jobs_{max_nr_of_jobs};
   };
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class queue
