@@ -275,7 +275,7 @@ namespace threadable
       }
       inline reference operator[](difference_type rhs) const noexcept
       {
-        return jobs_[mask(rhs)];
+        return jobs_[mask(index_ + rhs)];
       }
 
       friend inline reference operator*(const iterator& it) { return it.jobs_[mask(it.index_)]; }

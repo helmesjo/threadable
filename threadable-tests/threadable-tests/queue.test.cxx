@@ -303,7 +303,7 @@ SCENARIO("queue2: standard algorithms")
         });
         THEN("all jobs executed")
         {
-          REQUIRE(jobs_executed == queue_capacity);
+          REQUIRE(jobs_executed.load() == queue_capacity);
           REQUIRE(queue.size() == 0);
         }
       }
@@ -315,7 +315,7 @@ SCENARIO("queue2: standard algorithms")
         });
         THEN("all jobs executed")
         {
-          REQUIRE(jobs_executed == queue_capacity);
+          REQUIRE(jobs_executed.load() == queue_capacity);
           REQUIRE(queue.size() == 0);
         }
       }
