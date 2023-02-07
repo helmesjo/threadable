@@ -244,7 +244,7 @@ namespace threadable
     };
     struct iterator
     {
-      using iterator_category = std::contiguous_iterator_tag;
+      using iterator_category = std::random_access_iterator_tag;
       using iterator_concept  = std::contiguous_iterator_tag;
       using difference_type   = std::ptrdiff_t;
       using value_type        = job;
@@ -302,6 +302,7 @@ namespace threadable
       sentinel sentinel_;
     };
     // Make sure iterator is valid for parallelization with the standard algorithms
+    static_assert(std::random_access_iterator<iterator>);
     static_assert(std::contiguous_iterator<iterator>);
 
     template<std::invocable<queue2&> callable_t>
