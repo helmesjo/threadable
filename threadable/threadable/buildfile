@@ -4,14 +4,15 @@ impl_libs = # Implementation dependencies.
 
 switch $cxx.id: regex.match
 {
-  case 'gcc' | 'clang.*'
+  case 'gcc' | 'clang'
   {
     import intf_libs += libtbb%lib{tbb}
-    if($cxx.id == 'clang-apple')
-    {
-      import intf_libs += pstld%lib{pstld}
-      cxx.export.poptions += -DPSTLD_HACK_INTO_STD
-    }
+  }
+  case 'clang-apple'
+  {
+    import intf_libs += libtbb%lib{tbb}
+    import intf_libs += pstld%lib{pstld}
+    cxx.export.poptions += -DPSTLD_HACK_INTO_STD
   }
 }
 switch $cxx.target.system
