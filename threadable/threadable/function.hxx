@@ -39,7 +39,7 @@ namespace threadable
       using invoke_func_t = decltype(&invoke_func<void(*)()>);
   }
 
-  template<std::size_t buffer_size = details::cache_line_size>
+  template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
   struct function
   {
     template<typename callable_t>
