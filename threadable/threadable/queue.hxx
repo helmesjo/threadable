@@ -174,7 +174,6 @@ namespace threadable
   {
     using atomic_index_t = std::atomic_size_t;
     using index_t = typename atomic_index_t::value_type;
-    using jobs_t = std::array<job, max_nr_of_jobs>;
     static constexpr auto index_mask = max_nr_of_jobs - 1u;
     static constexpr auto null_callback = [](queue2&){};
 
@@ -293,8 +292,8 @@ namespace threadable
       inline iterator&       operator-=(difference_type rhs) noexcept { index_ -= rhs; return *this; }
       inline iterator&       operator++() noexcept { ++index_; return *this; }
       inline iterator&       operator--() noexcept { --index_; return *this; }
-      inline iterator        operator++(int) noexcept { iterator tmp(jobs_, index_++); return tmp; }
-      inline iterator        operator--(int) noexcept { iterator tmp(jobs_, index_--); return tmp; }
+      inline iterator        operator++(int) noexcept { return iterator(jobs_, index_++); }
+      inline iterator        operator--(int) noexcept { return iterator(jobs_, index_--); }
 
     private:
       job* jobs_ = nullptr;
