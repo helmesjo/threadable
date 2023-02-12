@@ -42,21 +42,30 @@ namespace threadable
   template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
   struct function
   {
+    using buffer_t = std::array<std::uint8_t, buffer_size>;
+    using invoke_func_t = details::invoke_func_t;
+    static constexpr auto func_ptr_size = sizeof(invoke_func_t);
+
     template<typename callable_t>
       requires std::invocable<callable_t>
-    void set(callable_t&& func) noexcept
+    void set(callable_t&& callable) noexcept
     {
       using callable_value_t = std::remove_reference_t<callable_t>;
-      static_assert(sizeof(callable_value_t) <= buffer_size, "callable won't fit in function buffer");
-      unwrap_func = std::addressof(details::invoke_func<callable_value_t>);
-      void* buffPtr = buffer.data();
+      static constexpr auto callable_size = sizeof(callable_value_t);
+
+      static_assert(func_ptr_size + callable_size <= buffer_size, "callable won't fit in function buffer");
+
+      // store invoke-pointer in header, and actual
+      // callable in the remaining buffer
+      invoke_ptr(std::addressof(details::invoke_func<callable_value_t>));
+      auto* buffPtr = buffer.data() + func_ptr_size;
       if constexpr(std::is_trivially_copyable_v<callable_value_t>)
       {
-        std::memcpy(buffPtr, std::addressof(func), sizeof(func));
+        std::memcpy(buffPtr, std::addressof(callable), callable_size);
       }
       else
       {
-        if(::new (buffPtr) callable_value_t(FWD(func)) != buffPtr)
+        if(::new (buffPtr) callable_value_t(FWD(callable)) != buffPtr)
         {
           std::terminate();
         }
@@ -67,14 +76,17 @@ namespace threadable
       requires std::invocable<callable_t, arg_ts...>
     void set(callable_t&& func, arg_ts&&... args) noexcept
     {
+      const auto tmp = [smerg = [func = FWD(func), ...args = FWD(args)]{}]{};
+      static_assert(buffer_size >= sizeof(tmp));
+
       set([func = FWD(func), ...args = FWD(args)]() mutable {
         std::invoke(FWD(func), FWD(args)...);
       });
     }
 
-    void reset() noexcept
+    inline void reset() noexcept
     {
-      unwrap_func = nullptr;
+      invoke_ptr(nullptr);
     }
 
     template<typename callable_t, typename... arg_ts>
@@ -91,21 +103,29 @@ namespace threadable
       return *this;
     }
 
-    void operator()()
+    inline void operator()()
     {
-      unwrap_func(buffer.data());
+      invoke_ptr()(buffer.data() + func_ptr_size);
     }
 
-    operator bool() const noexcept
+    inline operator bool() const noexcept
     {
-      return unwrap_func;
+      return invoke_ptr() != nullptr;
     }
 
   private:
-    details::invoke_func_t unwrap_func = nullptr;
-    std::array<std::uint8_t, buffer_size> buffer;
-  };
+    inline invoke_func_t& invoke_ptr() noexcept
+    {
+      return reinterpret_cast<invoke_func_t&>(*buffer.data());
+    }
 
+    inline void invoke_ptr(invoke_func_t func) noexcept
+    {
+      invoke_ptr() = func;
+    }
+
+    buffer_t buffer;
+  };
 }
 
 #undef FWD
