@@ -3,6 +3,7 @@
 #include <threadable/std_concepts.hxx>
 
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -10,6 +11,7 @@
 #include <memory>
 #include <new>
 #include <type_traits>
+#include <vector>
 #include <version>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -44,28 +46,31 @@ namespace threadable
   {
     using buffer_t = std::array<std::uint8_t, buffer_size>;
     using invoke_func_t = details::invoke_func_t;
-    static constexpr auto func_ptr_size = sizeof(invoke_func_t);
+    static constexpr std::uint8_t header_size = sizeof(std::uint8_t);
+    static constexpr std::uint8_t func_ptr_size = sizeof(invoke_func_t);
 
     template<typename callable_t>
       requires std::invocable<callable_t>
     void set(callable_t&& callable) noexcept
     {
       using callable_value_t = std::remove_reference_t<callable_t>;
-      static constexpr auto callable_size = sizeof(callable_value_t);
+      static constexpr std::uint8_t callable_size = sizeof(callable_value_t);
 
-      static_assert(func_ptr_size + callable_size <= buffer_size, "callable won't fit in function buffer");
+      static_assert(header_size + func_ptr_size + callable_size <= buffer_size, "callable won't fit in function buffer");
 
-      // store invoke-pointer in header, and actual
-      // callable in the remaining buffer
+      // header (size)
+      // header (invocation pointer)
+      // body   (callable)
+      size(header_size + func_ptr_size + callable_size);
       invoke_ptr(std::addressof(details::invoke_func<callable_value_t>));
-      auto* buffPtr = buffer.data() + func_ptr_size;
+      auto buffPtr = body_ptr();
       if constexpr(std::is_trivially_copyable_v<callable_value_t>)
       {
         std::memcpy(buffPtr, std::addressof(callable), callable_size);
       }
       else
       {
-        if(::new (buffPtr) callable_value_t(FWD(callable)) != buffPtr)
+        if(::new (buffPtr) callable_value_t(FWD(callable)) != static_cast<void*>(buffPtr))
         {
           std::terminate();
         }
@@ -76,9 +81,6 @@ namespace threadable
       requires std::invocable<callable_t, arg_ts...>
     void set(callable_t&& func, arg_ts&&... args) noexcept
     {
-      const auto tmp = [smerg = [func = FWD(func), ...args = FWD(args)]{}]{};
-      static_assert(buffer_size >= sizeof(tmp));
-
       set([func = FWD(func), ...args = FWD(args)]() mutable {
         std::invoke(FWD(func), FWD(args)...);
       });
@@ -105,7 +107,7 @@ namespace threadable
 
     inline void operator()()
     {
-      invoke_ptr()(buffer.data() + func_ptr_size);
+      invoke_ptr()(body_ptr());
     }
 
     inline operator bool() const noexcept
@@ -113,10 +115,36 @@ namespace threadable
       return invoke_ptr() != nullptr;
     }
 
+    inline std::uint8_t size() const noexcept
+    {
+      return static_cast<std::uint8_t>(*buffer.data());
+    }
+
+    inline const auto buffer_ptr() const noexcept
+    {
+      return buffer.data();
+    }
+
   private:
+    friend struct function_trimmed;
+    inline std::uint8_t& size() noexcept
+    {
+      return static_cast<std::uint8_t&>(*buffer.data());
+    }
+
+    inline void size(std::uint8_t val) noexcept
+    {
+      size() = val;
+    }
+
+    inline const invoke_func_t& invoke_ptr() const noexcept
+    {
+      return reinterpret_cast<const invoke_func_t&>(*(buffer.data() + header_size));
+    }
+
     inline invoke_func_t& invoke_ptr() noexcept
     {
-      return reinterpret_cast<invoke_func_t&>(*buffer.data());
+      return reinterpret_cast<invoke_func_t&>(*(buffer.data() + header_size));
     }
 
     inline void invoke_ptr(invoke_func_t func) noexcept
@@ -124,8 +152,90 @@ namespace threadable
       invoke_ptr() = func;
     }
 
+    inline typename buffer_t::pointer body_ptr() noexcept
+    {
+      return buffer.data() + header_size + func_ptr_size;
+    }
+
     buffer_t buffer;
   };
+
+  struct function_trimmed
+  {
+    using buffer_t = std::uint8_t*;
+    using invoke_func_t = details::invoke_func_t;
+    static constexpr std::uint8_t header_size = function<>::header_size;
+    static constexpr std::uint8_t func_ptr_size = function<>::func_ptr_size;
+
+    template<typename func_t>
+    explicit function_trimmed(func_t&& func)
+    {
+      assert(func);
+      const auto size = func.size() - header_size;
+      buffer_ = new std::uint8_t[size];
+      std::memcpy(buffer_, func.buffer_ptr() + header_size, size);
+    }
+
+    function_trimmed(function_trimmed&& rhs)
+    {
+      // assert(rhs);
+      const auto size = rhs.size() - header_size;
+      buffer_ = new std::uint8_t[size];
+      std::memcpy(buffer_, rhs.buffer_, rhs.size());
+      rhs.buffer_ = nullptr;
+    }
+
+    ~function_trimmed()
+    {
+      delete[] buffer_;
+      buffer_ = nullptr;
+    }
+
+    inline auto& operator=(function_trimmed&& rhs)
+    {
+      assert(func);
+      const auto size = rhs.size() - header_size;
+      delete[] buffer_;
+      buffer_ = new std::uint8_t[size];
+      std::memcpy(buffer_, rhs.buffer_, rhs.size());
+      rhs.buffer_ = nullptr;
+      return *this;
+    }
+
+    inline std::uint8_t size() const noexcept
+    {
+      return sizeof(buffer_t);
+    }
+
+    inline void operator()()
+    {
+      invoke_ptr()(body_ptr());
+    }
+
+  private:
+    inline const invoke_func_t& invoke_ptr() const noexcept
+    {
+      return reinterpret_cast<const invoke_func_t&>(*(buffer_));
+    }
+
+    inline invoke_func_t& invoke_ptr() noexcept
+    {
+      return reinterpret_cast<invoke_func_t&>(*(buffer_));
+    }
+
+    inline std::uint8_t* body_ptr() noexcept
+    {
+      return buffer_ + func_ptr_size;
+    }
+
+    std::uint8_t* buffer_ = nullptr;
+  };
+
+  template<std::size_t T>
+  struct detect;
+
+  // detect<sizeof(function_slim)> qdwdqwd;
+
 }
 
 #undef FWD

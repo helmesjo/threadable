@@ -183,3 +183,32 @@ SCENARIO("function: execution")
     }
   }
 }
+
+SCENARIO("function: trim")
+{
+  static constexpr auto func_size = 64;
+  auto func = threadable::function<func_size>{};
+  GIVEN("callable is set")
+  {
+    int called = 0;
+
+    func.set([&called] mutable { ++called; });
+    WHEN("function is trimmed")
+    {
+      auto funcTrimmed = threadable::function_trimmed(func);
+
+      THEN("size is reduced")
+      {
+        REQUIRE(funcTrimmed.size() < sizeof(func));
+      }
+      WHEN("it is invoked")
+      {
+        funcTrimmed();
+        THEN("callable is invoked")
+        {
+          REQUIRE(called == 1);
+        }
+      }
+    }
+  }
+}

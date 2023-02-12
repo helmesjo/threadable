@@ -48,9 +48,9 @@ SCENARIO("queue2: push & claim")
               (void)job;
               ++nrJobs;
             }
-            THEN("0 valid jobs exists")
+            THEN("1 valid job still exists")
             {
-              REQUIRE(nrJobs == 0);
+              REQUIRE(nrJobs == 1);
             }
           }
         }

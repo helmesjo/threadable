@@ -46,7 +46,7 @@ namespace threadable
       requires std::invocable<callable_t, arg_ts...>
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
-      this->func.set(FWD(func), FWD(args)...);
+      this->func_.set(FWD(func), FWD(args)...);
       details::atomic_test_and_set(active, std::memory_order_release);
       details::atomic_notify_all(active);
     }
@@ -65,7 +65,7 @@ namespace threadable
       {
         details::atomic_wait(*child_active, true, std::memory_order_acquire);
       }
-      func();
+      func_();
       reset();
     }
 
@@ -74,8 +74,13 @@ namespace threadable
       return details::atomic_test(active, std::memory_order_acquire);
     }
 
+    auto& get() noexcept
+    {
+      return func_;
+    }
+
   private:
-    function<details::job_buffer_size> func;
+    function<details::job_buffer_size> func_;
   };
   static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
 
@@ -264,6 +269,8 @@ namespace threadable
         sentinel_(sentinel)
       {}
 
+      virtual ~iterator() = default;
+
       inline reference operator*() noexcept
       {
         return jobs_[mask(index_)];
@@ -295,6 +302,12 @@ namespace threadable
       inline iterator        operator++(int) noexcept { return iterator(jobs_, index_++); }
       inline iterator        operator--(int) noexcept { return iterator(jobs_, index_--); }
 
+    protected:
+      index_t index() const
+      {
+        return index_;
+      }
+
     private:
       job* jobs_ = nullptr;
       index_t index_ = 0;
@@ -303,6 +316,42 @@ namespace threadable
     // Make sure iterator is valid for parallelization with the standard algorithms
     static_assert(std::random_access_iterator<iterator>);
     static_assert(std::contiguous_iterator<iterator>);
+
+    struct sentinel2 final: public iterator
+    {
+      explicit sentinel2(index_t& tail, index_t end) noexcept:
+        iterator(nullptr, end),
+        tail_(&tail)
+      {}
+      ~sentinel2() override
+      {
+        if(tail_)
+          *tail_ = iterator::index();
+      }
+      sentinel2(const sentinel2& other):
+        tail_(other.tail_)
+      {
+        // Glorious hack to make sure there is ever only one
+        // end-iterator changing the tail_ value;
+        const_cast<sentinel2&>(other).tail_ = nullptr;
+      }
+      sentinel2(sentinel2&& other):
+        tail_(other.tail_)
+      {
+        other.tail_ = nullptr;
+      }
+      sentinel2& operator=(const sentinel2& rhs)
+      {
+        tail_ = rhs.tail_;
+        // Glorious hack to make sure there is ever only one
+        // end-iterator changing the tail_ value;
+        const_cast<sentinel2&>(rhs).tail_ = nullptr;
+        return *this;
+      }
+
+    private:
+      index_t* tail_ = nullptr;
+    };
 
     template<std::invocable<queue2&> callable_t>
     void set_notify(callable_t&& onJobReady) noexcept
@@ -345,7 +394,17 @@ namespace threadable
 
     auto end() noexcept
     {
-      return iterator(sentinel(&tail_, head_.load(std::memory_order_acquire)));
+      auto head = head_.load(std::memory_order_acquire);
+      if(tail_ < head)
+      {
+        auto& lastJob = jobs_[mask(head-1)];
+        static_assert(sizeof(lastJob.get()) == sizeof(decltype([func = lastJob.get()]{})));
+        lastJob.set([this, head = head, func = function_trimmed(lastJob.get())] mutable {
+          func();
+          tail_ = head;
+        });
+      }
+      return iterator(nullptr, head);
     }
 
     std::size_t execute()
