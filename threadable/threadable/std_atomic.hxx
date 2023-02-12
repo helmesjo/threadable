@@ -54,19 +54,19 @@ namespace threadable::details
   template<typename atomic_t, typename obj_t>
   inline void atomic_wait(const atomic_t& atomic, obj_t&& old, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
-    // atomic.wait(FWD(old), order);
+    atomic.wait(FWD(old), order);
   }
 
   template<typename atomic_t>
   inline void atomic_notify_one(atomic_t& atomic) noexcept
   {
-    // atomic.notify_one();
+    atomic.notify_one();
   }
 
   template<typename atomic_t>
   inline void atomic_notify_all(atomic_t& atomic) noexcept
   {
-    // atomic.notify_all();
+    atomic.notify_all();
   }
 }
 #else
