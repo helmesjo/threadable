@@ -132,9 +132,9 @@ namespace threadable
       return static_cast<std::uint8_t&>(*buffer.data());
     }
 
-    inline void size(std::uint8_t val) noexcept
+    inline void size(std::uint8_t s) noexcept
     {
-      size() = val;
+      size() = s;
     }
 
     inline const invoke_func_t& invoke_ptr() const noexcept
@@ -172,35 +172,15 @@ namespace threadable
     {
       assert(func);
       const auto size = func.size() - header_size;
-      buffer_ = new std::uint8_t[size];
-      std::memcpy(buffer_, func.buffer_ptr() + header_size, size);
+      buffer_ = std::unique_ptr<std::uint8_t[]>(new std::uint8_t[size]);
+      std::memcpy(buffer_.get(), func.buffer_ptr() + header_size, size);
     }
+    function_trimmed(function_trimmed&&) = default;
+    function_trimmed& operator=(function_trimmed&&) = default;
 
-    function_trimmed(function_trimmed&& rhs)
-    {
-      // assert(rhs);
-      const auto size = rhs.size() - header_size;
-      buffer_ = new std::uint8_t[size];
-      std::memcpy(buffer_, rhs.buffer_, rhs.size());
-      rhs.buffer_ = nullptr;
-    }
-
-    ~function_trimmed()
-    {
-      delete[] buffer_;
-      buffer_ = nullptr;
-    }
-
-    inline auto& operator=(function_trimmed&& rhs)
-    {
-      assert(func);
-      const auto size = rhs.size() - header_size;
-      delete[] buffer_;
-      buffer_ = new std::uint8_t[size];
-      std::memcpy(buffer_, rhs.buffer_, rhs.size());
-      rhs.buffer_ = nullptr;
-      return *this;
-    }
+    function_trimmed() = delete;
+    function_trimmed(const function_trimmed&) = delete;
+    function_trimmed& operator=(const function_trimmed&) = delete;
 
     inline std::uint8_t size() const noexcept
     {
@@ -213,22 +193,30 @@ namespace threadable
     }
 
   private:
+    inline auto buffer() noexcept
+    {
+      return buffer_.get();
+    }
+    inline auto buffer() const noexcept
+    {
+      return buffer_.get();
+    }
     inline const invoke_func_t& invoke_ptr() const noexcept
     {
-      return reinterpret_cast<const invoke_func_t&>(*(buffer_));
+      return reinterpret_cast<const invoke_func_t&>(*(buffer()));
     }
 
     inline invoke_func_t& invoke_ptr() noexcept
     {
-      return reinterpret_cast<invoke_func_t&>(*(buffer_));
+      return reinterpret_cast<invoke_func_t&>(*(buffer()));
     }
 
     inline std::uint8_t* body_ptr() noexcept
     {
-      return buffer_ + func_ptr_size;
+      return buffer() + func_ptr_size;
     }
 
-    std::uint8_t* buffer_ = nullptr;
+    std::unique_ptr<std::uint8_t[]> buffer_;
   };
 
   template<std::size_t T>
