@@ -28,7 +28,7 @@ SCENARIO("queue2: push & claim")
       queue.push([]{});
       REQUIRE(queue.size() == 1);
 
-      AND_WHEN("iterate")
+      AND_WHEN("iterate without executing jobs")
       {
         auto nrJobs = 0;
         for(auto& job : queue)
@@ -36,7 +36,34 @@ SCENARIO("queue2: push & claim")
           REQUIRE(job);
           ++nrJobs;
         }
-        THEN("1 valid job exists")
+        THEN("1 valid job existed")
+        {
+          REQUIRE(nrJobs == 1);
+
+          AND_WHEN("iterate without executing jobs")
+          {
+            nrJobs = 0;
+            for(auto& job : queue)
+            {
+              (void)job;
+              ++nrJobs;
+            }
+            THEN("1 valid job still existed")
+            {
+              REQUIRE(nrJobs == 1);
+            }
+          }
+        }
+      }
+      AND_WHEN("iterate and execute jobs")
+      {
+        auto nrJobs = 0;
+        for(auto& job : queue)
+        {
+          job();
+          ++nrJobs;
+        }
+        THEN("1 valid job existed")
         {
           REQUIRE(nrJobs == 1);
 
@@ -48,9 +75,9 @@ SCENARIO("queue2: push & claim")
               (void)job;
               ++nrJobs;
             }
-            THEN("1 valid job still exists")
+            THEN("0 valid jobs still existed")
             {
-              REQUIRE(nrJobs == 1);
+              REQUIRE(nrJobs == 0);
             }
           }
         }
