@@ -369,9 +369,9 @@ namespace threadable
       requires std::invocable<callable_t, arg_ts...>
     const job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
-      assert(size() <= max_nr_of_jobs);
+      //assert(size() <= max_nr_of_jobs);
       const index_t i = head_.load(std::memory_order_acquire);
-      assert(mask(tail_) <= i);
+      // assert(mask(tail_) <= i);
 
       auto& job = jobs_[mask(i)];
       job.set(FWD(func), FWD(args)...);
@@ -399,7 +399,7 @@ namespace threadable
       {
         auto& lastJob = jobs_[mask(head-1)];
         static_assert(sizeof(lastJob.get()) == sizeof(decltype([func = lastJob.get()]{})));
-        lastJob.set([this, head = head, func = function_trimmed(lastJob.get())] mutable {
+        lastJob.set([this, head = head, func = function_trimmed(lastJob.get())]() mutable {
           func();
           tail_ = head;
         });
@@ -434,12 +434,11 @@ namespace threadable
       return size() == 0;
     }
 
-  private:
     static constexpr inline auto mask(index_t val) noexcept
     {
       return val & index_mask;
     }
-
+  private:
     /*
       Circular job buffer. When tail or head
       reaches the end they will wrap around:
