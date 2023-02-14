@@ -11,7 +11,7 @@ switch $cxx.id: regex.match
   case 'clang-apple'
   {
     import intf_libs += libtbb%lib{tbb}
-    import intf_libs += pstld%lib{pstld}
+    import intf_libs += libpstld%lib{pstld}
     cxx.export.poptions += -DPSTLD_HACK_INTO_STD
   }
 }
