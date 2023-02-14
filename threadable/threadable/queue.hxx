@@ -398,8 +398,7 @@ namespace threadable
       if(tail_ < head)
       {
         auto& lastJob = jobs_[mask(head-1)];
-        static_assert(sizeof(lastJob.get()) == sizeof(decltype([func = lastJob.get()]{})));
-        lastJob.set([this, head = head, func = function_trimmed(lastJob.get())]() mutable {
+        lastJob.set([this, head = head, func = static_cast<std::function<void()>>(lastJob.get())]() mutable {
           func();
           tail_ = head;
         });

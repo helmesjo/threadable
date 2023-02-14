@@ -1,7 +1,7 @@
 libs =
 import libs += threadable%lib{threadable} doctest%lib{doctest}
 
-exe{threadable-tests}: {hxx ixx txx cxx}{queue.test.cxx doctest_include.hxx doctest_define_main.cxx} $libs
+exe{threadable-tests}: {hxx ixx txx cxx}{**} $libs
 {
   test = true
   install = false

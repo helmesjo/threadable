@@ -11,7 +11,6 @@
 #include <memory>
 #include <new>
 #include <type_traits>
-#include <vector>
 #include <version>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -88,7 +87,7 @@ namespace threadable
 
     inline void reset() noexcept
     {
-      invoke_ptr(nullptr);
+      size(0);
     }
 
     template<typename callable_t, typename... arg_ts>
@@ -112,7 +111,7 @@ namespace threadable
 
     inline operator bool() const noexcept
     {
-      return invoke_ptr() != nullptr;
+      return size() != 0;
     }
 
     inline std::uint8_t size() const noexcept
@@ -120,13 +119,12 @@ namespace threadable
       return static_cast<std::uint8_t>(*buffer.data());
     }
 
-    inline const auto buffer_ptr() const noexcept
+    operator std::function<void()>() const noexcept
     {
-      return buffer.data();
+      return [func = *this]{ func(); };
     }
 
   private:
-    friend struct function_trimmed;
     inline std::uint8_t& size() noexcept
     {
       return static_cast<std::uint8_t&>(*buffer.data());
@@ -135,11 +133,6 @@ namespace threadable
     inline void size(std::uint8_t s) noexcept
     {
       size() = s;
-    }
-
-    inline const invoke_func_t& invoke_ptr() const noexcept
-    {
-      return reinterpret_cast<const invoke_func_t&>(*(buffer.data() + header_size));
     }
 
     inline invoke_func_t& invoke_ptr() noexcept
@@ -159,71 +152,6 @@ namespace threadable
 
     buffer_t buffer;
   };
-
-  struct function_trimmed
-  {
-    using buffer_t = std::uint8_t*;
-    using invoke_func_t = details::invoke_func_t;
-    static constexpr std::uint8_t header_size = function<>::header_size;
-    static constexpr std::uint8_t func_ptr_size = function<>::func_ptr_size;
-
-    template<typename func_t>
-    explicit function_trimmed(func_t&& func)
-    {
-      assert(func);
-      const auto size = func.size() - header_size;
-      buffer_ = std::unique_ptr<std::uint8_t[]>(new std::uint8_t[size]);
-      std::memcpy(buffer_.get(), func.buffer_ptr() + header_size, size);
-    }
-    function_trimmed(function_trimmed&&) = default;
-    function_trimmed& operator=(function_trimmed&&) = default;
-
-    function_trimmed() = delete;
-    function_trimmed(const function_trimmed&) = delete;
-    function_trimmed& operator=(const function_trimmed&) = delete;
-
-    inline std::uint8_t size() const noexcept
-    {
-      return sizeof(buffer_t);
-    }
-
-    inline void operator()()
-    {
-      invoke_ptr()(body_ptr());
-    }
-
-  private:
-    inline auto buffer() noexcept
-    {
-      return buffer_.get();
-    }
-    inline auto buffer() const noexcept
-    {
-      return buffer_.get();
-    }
-    inline const invoke_func_t& invoke_ptr() const noexcept
-    {
-      return reinterpret_cast<const invoke_func_t&>(*(buffer()));
-    }
-
-    inline invoke_func_t& invoke_ptr() noexcept
-    {
-      return reinterpret_cast<invoke_func_t&>(*(buffer()));
-    }
-
-    inline std::uint8_t* body_ptr() noexcept
-    {
-      return buffer() + func_ptr_size;
-    }
-
-    std::unique_ptr<std::uint8_t[]> buffer_;
-  };
-
-  template<std::size_t T>
-  struct detect;
-
-  // detect<sizeof(function_slim)> qdwdqwd;
-
 }
 
 #undef FWD

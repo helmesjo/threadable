@@ -184,7 +184,7 @@ SCENARIO("function: execution")
   }
 }
 
-SCENARIO("function: trim")
+SCENARIO("function: Conversion")
 {
   static constexpr auto func_size = 64;
   auto func = threadable::function<func_size>{};
@@ -193,17 +193,17 @@ SCENARIO("function: trim")
     int called = 0;
 
     func.set([&called] mutable { ++called; });
-    WHEN("function is trimmed")
+    WHEN("function is converted to std::function")
     {
-      auto funcTrimmed = threadable::function_trimmed(func);
+      auto stdFunc = static_cast<std::function<void()>>(func);
 
       THEN("size is reduced")
       {
-        REQUIRE(funcTrimmed.size() < sizeof(func));
+        REQUIRE(sizeof(stdFunc) < sizeof(func));
       }
       WHEN("it is invoked")
       {
-        funcTrimmed();
+        stdFunc();
         THEN("callable is invoked")
         {
           REQUIRE(called == 1);
