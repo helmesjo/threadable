@@ -48,6 +48,24 @@ namespace threadable
     static constexpr std::uint8_t header_size = sizeof(std::uint8_t);
     static constexpr std::uint8_t func_ptr_size = sizeof(invoke_func_t);
 
+    function& operator=(std::invocable auto&& func) noexcept
+      requires (!std::is_same_v<function, std::remove_cvref_t<decltype(func)>>)
+    {
+      set(FWD(func));
+      return *this;
+    }
+
+    auto& operator=(std::nullptr_t) noexcept
+    {
+      reset();
+      return *this;
+    }
+
+    operator std::function<void()>() const noexcept
+    {
+      return [func = *this]() mutable { func(); };
+    }
+
     template<typename callable_t>
       requires std::invocable<callable_t>
     void set(callable_t&& callable) noexcept
@@ -90,20 +108,6 @@ namespace threadable
       size(0);
     }
 
-    template<typename callable_t, typename... arg_ts>
-      requires std::invocable<callable_t, arg_ts...> 
-    auto& operator=(callable_t&& func) noexcept
-    {
-      set(FWD(func));
-      return *this;
-    }
-
-    auto& operator=(std::nullptr_t) noexcept
-    {
-      reset();
-      return *this;
-    }
-
     inline void operator()()
     {
       invoke_ptr()(body_ptr());
@@ -119,10 +123,6 @@ namespace threadable
       return static_cast<std::uint8_t>(*buffer.data());
     }
 
-    operator std::function<void()>() const noexcept
-    {
-      return [func = *this]{ func(); };
-    }
 
   private:
     inline std::uint8_t& size() noexcept

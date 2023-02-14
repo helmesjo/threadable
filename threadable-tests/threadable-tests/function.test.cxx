@@ -195,7 +195,7 @@ SCENARIO("function: Conversion")
     func.set([&called] mutable { ++called; });
     WHEN("function is converted to std::function")
     {
-      auto stdFunc = static_cast<std::function<void()>>(func);
+      std::function<void()> stdFunc = func;
 
       THEN("size is reduced")
       {
