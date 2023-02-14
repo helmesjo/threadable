@@ -220,6 +220,7 @@ namespace threadable
       const index_t i = head_.load(std::memory_order_acquire);
 
       auto& job = jobs_[mask(i)];
+      assert(!job);
       job.set(FWD(func), FWD(args)...);
 
       head_.store(i+1, std::memory_order_release);
