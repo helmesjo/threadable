@@ -24,12 +24,12 @@ static void queue_threadable_iterate(benchmark::State& state)
   const std::size_t nr_of_jobs = state.range(0);
   auto queue = threadable::queue2<jobs_per_iteration>();
 
+  for(std::size_t i = 0; i < nr_of_jobs; ++i)
+  {
+    queue.push([]() mutable {});
+  }
   for (auto _ : state)
   {
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      queue.push([]() mutable {});
-    }
     threadable::utils::time_block(state, [&]{
       for(auto& job : queue)
       {
@@ -43,20 +43,18 @@ static void queue_threadable_iterate(benchmark::State& state)
 static void queue_std_iterate(benchmark::State& state)
 {
   const std::size_t nr_of_jobs = state.range(0);
-  std::queue<std::function<void()>> queue;
+  std::vector<std::function<void()>> queue;
 
+  for(std::size_t i = 0; i < nr_of_jobs; ++i)
+  {
+    queue.emplace_back([]() mutable {});
+  }
   for (auto _ : state)
   {
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      queue.emplace([]() mutable {});
-    }
     threadable::utils::time_block(state, [&]{
-      while(!queue.empty())
+      for(auto& job : queue)
       {
-        auto& job = queue.front();
         benchmark::DoNotOptimize(job);
-        queue.pop();
       }
     });
   }
@@ -73,19 +71,17 @@ static void queue2_threadable_parallel_for(benchmark::State& state)
   const std::size_t nr_of_jobs = state.range(0);
   auto queue = threadable::queue2<jobs_per_iteration>();
 
+  for(std::size_t i = 0; i < nr_of_jobs; ++i)
+  {
+    queue.push([]() mutable {});
+  }
   for (auto _ : state)
   {
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      queue.push([]() mutable {});
-    }
     threadable::utils::time_block(state, [&]{
       std::for_each(std::execution::par, queue.begin(), queue.end(), [](auto& job) {
         benchmark::DoNotOptimize(job);
-        // job();
       });
     });
-    queue.clear();
   }
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
 }
@@ -96,19 +92,17 @@ static void queue_std_parallel_for(benchmark::State& state)
   const std::size_t nr_of_jobs = state.range(0);
   std::vector<std::function<void()>> queue;
 
+  for(std::size_t i = 0; i < nr_of_jobs; ++i)
+  {
+    queue.emplace_back([]() mutable {});
+  }
   for (auto _ : state)
   {
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      queue.emplace_back([]() mutable {});
-    }
     threadable::utils::time_block(state, [&]{
       std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
         benchmark::DoNotOptimize(job);
-        // job();
       });
     });
-    queue.clear();
   }
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
 }
