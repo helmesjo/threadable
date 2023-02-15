@@ -21,8 +21,10 @@ namespace
 
 static void queue_threadable_iterate(benchmark::State& state)
 {
+  using job_t = threadable::job;
   const std::size_t nr_of_jobs = state.range(0);
   auto queue = threadable::queue2<jobs_per_iteration>();
+  benchmark::DoNotOptimize(queue);
 
   for(std::size_t i = 0; i < nr_of_jobs; ++i)
   {
@@ -30,20 +32,21 @@ static void queue_threadable_iterate(benchmark::State& state)
   }
   for (auto _ : state)
   {
-    threadable::utils::time_block(state, [&]{
-      for(auto& job : queue)
-      {
-        benchmark::DoNotOptimize(job);
-      }
-    });
+    for(auto& job : queue)
+    {
+      benchmark::DoNotOptimize(job);
+    }
   }
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
+  state.SetBytesProcessed(nr_of_jobs * sizeof(job_t) * state.iterations());
 }
 
 static void queue_std_iterate(benchmark::State& state)
 {
+  using job_t = std::function<void()>;
   const std::size_t nr_of_jobs = state.range(0);
-  std::vector<std::function<void()>> queue;
+  std::vector<job_t> queue;
+  benchmark::DoNotOptimize(queue);
 
   for(std::size_t i = 0; i < nr_of_jobs; ++i)
   {
@@ -51,25 +54,26 @@ static void queue_std_iterate(benchmark::State& state)
   }
   for (auto _ : state)
   {
-    threadable::utils::time_block(state, [&]{
-      for(auto& job : queue)
-      {
-        benchmark::DoNotOptimize(job);
-      }
-    });
+    for(auto& job : queue)
+    {
+      benchmark::DoNotOptimize(job);
+    }
   }
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
+  state.SetBytesProcessed(nr_of_jobs * sizeof(job_t) * state.iterations());
 }
 
-BENCHMARK(queue_threadable_iterate)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
-BENCHMARK(queue_std_iterate)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
+BENCHMARK(queue_threadable_iterate)->Args({jobs_per_iteration})->ArgNames({"jobs"});
+BENCHMARK(queue_std_iterate)->Args({jobs_per_iteration})->ArgNames({"jobs"});
 
 #if defined(__cpp_lib_execution) && defined(__cpp_lib_parallel_algorithm)
 
 static void queue2_threadable_parallel_for(benchmark::State& state)
 {
+  using job_t = threadable::job;
   const std::size_t nr_of_jobs = state.range(0);
   auto queue = threadable::queue2<jobs_per_iteration>();
+  benchmark::DoNotOptimize(queue);
 
   for(std::size_t i = 0; i < nr_of_jobs; ++i)
   {
@@ -77,20 +81,21 @@ static void queue2_threadable_parallel_for(benchmark::State& state)
   }
   for (auto _ : state)
   {
-    threadable::utils::time_block(state, [&]{
-      std::for_each(std::execution::par, queue.begin(), queue.end(), [](auto& job) {
-        benchmark::DoNotOptimize(job);
-      });
+    std::for_each(std::execution::par, queue.begin(), queue.end(), [](auto& job) {
+      benchmark::DoNotOptimize(job);
     });
   }
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
+  state.SetBytesProcessed(nr_of_jobs * sizeof(job_t) * state.iterations());
 }
-BENCHMARK(queue2_threadable_parallel_for)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
+BENCHMARK(queue2_threadable_parallel_for)->Args({jobs_per_iteration})->ArgNames({"jobs"});
 
 static void queue_std_parallel_for(benchmark::State& state)
 {
+  using job_t = std::function<void()>;
   const std::size_t nr_of_jobs = state.range(0);
-  std::vector<std::function<void()>> queue;
+  std::vector<job_t> queue;
+  benchmark::DoNotOptimize(queue);
 
   for(std::size_t i = 0; i < nr_of_jobs; ++i)
   {
@@ -98,14 +103,13 @@ static void queue_std_parallel_for(benchmark::State& state)
   }
   for (auto _ : state)
   {
-    threadable::utils::time_block(state, [&]{
-      std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
-        benchmark::DoNotOptimize(job);
-      });
+    std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
+      benchmark::DoNotOptimize(job);
     });
   }
   state.SetItemsProcessed(nr_of_jobs * state.iterations());
+  state.SetBytesProcessed(nr_of_jobs * sizeof(job_t) * state.iterations());
 }
-BENCHMARK(queue_std_parallel_for)->Args({jobs_per_iteration})->ArgNames({"jobs"})->UseManualTime();
+BENCHMARK(queue_std_parallel_for)->Args({jobs_per_iteration})->ArgNames({"jobs"});
 
 #endif
