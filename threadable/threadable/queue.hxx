@@ -245,10 +245,10 @@ namespace threadable
       if(tail_ < head)
       {
         auto& lastJob = jobs_[mask(head-1)];
-        lastJob.set(std::function<void()>([this, head = head, func = std::move(lastJob.get())]() mutable {
+        lastJob.set([this, head = head, func = function_dyn(lastJob.get())]() mutable {
           func();
           tail_ = head;
-        }));
+        });
       }
       return iterator(nullptr, head);
     }

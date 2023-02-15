@@ -197,13 +197,22 @@ SCENARIO("function: Conversion")
     {
       std::function<void()> stdFunc = func;
 
-      THEN("size is reduced")
-      {
-        REQUIRE(sizeof(stdFunc) < sizeof(func));
-      }
       WHEN("it is invoked")
       {
         stdFunc();
+        THEN("callable is invoked")
+        {
+          REQUIRE(called == 1);
+        }
+      }
+    }
+    WHEN("function is converted to function_dyn")
+    {
+      threadable::function_dyn funcDyn = func;
+
+      WHEN("it is invoked")
+      {
+        funcDyn();
         THEN("callable is invoked")
         {
           REQUIRE(called == 1);
