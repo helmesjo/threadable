@@ -192,7 +192,7 @@ SCENARIO("function: Conversion")
   {
     int called = 0;
 
-    func.set([&called] mutable { ++called; });
+    func.set([&called]() mutable { ++called; });
     WHEN("function is converted to std::function")
     {
       std::function<void()> stdFunc = func;
