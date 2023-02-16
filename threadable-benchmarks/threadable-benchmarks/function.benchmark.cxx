@@ -9,44 +9,62 @@ namespace
   constexpr std::size_t jobs_per_iteration = 1 << 16;
 }
 
-static void function_threadable(benchmark::State& state)
+static void function_threadable_instantiate(benchmark::State& state)
+{
+  using func_t = threadable::function<>;
+  for (auto _ : state)
+  {
+    benchmark::DoNotOptimize(func_t([]() mutable {}));
+  }
+  state.SetItemsProcessed(state.iterations());
+  state.SetBytesProcessed(sizeof(func_t) * state.iterations());
+}
+
+static void function_threadable_invoke(benchmark::State& state)
 {
   using func_t = threadable::function<>;
   const std::size_t nr_of_jobs = state.range(0);
-  func_t func;
-  for (auto _ : state)
-  {
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      func = []() mutable {
-        benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
-      };
-      func();
-    }
-  }
-  state.SetItemsProcessed(nr_of_jobs * state.iterations());
-  state.SetBytesProcessed(nr_of_jobs * sizeof(func_t) * state.iterations());
-}
-
-static void function_std(benchmark::State& state)
-{
-  using func_t = std::function<void()>;
-  const std::size_t nr_of_jobs = state.range(0);
-  func_t func;
+  auto func = func_t([]() mutable {
+    benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
+  });
   benchmark::DoNotOptimize(func);
   for (auto _ : state)
   {
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      func = []() mutable {
-        benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
-      };
-      func();
-    }
+    func();
   }
-  state.SetItemsProcessed(nr_of_jobs * state.iterations());
-  state.SetBytesProcessed(nr_of_jobs * sizeof(func_t) * state.iterations());
+  state.SetItemsProcessed(state.iterations());
+  state.SetBytesProcessed(sizeof(func_t) * state.iterations());
 }
 
-BENCHMARK(function_threadable)->Args({jobs_per_iteration})->ArgNames({"jobs"});
-BENCHMARK(function_std)->Args({jobs_per_iteration})->ArgNames({"jobs"});
+static void function_std_instantiate(benchmark::State& state)
+{
+  using func_t = std::function<void()>;
+  for (auto _ : state)
+  {
+    benchmark::DoNotOptimize(func_t([]() mutable {}));
+  }
+  state.SetItemsProcessed(state.iterations());
+  state.SetBytesProcessed(sizeof(func_t) * state.iterations());
+}
+
+static void function_std_invoke(benchmark::State& state)
+{
+  using func_t = std::function<void()>;
+  const std::size_t nr_of_jobs = state.range(0);
+  auto func = func_t([]() mutable {
+    benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
+  });
+  benchmark::DoNotOptimize(func);
+  for (auto _ : state)
+  {
+    func();
+  }
+  state.SetItemsProcessed(state.iterations());
+  state.SetBytesProcessed(sizeof(func_t) * state.iterations());
+}
+
+
+BENCHMARK(function_threadable_instantiate)->Args({jobs_per_iteration})->ArgNames({"jobs"});
+BENCHMARK(function_threadable_invoke)->Args({jobs_per_iteration})->ArgNames({"jobs"});
+BENCHMARK(function_std_instantiate)->Args({jobs_per_iteration})->ArgNames({"jobs"});
+BENCHMARK(function_std_invoke)->Args({jobs_per_iteration})->ArgNames({"jobs"});
