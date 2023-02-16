@@ -163,8 +163,38 @@ namespace threadable
   template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
   struct function
   {
+    function() = default;
+
+    function(const function& func):
+      buffer_(func.buffer_)
+    {
+    }
+
+    function(function&& func):
+      buffer_(std::move(func.buffer_))
+    {
+    }
+
+    function(std::invocable auto&& func)
+      requires (!std::same_as<function, std::remove_cvref_t<decltype(func)>>)
+    {
+      set(FWD(func));
+    }
+
+    function& operator=(const function& func) noexcept
+    {
+      buffer_ = func.buffer_;
+      return *this;
+    }
+
+    function& operator=(function&& func) noexcept
+    {
+      buffer_ = std::move(func.buffer_);
+      return *this;
+    }
+
     function& operator=(std::invocable auto&& func) noexcept
-      requires (!std::is_same_v<function, std::remove_cvref_t<decltype(func)>>)
+      requires (!std::same_as<function, std::remove_cvref_t<decltype(func)>>)
     {
       set(FWD(func));
       return *this;
