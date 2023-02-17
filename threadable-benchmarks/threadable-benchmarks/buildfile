@@ -18,5 +18,8 @@ exe{*}:
 }
 
 exe{threadable-benchmarks}: {hxx cxx}{util} cxx{function.benchmark.cxx doctest} $libs
+{
+  test.arguments = --quiet=true
+}
 
 cxx.poptions =+ "-I$out_root" "-I$src_root"
