@@ -1,5 +1,9 @@
 libs =
-import libs += threadable%lib{threadable} google-benchmark%lib{benchmark}
+import libs += \
+  threadable%lib{threadable} \
+  google-benchmark%lib{benchmark} \
+  doctest%lib{doctest} \
+  libnanobench%lib{nanobench}
 
 switch $cxx.class: regex.match
 {
