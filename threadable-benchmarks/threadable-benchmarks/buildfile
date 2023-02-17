@@ -17,6 +17,6 @@ exe{*}:
   install = false
 }
 
-exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
+exe{threadable-benchmarks}: {hxx cxx}{util} cxx{function.benchmark.cxx doctest} $libs
 
 cxx.poptions =+ "-I$out_root" "-I$src_root"

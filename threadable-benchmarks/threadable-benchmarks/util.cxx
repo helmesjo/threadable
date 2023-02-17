@@ -38,7 +38,7 @@ namespace threadable::utils
 {
   int do_trivial_work(int& val)
   {
-    return trivial_work(val);
+    return val;
   }
 
   int do_non_trivial_work(int& val)

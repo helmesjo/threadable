@@ -121,7 +121,7 @@ namespace threadable
       return details::size(buffer_.data());
     }
 
-    inline std::uint8_t* const data() noexcept
+    inline std::uint8_t* data() noexcept
     {
       return buffer_.data();
     }

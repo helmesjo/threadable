@@ -1,70 +1,55 @@
 #include <threadable/function.hxx>
-
 #include <threadable-benchmarks/util.hxx>
-#include <benchmark/benchmark.h>
+
+#include <nanobench.h>
+#include <doctest/doctest.h>
+#include <functional>
+
+namespace bench = ankerl::nanobench;
 
 namespace
 {
-  int val;
-  constexpr std::size_t jobs_per_iteration = 1 << 16;
-}
+  int val = 1;
 
-static void function_threadable_instantiate(benchmark::State& state)
-{
-  using func_t = threadable::function<>;
-  for (auto _ : state)
+  void do_work()
   {
-    benchmark::DoNotOptimize(func_t([]() mutable {}));
+    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
   }
-  state.SetItemsProcessed(state.iterations());
-  state.SetBytesProcessed(sizeof(func_t) * state.iterations());
 }
 
-static void function_threadable_invoke(benchmark::State& state)
+TEST_CASE("function")
 {
-  using func_t = threadable::function<>;
-  const std::size_t nr_of_jobs = state.range(0);
-  auto func = func_t([]() mutable {
-    benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
+  bench::Bench b;
+  b.warmup(500).relative(true);
+
+  auto lambda = [](){ do_work(); };
+  using lambda_t = decltype(lambda);
+  auto func = threadable::function<>(lambda);
+  auto funcStd = std::function<void()>(lambda);
+  b.title("assign")
+    .run("lambda", [&] {
+      bench::doNotOptimizeAway(lambda = lambda_t{});
+  }).run("threadable::function", [&] {
+      bench::doNotOptimizeAway(func = lambda);
+  }).run("std::function", [&] {
+      bench::doNotOptimizeAway(funcStd = lambda);
   });
-  benchmark::DoNotOptimize(func);
-  for (auto _ : state)
-  {
-    func();
-  }
-  state.SetItemsProcessed(state.iterations());
-  state.SetBytesProcessed(sizeof(func_t) * state.iterations());
-}
 
-static void function_std_instantiate(benchmark::State& state)
-{
-  using func_t = std::function<void()>;
-  for (auto _ : state)
-  {
-    benchmark::DoNotOptimize(func_t([]() mutable {}));
-  }
-  state.SetItemsProcessed(state.iterations());
-  state.SetBytesProcessed(sizeof(func_t) * state.iterations());
-}
-
-static void function_std_invoke(benchmark::State& state)
-{
-  using func_t = std::function<void()>;
-  const std::size_t nr_of_jobs = state.range(0);
-  auto func = func_t([]() mutable {
-    benchmark::DoNotOptimize(val = threadable::utils::do_trivial_work(val));
+  b.title("invoke")
+    .run("lambda", [&] {
+      lambda();
+  }).run("threadable::function", [&] {
+      func();
+  }).run("std::function", [&] {
+      funcStd();
   });
-  benchmark::DoNotOptimize(func);
-  for (auto _ : state)
-  {
-    func();
-  }
-  state.SetItemsProcessed(state.iterations());
-  state.SetBytesProcessed(sizeof(func_t) * state.iterations());
+
+  b.title("reset")
+    .run("lambda", [&] {
+      bench::doNotOptimizeAway(lambda = lambda_t{});
+  }).run("threadable::function", [&] {
+      bench::doNotOptimizeAway(func = nullptr);
+  }).run("std::function", [&] {
+      bench::doNotOptimizeAway(funcStd = nullptr);
+  });
 }
-
-
-BENCHMARK(function_threadable_instantiate)->Args({jobs_per_iteration})->ArgNames({"jobs"});
-BENCHMARK(function_threadable_invoke)->Args({jobs_per_iteration})->ArgNames({"jobs"});
-BENCHMARK(function_std_instantiate)->Args({jobs_per_iteration})->ArgNames({"jobs"});
-BENCHMARK(function_std_invoke)->Args({jobs_per_iteration})->ArgNames({"jobs"});
