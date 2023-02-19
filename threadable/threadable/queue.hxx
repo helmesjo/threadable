@@ -296,7 +296,7 @@ namespace threadable
       |_| │
       |_| │
       |_| ┘
-      |_|  ← head (next push)  - producer
+      |_|  ← head (next push)   - producer
       |_|
       |_|
     */
