@@ -65,6 +65,7 @@ namespace
 SCENARIO("function: execution")
 {
   auto func = threadable::function{};
+  thread_local int destroyed = 0;
   GIVEN("callable is set")
   {
     WHEN("callable with value member")
@@ -110,6 +111,63 @@ SCENARIO("function: execution")
         }
       }
     }
+    WHEN("callable is const")
+    {
+      int nonconstVal = 0;
+      int constVal = 0;
+      struct callable_type
+      {
+        void operator()()
+        {
+          ++nonconstVal;
+        }
+        void operator()() const
+        {
+          ++constVal;
+        }
+      int& nonconstVal;
+      int& constVal;
+      } const callable{nonconstVal, constVal};
+
+      func.set(callable);
+      WHEN("it is invoked")
+      {
+        func();
+        THEN("const overload is invoked")
+        {
+          REQUIRE(callable.nonconstVal == 0);
+          REQUIRE(callable.constVal == 1);
+        }
+      }
+    }
+    WHEN("callable is non-trivially-copyable")
+    {
+      struct type
+      {
+        type() = default;
+        type(type&&) = default;
+        ~type()
+        {
+          ++destroyed;
+        }
+        void operator()(){}
+        std::unique_ptr<std::uint8_t[]> member;
+      };
+      static_assert(!std::is_trivially_copyable_v<type>);
+      static_assert(std::is_destructible_v<type>);
+
+      func.set(type());
+      WHEN("it's reset")
+      {
+        destroyed = 0;
+        func.reset();
+
+        AND_THEN("destructor is invoked")
+        {
+          REQUIRE(destroyed == 1);
+        }
+      }
+    }
     int called = 0;
     WHEN("lambda")
     {
@@ -129,7 +187,7 @@ SCENARIO("function: execution")
         REQUIRE(called == 1);
       }
     }
-    WHEN("member function: trivially copyable type")
+    WHEN("member function")
     {
       struct type
       {
@@ -138,47 +196,12 @@ SCENARIO("function: execution")
           ++called;
         }
       };
-      static_assert(std::is_trivially_copyable_v<type>);
-      static_assert(std::is_trivially_destructible_v<type>);
 
       func.set(&type::func, type{}, std::ref(called));
       THEN("it's invoked")
       {
         func();
         REQUIRE(called == 1);
-      }
-    }
-    WHEN("member function: non-trivially-copyable type")
-    {
-      struct type
-      {
-        ~type()
-        {
-          ++destroyed;
-        }
-        void func(int& called)
-        {
-          ++called;
-        }
-
-        int& destroyed;
-      };
-      static_assert(!std::is_trivially_copyable_v<type>);
-      static_assert(std::is_destructible_v<type>);
-
-      int destroyed = 0;
-      func.set(&type::func, type{destroyed}, std::ref(called));
-      THEN("it's invoked")
-      {
-        called = 0;
-        destroyed = 0;
-        func();
-        REQUIRE(called == 1);
-
-        AND_THEN("destructor is called")
-        {
-          REQUIRE(destroyed);
-        }
       }
     }
   }
