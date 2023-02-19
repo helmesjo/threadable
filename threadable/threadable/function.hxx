@@ -30,14 +30,21 @@ namespace threadable
     template<typename callable_t>
     static inline void invoke_func(void* addr)
     {
-      callable_t& func = *static_cast<callable_t*>(addr);
-      std::invoke(func);
-      if constexpr(std::is_destructible_v<callable_t>)
+      std::invoke(*static_cast<callable_t*>(addr));
+    }
+
+    template<typename callable_t>
+    static inline void invoke_dtor(void* addr)
+    {
+      if constexpr(!std::is_trivially_copyable_v<callable_t> && std::is_destructible_v<callable_t>)
       {
-        func.~callable_t();
+        static_cast<callable_t*>(addr)->~callable_t();
       }
     }
+
     using invoke_func_t = decltype(&invoke_func<void(*)()>);
+    using invoke_dtor_t = decltype(&invoke_dtor<void(*)()>);
+    static_assert(sizeof(invoke_func_t) == sizeof(invoke_dtor_t));
     static constexpr std::uint8_t header_size = sizeof(std::uint8_t);
     static constexpr std::uint8_t func_ptr_size = sizeof(invoke_func_t);
 
@@ -66,22 +73,46 @@ namespace threadable
       invoke_ptr(buf) = func;
     }
 
+    inline invoke_dtor_t& dtor_ptr(std::uint8_t* buf) noexcept
+    {
+      return reinterpret_cast<invoke_dtor_t&>(*(buf + header_size + func_ptr_size));
+    }
+
+    inline void dtor_ptr(std::uint8_t* buf, invoke_dtor_t func) noexcept
+    {
+      dtor_ptr(buf) = func;
+    }
+
     inline typename std::uint8_t* body_ptr(std::uint8_t* buf) noexcept
     {
-      return buf + header_size + func_ptr_size;
+      return buf + header_size + func_ptr_size + func_ptr_size;
     }
 
     inline void invoke(std::uint8_t* buf) noexcept
     {
       invoke_ptr(buf)(body_ptr(buf));
     }
+
+    inline void invoke_dtor(std::uint8_t* buf) noexcept
+    {
+      dtor_ptr(buf)(body_ptr(buf));
+    }
   }
 
-  template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
+  template<std::size_t buffer_size = details::cache_line_size - details::header_size - (details::func_ptr_size * 2)>
   struct function_buffer
   {
     using buffer_t = std::array<std::uint8_t, buffer_size>;
-    using invoke_func_t = details::invoke_func_t;
+
+    function_buffer()
+    {
+      details::size(buffer_.data(), 0);
+    }
+
+    ~function_buffer()
+    {
+      reset();
+    }
 
     template<typename callable_t>
       requires std::invocable<callable_t>
@@ -89,14 +120,17 @@ namespace threadable
     {
       using callable_value_t = std::remove_reference_t<callable_t>;
       static constexpr std::uint8_t callable_size = sizeof(callable_value_t);
+      static constexpr std::uint8_t total_size = details::header_size + (details::func_ptr_size * 2) + callable_size;
 
-      static_assert(details::header_size + details::func_ptr_size + callable_size <= buffer_size, "callable won't fit in function buffer");
+      static_assert(total_size <= buffer_size, "callable won't fit in function buffer");
 
       // header (size)
-      // header (invocation pointer)
-      // body   (callable)
-      details::size(buffer_.data(), details::header_size + details::func_ptr_size + callable_size);
+      // body (invocation pointer)
+      // body (destructor pointer)
+      // body (callable)
+      details::size(buffer_.data(), total_size);
       details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<callable_value_t>));
+      details::dtor_ptr(buffer_.data(), std::addressof(details::invoke_dtor<callable_value_t>));
       auto bodyPtr = details::body_ptr(buffer_.data());
       if constexpr(std::is_trivially_copyable_v<callable_value_t>)
       {
@@ -113,12 +147,16 @@ namespace threadable
 
     inline void reset() noexcept
     {
+      if(size() > 0)
+      {
+        details::invoke_dtor(data());
+      }
       details::size(buffer_.data(), 0);
     }
 
     inline std::uint8_t size() const noexcept
     {
-      return details::size(buffer_.data());
+      return details::size(data());
     }
 
     inline std::uint8_t* data() noexcept
@@ -142,8 +180,13 @@ namespace threadable
     {
       assert(buffer.size() > 0);
       const auto size = buffer.size();
-      buffer_ = std::unique_ptr<std::uint8_t[]>(new std::uint8_t[size]);
+      buffer_ = std::make_unique_for_overwrite<std::uint8_t[]>(size);
       std::memcpy(buffer_.get(), buffer.data(), size);
+    }
+
+    function_dyn(function_dyn&& func):
+      buffer_(std::move(func.buffer_))
+    {
     }
 
     inline void operator()()
