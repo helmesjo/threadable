@@ -51,6 +51,20 @@ namespace threadable
       details::atomic_notify_all(active);
     }
 
+    template<typename callable_t>
+      requires std::invocable<callable_t>
+    auto& operator=(callable_t&& func) noexcept
+    {
+      set(FWD(func));
+      return *this;
+    }
+
+    auto& operator=(std::nullptr_t) noexcept
+    {
+      reset();
+      return *this;
+    }
+
     void reset() noexcept
     {
       child_active = nullptr;
