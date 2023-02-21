@@ -123,6 +123,7 @@ namespace threadable
       static constexpr std::uint8_t total_size = details::header_size + (details::func_ptr_size * 2) + callable_size;
 
       static_assert(total_size <= buffer_size, "callable won't fit in function buffer");
+      reset();
 
       // header (size)
       // body (invocation pointer)

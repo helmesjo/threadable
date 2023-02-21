@@ -51,6 +51,45 @@ SCENARIO("function: set/reset")
         }
       }
     }
+    WHEN("non-trivially-copyable callable is set")
+    {
+      thread_local int destroyed = 0;
+      struct type
+      {
+        type() = default;
+        type(type&&) = default;
+        ~type()
+        {
+          ++destroyed;
+        }
+        void operator()(){}
+        std::unique_ptr<std::uint8_t[]> member;
+      };
+      static_assert(!std::is_trivially_copyable_v<type>);
+      static_assert(std::is_destructible_v<type>);
+
+      func.set(type{});
+      AND_WHEN("function is reset")
+      {
+        destroyed = 0;
+        func.set([]{});
+
+        AND_THEN("destructor is invoked")
+        {
+          REQUIRE(destroyed == 1);
+        }
+      }
+      AND_WHEN("a new callable is set")
+      {
+        destroyed = 0;
+        func.set([]{});
+
+        AND_THEN("destructor is invoked on previous callable")
+        {
+          REQUIRE(destroyed == 1);
+        }
+      }
+    }
   }
 }
 
@@ -65,7 +104,6 @@ namespace
 SCENARIO("function: execution")
 {
   auto func = threadable::function{};
-  thread_local int destroyed = 0;
   GIVEN("callable is set")
   {
     WHEN("callable with value member")
@@ -137,34 +175,6 @@ SCENARIO("function: execution")
         {
           REQUIRE(callable.nonconstVal == 0);
           REQUIRE(callable.constVal == 1);
-        }
-      }
-    }
-    WHEN("callable is non-trivially-copyable")
-    {
-      struct type
-      {
-        type() = default;
-        type(type&&) = default;
-        ~type()
-        {
-          ++destroyed;
-        }
-        void operator()(){}
-        std::unique_ptr<std::uint8_t[]> member;
-      };
-      static_assert(!std::is_trivially_copyable_v<type>);
-      static_assert(std::is_destructible_v<type>);
-
-      func.set(type());
-      WHEN("it's reset")
-      {
-        destroyed = 0;
-        func.reset();
-
-        AND_THEN("destructor is invoked")
-        {
-          REQUIRE(destroyed == 1);
         }
       }
     }
