@@ -18,24 +18,24 @@ namespace bench = ankerl::nanobench;
 
 namespace
 {
-  constexpr std::size_t jobs_per_iteration = 1 << 16;
+  constexpr std::size_t jobs_per_iteration = 1 << 14;
   int val = 1;
 }
 
-TEST_CASE("queue")
+TEST_CASE("queue: iterate")
 {
   bench::Bench b;
-  b.warmup(5'000).relative(true)
-   .minEpochIterations(1000);
+  b.warmup(2'000).relative(true)
+   .minEpochIterations(500);
 
-  auto lambda = [](){
+  using job_t = decltype([](){
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
-  };
+  });
 
   b.title("iterate - sequential");
   {
     auto queue = std::vector<std::function<void()>>();
-    queue.resize(jobs_per_iteration, lambda);
+    queue.resize(jobs_per_iteration, job_t{});
 
     b.run("std::vector", [&] {
       std::for_each(std::execution::seq, std::begin(queue), std::end(queue), [](auto& job){
@@ -47,7 +47,7 @@ TEST_CASE("queue")
     auto queue = threadable::queue2<jobs_per_iteration>();
     for(std::size_t i=0; i<jobs_per_iteration; ++i)
     {
-      queue.push(lambda);
+      queue.push(job_t{});
     }
 
     b.run("threadable::queue", [&] {
@@ -60,7 +60,7 @@ TEST_CASE("queue")
   b.title("iterate - parallel");
   {
     auto queue = std::vector<std::function<void()>>();
-    queue.resize(jobs_per_iteration, lambda);
+    queue.resize(jobs_per_iteration, job_t{});
 
     b.run("std::vector", [&] {
       std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
@@ -72,12 +72,73 @@ TEST_CASE("queue")
     auto queue = threadable::queue2<jobs_per_iteration>();
     for(std::size_t i=0; i<jobs_per_iteration; ++i)
     {
-      queue.push(lambda);
+      queue.push(job_t{});
     }
 
     b.run("threadable::queue", [&] {
       std::for_each(std::execution::par, std::begin(queue), queue.template end<false>(), [](auto& job){
         bench::doNotOptimizeAway(job);
+      });
+    });
+  }
+}
+
+TEST_CASE("queue: execute")
+{
+  bench::Bench b;
+  b.warmup(3'000).relative(true)
+   .minEpochIterations(500);
+
+  using job_t = decltype([](){
+    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+  });
+
+  b.title("execute - sequential");
+  {
+    auto queue = std::vector<std::function<void()>>();
+    queue.resize(jobs_per_iteration, job_t{});
+
+    b.run("std::vector", [&] {
+      std::for_each(std::execution::seq, std::begin(queue), std::end(queue), [](auto& job){
+        job();
+      });
+    });
+  }
+  {
+    auto queue = threadable::queue2<jobs_per_iteration>();
+    for(std::size_t i=0; i<jobs_per_iteration; ++i)
+    {
+      queue.push(job_t{});
+    }
+
+    b.run("threadable::queue", [&] {
+      std::for_each(std::execution::seq, std::begin(queue), queue.template end<false>(), [](auto& job){
+        job.get()();
+      });
+    });
+  }
+
+  b.title("execute - parallel");
+  {
+    auto queue = std::vector<std::function<void()>>();
+    queue.resize(jobs_per_iteration, job_t{});
+
+    b.run("std::vector", [&] {
+      std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
+        job();
+      });
+    });
+  }
+  {
+    auto queue = threadable::queue2<jobs_per_iteration>();
+    for(std::size_t i=0; i<jobs_per_iteration; ++i)
+    {
+      queue.push(job_t{});
+    }
+
+    b.run("threadable::queue", [&] {
+      std::for_each(std::execution::par, std::begin(queue), queue.template end<false>(), [](auto& job){
+        job.get()();
       });
     });
   }
