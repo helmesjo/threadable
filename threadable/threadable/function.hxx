@@ -180,7 +180,8 @@ namespace threadable
     {
       assert(buffer.size() > 0);
       const auto size = buffer.size();
-      buffer_ = std::make_unique_for_overwrite<std::uint8_t[]>(size);
+      // buffer_ = std::make_unique_for_overwrite<std::uint8_t[]>(size);
+      buffer_ = std::make_unique<std::uint8_t[]>(size);
       std::memcpy(buffer_.get(), buffer.data(), size);
     }
 
