@@ -33,8 +33,7 @@ TEST_CASE("queue")
   };
 
   {
-    using job_t = std::function<void()>;
-    auto queue = std::vector<job_t>();
+    auto queue = std::vector<std::function<void()>>();
     queue.resize(jobs_per_iteration, lambda);
 
     b.run("std::vector", [&] {
@@ -45,7 +44,6 @@ TEST_CASE("queue")
     });
   }
   {
-    using job_t = threadable::job;
     auto queue = threadable::queue2<jobs_per_iteration>();
     std::fill(std::begin(queue), std::end(queue), lambda);
 
@@ -59,8 +57,7 @@ TEST_CASE("queue")
 
   b.title("iterate - parallel");
   {
-    using job_t = std::function<void()>;
-    auto queue = std::vector<job_t>();
+    auto queue = std::vector<std::function<void()>>();
     queue.resize(jobs_per_iteration, lambda);
 
     b.run("std::vector", [&] {
@@ -70,7 +67,6 @@ TEST_CASE("queue")
     });
   }
   {
-    using job_t = threadable::job;
     auto queue = threadable::queue2<jobs_per_iteration>();
     std::fill(std::begin(queue), std::end(queue), lambda);
 
