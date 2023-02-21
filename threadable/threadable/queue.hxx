@@ -67,6 +67,7 @@ namespace threadable
 
     void reset() noexcept
     {
+      func_.reset();
       child_active = nullptr;
       details::atomic_clear(active, std::memory_order_release);
       details::atomic_notify_all(active);
@@ -74,6 +75,8 @@ namespace threadable
 
     void operator()()
     {
+      assert(func_);
+
       if(child_active)
       UNLIKELY
       {
