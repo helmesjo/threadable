@@ -25,47 +25,21 @@ namespace
 TEST_CASE("queue")
 {
   bench::Bench b;
-  b.warmup(500).relative(true);
-  b.title("iterate - sequential");
+  b.warmup(5'000).relative(true)
+   .minEpochIterations(1000);
 
   auto lambda = [](){
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
   };
 
+  b.title("iterate - sequential");
   {
     auto queue = std::vector<std::function<void()>>();
     queue.resize(jobs_per_iteration, lambda);
 
     b.run("std::vector", [&] {
-      for(auto& job : queue)
-      {
-        job();
-      }
-    });
-  }
-  {
-    auto queue = threadable::queue2<jobs_per_iteration>();
-    for(std::size_t i=0; i<jobs_per_iteration; ++i)
-    {
-      queue.push(lambda);
-    }
-
-    b.run("threadable::queue", [&] {
-      for(auto& job : queue)
-      {
-        job();
-      }
-    });
-  }
-
-  b.title("iterate - parallel");
-  {
-    auto queue = std::vector<std::function<void()>>();
-    queue.resize(jobs_per_iteration, lambda);
-
-    b.run("std::vector", [&] {
-      std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
-        job();
+      std::for_each(std::execution::seq, std::begin(queue), std::end(queue), [](auto& job){
+        bench::doNotOptimizeAway(job);
       });
     });
   }
@@ -77,8 +51,33 @@ TEST_CASE("queue")
     }
 
     b.run("threadable::queue", [&] {
+      std::for_each(std::execution::seq, std::begin(queue), queue.template end<false>(), [](auto& job){
+        bench::doNotOptimizeAway(job);
+      });
+    });
+  }
+
+  b.title("iterate - parallel");
+  {
+    auto queue = std::vector<std::function<void()>>();
+    queue.resize(jobs_per_iteration, lambda);
+
+    b.run("std::vector", [&] {
       std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
-        job();
+        bench::doNotOptimizeAway(job);
+      });
+    });
+  }
+  {
+    auto queue = threadable::queue2<jobs_per_iteration>();
+    for(std::size_t i=0; i<jobs_per_iteration; ++i)
+    {
+      queue.push(lambda);
+    }
+
+    b.run("threadable::queue", [&] {
+      std::for_each(std::execution::par, std::begin(queue), queue.template end<false>(), [](auto& job){
+        bench::doNotOptimizeAway(job);
       });
     });
   }

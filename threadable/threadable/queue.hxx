@@ -253,16 +253,20 @@ namespace threadable
       return iterator(jobs_.data(), tail_);
     }
 
+    template<bool consume = true>
     auto end() noexcept
     {
       auto head = head_.load(std::memory_order_acquire);
-      if(tail_ < head)
+      if constexpr(consume)
       {
-        auto& lastJob = jobs_[mask(head-1)];
-        lastJob.set([this, head = head, func = function_dyn(lastJob.get())]() mutable {
-          func();
-          tail_ = head;
-        });
+        if(consume && tail_ < head)
+        {
+          auto& lastJob = jobs_[mask(head-1)];
+          lastJob.set([this, head = head, func = function_dyn(lastJob.get())]() mutable {
+            func();
+            tail_ = head;
+          });
+        }
       }
       return iterator(nullptr, head);
     }

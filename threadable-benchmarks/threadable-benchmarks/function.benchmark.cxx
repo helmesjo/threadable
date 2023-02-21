@@ -15,7 +15,7 @@ namespace
 TEST_CASE("function")
 {
   bench::Bench b;
-  b.warmup(500).relative(true);
+  b.warmup(5'000).relative(true);
 
   auto lambda = [](){
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
@@ -23,6 +23,7 @@ TEST_CASE("function")
   using lambda_t = decltype(lambda);
   auto func = threadable::function<>(lambda);
   auto funcStd = std::function<void()>(lambda);
+
   b.title("assign")
     .run("lambda", [&] {
       bench::doNotOptimizeAway(lambda = lambda_t{});
