@@ -10,11 +10,6 @@ namespace bench = ankerl::nanobench;
 namespace
 {
   int val = 1;
-
-  void do_work()
-  {
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
-  }
 }
 
 TEST_CASE("function")
@@ -22,7 +17,9 @@ TEST_CASE("function")
   bench::Bench b;
   b.warmup(500).relative(true);
 
-  auto lambda = [](){ do_work(); };
+  auto lambda = [](){
+    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+  };
   using lambda_t = decltype(lambda);
   auto func = threadable::function<>(lambda);
   auto funcStd = std::function<void()>(lambda);
