@@ -18,15 +18,16 @@ namespace bench = ankerl::nanobench;
 
 namespace
 {
-  constexpr std::size_t jobs_per_iteration = 1 << 14;
+  constexpr std::size_t jobs_per_iteration = 1 << 16;
   int val = 1;
 }
 
 TEST_CASE("queue: iterate")
 {
   bench::Bench b;
-  b.warmup(2'000).relative(true)
-   .minEpochIterations(500);
+  b.relative(true)
+   .minEpochIterations(1000)
+   .batch(jobs_per_iteration);
 
   using job_t = decltype([](){
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
@@ -86,8 +87,10 @@ TEST_CASE("queue: iterate")
 TEST_CASE("queue: execute")
 {
   bench::Bench b;
-  b.warmup(3'000).relative(true)
-   .minEpochIterations(500);
+  b.warmup(3'000)
+   .relative(true)
+   .minEpochIterations(500)
+   .batch(jobs_per_iteration);
 
   using job_t = decltype([](){
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );

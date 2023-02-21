@@ -15,7 +15,9 @@ namespace
 TEST_CASE("function")
 {
   bench::Bench b;
-  b.warmup(5'000).relative(true);
+  b.warmup(5'000)
+   .relative(true)
+   .batch(1);
 
   auto lambda = [](){
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
