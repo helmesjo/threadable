@@ -45,7 +45,10 @@ TEST_CASE("queue")
   }
   {
     auto queue = threadable::queue2<jobs_per_iteration>();
-    std::fill(std::begin(queue), std::end(queue), lambda);
+    for(std::size_t i=0; i<jobs_per_iteration; ++i)
+    {
+      queue.push(lambda);
+    }
 
     b.run("threadable::queue", [&] {
       for(auto& job : queue)
@@ -68,7 +71,10 @@ TEST_CASE("queue")
   }
   {
     auto queue = threadable::queue2<jobs_per_iteration>();
-    std::fill(std::begin(queue), std::end(queue), lambda);
+    for(std::size_t i=0; i<jobs_per_iteration; ++i)
+    {
+      queue.push(lambda);
+    }
 
     b.run("threadable::queue", [&] {
       std::for_each(std::execution::par, std::begin(queue), std::end(queue), [](auto& job){
