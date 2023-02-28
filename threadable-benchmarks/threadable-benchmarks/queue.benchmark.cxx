@@ -22,7 +22,7 @@ namespace
   int val = 1;
 }
 
-TEST_CASE("queue: iterate")
+TEST_CASE("queue: iterate (sequential)")
 {
   bench::Bench b;
   b.relative(true)
@@ -57,6 +57,18 @@ TEST_CASE("queue: iterate")
       });
     });
   }
+}
+
+TEST_CASE("queue: iterate (parallel)")
+{
+  bench::Bench b;
+  b.relative(true)
+   .minEpochIterations(1000)
+   .batch(jobs_per_iteration);
+
+  using job_t = decltype([](){
+    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+  });
 
   b.title("iterate - parallel");
   {
@@ -84,7 +96,7 @@ TEST_CASE("queue: iterate")
   }
 }
 
-TEST_CASE("queue: execute")
+TEST_CASE("queue: execute (sequential)")
 {
   bench::Bench b;
   b.warmup(3'000)
@@ -120,6 +132,19 @@ TEST_CASE("queue: execute")
       });
     });
   }
+}
+
+TEST_CASE("queue: execute (parallel)")
+{
+  bench::Bench b;
+  b.warmup(3'000)
+   .relative(true)
+   .minEpochIterations(500)
+   .batch(jobs_per_iteration);
+
+  using job_t = decltype([](){
+    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+  });
 
   b.title("execute - parallel");
   {
