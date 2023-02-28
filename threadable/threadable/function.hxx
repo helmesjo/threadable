@@ -30,7 +30,7 @@ namespace threadable
     template<typename callable_t>
     static inline void invoke_func(void* addr)
     {
-      std::invoke(*static_cast<callable_t*>(addr));
+      (*static_cast<callable_t*>(addr))();
     }
 
     template<typename callable_t>
@@ -65,7 +65,7 @@ namespace threadable
 
     inline invoke_func_t& invoke_ptr(std::uint8_t* buf) noexcept
     {
-      return reinterpret_cast<invoke_func_t&>(*(buf + header_size));
+      return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size));
     }
 
     inline void invoke_ptr(std::uint8_t* buf, invoke_func_t func) noexcept
@@ -75,7 +75,7 @@ namespace threadable
 
     inline invoke_dtor_t& dtor_ptr(std::uint8_t* buf) noexcept
     {
-      return reinterpret_cast<invoke_dtor_t&>(*(buf + header_size + func_ptr_size));
+      return *static_cast<invoke_dtor_t*>(static_cast<void*>(buf + header_size + func_ptr_size));
     }
 
     inline void dtor_ptr(std::uint8_t* buf, invoke_dtor_t func) noexcept
