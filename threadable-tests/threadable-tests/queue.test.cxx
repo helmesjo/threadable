@@ -16,11 +16,11 @@
     #include <pstld/pstld.h>
 #endif
 
-SCENARIO("queue2: push & claim")
+SCENARIO("queue: push & claim")
 {
   GIVEN("queue with capacity 2")
   {
-    auto queue = threadable::queue2<2>{};
+    auto queue = threadable::queue<2>{};
     REQUIRE(queue.size() == 0);
 
     WHEN("push")
@@ -87,7 +87,7 @@ SCENARIO("queue2: push & claim")
   GIVEN("queue with capacity 128")
   {
     static constexpr auto queue_capacity = 128;
-    auto queue = threadable::queue2<queue_capacity>{};
+    auto queue = threadable::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
     std::vector<std::size_t> jobs_executed;
@@ -140,9 +140,9 @@ SCENARIO("queue2: push & claim")
   }
 }
 
-SCENARIO("queue2: execution order")
+SCENARIO("queue: execution order")
 {
-  auto queue = threadable::queue2{};
+  auto queue = threadable::queue{};
 
   std::vector<int> order;
   GIVEN("push three jobs")
@@ -164,9 +164,9 @@ SCENARIO("queue2: execution order")
   }
 }
 
-SCENARIO("queue2: completion token")
+SCENARIO("queue: completion token")
 {
-  auto queue = threadable::queue2{};
+  auto queue = threadable::queue{};
   GIVEN("push job & store token")
   {
     auto token = queue.push([]{});
@@ -265,11 +265,11 @@ SCENARIO("queue2: completion token")
   }
 }
 
-SCENARIO("queue2: stress-test")
+SCENARIO("queue: stress-test")
 {
   static constexpr std::size_t queue_capacity = 1 << 18;
   std::atomic_size_t notify_counter = 0;
-  auto queue = threadable::queue2<queue_capacity>([&notify_counter](...){ ++notify_counter; });
+  auto queue = threadable::queue<queue_capacity>([&notify_counter](...){ ++notify_counter; });
   GIVEN("1 producer & 1 consumer")
   {
     THEN("there are no race conditions")
@@ -306,12 +306,12 @@ SCENARIO("queue2: stress-test")
   }
 }
 
-SCENARIO("queue2: standard algorithms")
+SCENARIO("queue: standard algorithms")
 {
   GIVEN("queue with capacity 1 << 22")
   {
     static constexpr auto queue_capacity = 1 << 22;
-    auto queue = threadable::queue2<queue_capacity>{};
+    auto queue = threadable::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
     std::atomic_size_t jobs_executed;

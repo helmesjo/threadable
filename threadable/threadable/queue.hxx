@@ -134,28 +134,28 @@ namespace threadable
   }
 
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
-  class queue2
+  class queue
   {
     using atomic_index_t = std::atomic_size_t;
     using index_t = typename atomic_index_t::value_type;
     static constexpr auto index_mask = max_nr_of_jobs - 1u;
-    static constexpr auto null_callback = [](queue2&){};
+    static constexpr auto null_callback = [](queue&){};
 
     static_assert(max_nr_of_jobs > 1, "number of jobs must be greater than 1");
     static_assert((max_nr_of_jobs & index_mask) == 0, "number of jobs must be a power of 2");
   public:
-    template<std::invocable<queue2&> callable_t>
-    queue2(callable_t&& onJobReady) noexcept
+    template<std::invocable<queue&> callable_t>
+    queue(callable_t&& onJobReady) noexcept
     {
       set_notify(FWD(onJobReady));
     }
-    queue2() noexcept:
-      queue2(null_callback)
+    queue() noexcept:
+      queue(null_callback)
     {}
-    queue2(queue2&&) = delete;
-    queue2(const queue2&) = delete;
-    auto operator=(queue2&&) = delete;
-    auto operator=(const queue2&) = delete;
+    queue(queue&&) = delete;
+    queue(const queue&) = delete;
+    auto operator=(queue&&) = delete;
+    auto operator=(const queue&) = delete;
 
     struct iterator
     {
@@ -219,7 +219,7 @@ namespace threadable
     static_assert(std::random_access_iterator<iterator>);
     static_assert(std::contiguous_iterator<iterator>);
 
-    template<std::invocable<queue2&> callable_t>
+    template<std::invocable<queue&> callable_t>
     void set_notify(callable_t&& onJobReady) noexcept
     {
       on_job_ready.set(FWD(onJobReady), std::ref(*this));
