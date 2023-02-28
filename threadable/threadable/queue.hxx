@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <threadable/function.hxx>
 #include <threadable/std_atomic.hxx>
 
@@ -36,6 +35,8 @@ namespace threadable
 
   struct alignas(details::cache_line_size) job final: details::job_base
   {
+    using function_t = function<details::job_buffer_size>;
+
     job() = default;
     job(job&&) = delete;
     job(const job&) = delete;
@@ -97,7 +98,7 @@ namespace threadable
     }
 
   private:
-    function<details::job_buffer_size> func_;
+    function_t func_;
   };
   static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
 
