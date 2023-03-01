@@ -30,7 +30,7 @@ TEST_CASE("queue: iterate (sequential)")
    .batch(jobs_per_iteration);
 
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(val = threadable::utils::do_non_trivial_work(val) );
   });
 
   b.title("iterate - sequential");
@@ -67,7 +67,7 @@ TEST_CASE("queue: iterate (parallel)")
    .batch(jobs_per_iteration);
 
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(val = threadable::utils::do_non_trivial_work(val) );
   });
 
   b.title("iterate - parallel");
@@ -137,13 +137,14 @@ TEST_CASE("queue: execute (sequential)")
 TEST_CASE("queue: execute (parallel)")
 {
   bench::Bench b;
-  b.warmup(3'000)
+  b
+    .warmup(500)
    .relative(true)
-   .minEpochIterations(500)
+   // .minEpochIterations(500)
    .batch(jobs_per_iteration);
 
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(val = threadable::utils::do_non_trivial_work(val) );
   });
 
   b.title("execute - parallel");
