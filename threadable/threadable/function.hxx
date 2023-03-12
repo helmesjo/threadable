@@ -36,9 +36,9 @@ namespace threadable
     template<typename callable_t>
     static inline void invoke_dtor(void* addr)
     {
-      if constexpr(!std::is_trivially_copyable_v<callable_t> && std::is_destructible_v<callable_t>)
+      if constexpr(std::destructible<callable_t>)
       {
-        static_cast<callable_t*>(addr)->~callable_t();
+        std::destroy_at(static_cast<callable_t*>(addr));
       }
     }
 
@@ -139,10 +139,7 @@ namespace threadable
       }
       else
       {
-        if(::new (bodyPtr) callable_value_t(FWD(callable)) != static_cast<void*>(bodyPtr))
-        {
-          std::terminate();
-        }
+        std::construct_at(reinterpret_cast<callable_value_t*>(bodyPtr), callable_value_t(FWD(callable)));
       }
     }
 
