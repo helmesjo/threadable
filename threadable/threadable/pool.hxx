@@ -7,12 +7,6 @@
 #include <atomic>
 #include <cstddef>
 #include <thread>
-#if __has_include(<execution>)
-  #include <execution>
-#endif
-#if __has_include (<pstld/pstld.h>)
-  #include <pstld/pstld.h>
-#endif
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
@@ -38,12 +32,29 @@ namespace threadable
       details::atomic_clear(quit_);
       defaultQueue_ = create();
 
-      // for(std::size_t i = 0; i < threads; ++i)
+      for(std::size_t i = 0; i < threads; ++i)
       {
         threads_.emplace_back([this]{
-          while(!details::atomic_test(quit_, std::memory_order_seq_cst))
+          auto prevCount = readyCount_.load(std::memory_order_acquire);
+          while(true)
           {
+            // claim job as soon as it becomes available, and wait in the meantime
             details::atomic_wait(readyCount_, std::size_t{0});
+            while(prevCount == 0 || !readyCount_.compare_exchange_weak(prevCount, prevCount-1))
+            {
+              if(details::atomic_test(quit_, std::memory_order_relaxed))
+              UNLIKELY
+              {
+                // thread exit
+                return;
+              }
+              else if(prevCount == 0)
+              LIKELY
+              {
+                details::atomic_wait(readyCount_, std::size_t{0});
+                prevCount = readyCount_.load(std::memory_order_acquire);
+              }
+            }
 
             const auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
             if(queues->empty())
@@ -51,14 +62,21 @@ namespace threadable
             {
               continue;
             }
-            for(auto& queue : *queues)
+            // now we have reserved one job, so run until we acqire it.
+            bool ran = false;
+            while(!ran && !details::atomic_test(quit_, std::memory_order_relaxed))
+            LIKELY
             {
-              const auto size = queue->size();
-              std::for_each(std::execution::par, std::begin(*queue), std::end(*queue), [](auto& job){
-                job();
-              });
-              assert(readyCount_.load() >= size);
-              readyCount_.fetch_sub(size);
+              for(auto& queue : *queues)
+              {
+                if(auto job = queue->steal())
+                LIKELY
+                {
+                  job();
+                  ran = true;
+                  break;
+                }
+              }
             }
           }
         });
@@ -69,7 +87,7 @@ namespace threadable
     {
       details::atomic_test_and_set(quit_, std::memory_order_seq_cst);
       // release all waiting threads
-      readyCount_.fetch_add(1, std::memory_order_release);
+      readyCount_.fetch_add(threads_.size() * 1000, std::memory_order_release);
       details::atomic_notify_all(readyCount_);
       for(auto& thread : threads_)
       {
@@ -81,7 +99,7 @@ namespace threadable
     {
       // create copy of queues & append queue, then atomically swap
       auto newQueues = copy_queues();
-      newQueues->emplace_back(std::make_shared<queue_t>([this](...){
+      newQueues->emplace_back(std::make_shared<queue_t>(policy, [this](...){
         notify_jobs(1);
       }));
       std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);

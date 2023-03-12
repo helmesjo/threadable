@@ -6,7 +6,7 @@ namespace
   {
     int total = val;
     int lbound = 1;
-    int ubound = 10;
+    int ubound = 100;
     while (lbound <= ubound)
     {
       bool found = false;
@@ -26,6 +26,11 @@ namespace
     }
 
     return total;
+  }
+
+  int trivial_work(int& val)
+  {
+    return val;
   }
 }
 

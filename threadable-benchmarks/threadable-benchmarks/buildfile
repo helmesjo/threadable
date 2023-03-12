@@ -16,7 +16,7 @@ exe{*}:
   install = false
 }
 
-exe{threadable-benchmarks}: {hxx cxx}{util} cxx{queue.benchmark.cxx pool.benchmark.cxx function.benchmark.cxx doctest} $libs
+exe{threadable-benchmarks}: {hxx cxx}{util} cxx{queue.benchmark.cxx function.benchmark.cxx doctest} $libs
 {
   test.arguments = --quiet=true
 }

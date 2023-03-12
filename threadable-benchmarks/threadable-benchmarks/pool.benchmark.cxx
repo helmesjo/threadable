@@ -1,68 +1,16 @@
-#include <threadable/pool.hxx>
-#include <threadable-benchmarks/util.hxx>
+// #include <threadable/pool.hxx>
 
-#include <nanobench.h>
-#include <doctest/doctest.h>
+// #include <threadable-benchmarks/util.hxx>
 
-#include <algorithm>
-#if __has_include(<execution>)
-#include <execution>
-#endif
-#include <functional>
-#if __has_include (<pstld/pstld.h>)
-    #include <pstld/pstld.h>
-#endif
-#include <vector>
+// #include <functional>
+// #include <queue>
+// #include <thread>
+// #include <vector>
 
-namespace bench = ankerl::nanobench;
-
-namespace
-{
-  constexpr std::size_t jobs_per_iteration = 1 << 16;
-  int val = 1;
-}
-
-TEST_CASE("pool: benchmark")
-{
-  bench::Bench b;
-  b.relative(true)
-   .minEpochIterations(1000)
-   .batch(jobs_per_iteration);
-
-  using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
-  });
-
-  b.title("execute");
-  // {
-  //   auto queue = std::vector<std::function<void()>>();
-  //   queue.resize(jobs_per_iteration, job_t{});
-
-  //   b.run("std::vector", [&] {
-  //     std::for_each(std::execution::seq, std::begin(queue), std::end(queue), [](auto& job){
-  //       bench::doNotOptimizeAway(job);
-  //     });
-  //   });
-  // }
-  {
-    auto pool = threadable::pool<jobs_per_iteration>(0);
-    std::vector<threadable::job_token> tokens;
-    tokens.reserve(jobs_per_iteration);
-    auto queue = pool.create();
-
-    b.run("threadable::queue", [&] {
-      // TODO: Add support for pushing batch of jobs
-      for(std::size_t i=0; i<jobs_per_iteration; ++i)
-      {
-        tokens.emplace_back(queue->push(job_t{}));
-      }
-      for(const auto& token : tokens)
-      {
-        token.wait();
-      }
-    });
-  }
-}
+// namespace
+// {
+//   constexpr std::size_t jobs_per_iteration = 1 << 16;
+// }
 
 // static void pool_std_thread(benchmark::State& state)
 // {
