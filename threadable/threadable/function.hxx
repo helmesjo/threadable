@@ -258,11 +258,6 @@ namespace threadable
       return buffer_.size() != 0;
     }
 
-    operator std::function<void()>() const noexcept
-    {
-      return [func = *this]() mutable { func(); };
-    }
-
     operator function_dyn() const noexcept
     {
       return function_dyn(buffer_);
