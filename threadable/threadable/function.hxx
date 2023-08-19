@@ -133,14 +133,7 @@ namespace threadable
       details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<callable_value_t>));
       details::dtor_ptr(buffer_.data(), std::addressof(details::invoke_dtor<callable_value_t>));
       auto bodyPtr = details::body_ptr(buffer_.data());
-      if constexpr(std::is_trivially_copyable_v<callable_value_t>)
-      {
-        std::memcpy(bodyPtr, std::addressof(callable), callable_size);
-      }
-      else
-      {
-        std::construct_at(reinterpret_cast<callable_value_t*>(bodyPtr), callable_value_t(FWD(callable)));
-      }
+      std::construct_at(reinterpret_cast<callable_value_t*>(bodyPtr), callable_value_t(FWD(callable)));
     }
 
     inline void reset() noexcept
