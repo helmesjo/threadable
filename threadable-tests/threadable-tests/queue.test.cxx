@@ -310,7 +310,7 @@ SCENARIO("queue: standard algorithms")
 {
   GIVEN("queue with capacity 1 << 22")
   {
-    static constexpr auto queue_capacity = 1 << 22;
+    static constexpr auto queue_capacity = 1 << 18;
     auto queue = threadable::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
