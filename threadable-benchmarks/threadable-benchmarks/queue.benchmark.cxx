@@ -62,7 +62,8 @@ TEST_CASE("queue: iterate (sequential)")
 TEST_CASE("queue: iterate (parallel)")
 {
   bench::Bench b;
-  b.relative(true)
+  b.warmup(3'000)
+   .relative(true)
    .minEpochIterations(1000)
    .batch(jobs_per_iteration);
 
@@ -99,8 +100,7 @@ TEST_CASE("queue: iterate (parallel)")
 TEST_CASE("queue: execute (sequential)")
 {
   bench::Bench b;
-  b.warmup(3'000)
-   .relative(true)
+  b.relative(true)
    .minEpochIterations(500)
    .batch(jobs_per_iteration);
 
