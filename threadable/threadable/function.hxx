@@ -141,8 +141,8 @@ namespace threadable
       if(size() > 0)
       {
         details::invoke_dtor(data());
+        details::size(buffer_.data(), 0);
       }
-      details::size(buffer_.data(), 0);
     }
 
     inline std::uint8_t size() const noexcept
