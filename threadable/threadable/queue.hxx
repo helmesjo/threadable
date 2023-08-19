@@ -205,12 +205,6 @@ namespace threadable
       inline iterator        operator++(int) noexcept { return iterator(jobs_, index_++); }
       inline iterator        operator--(int) noexcept { return iterator(jobs_, index_--); }
 
-    protected:
-      index_t index() const
-      {
-        return index_;
-      }
-
     private:
       job* jobs_ = nullptr;
       index_t index_ = 0;
