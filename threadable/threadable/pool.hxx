@@ -73,7 +73,6 @@ namespace threadable
       details::atomic_test_and_set(quit_, std::memory_order_seq_cst);
       // release & wait for thread
       notify_jobs(1);
-      details::atomic_notify_all(readyCount_);
       thread_.join();
     }
 
