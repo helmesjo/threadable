@@ -290,7 +290,7 @@ namespace threadable
         std::for_each(std::execution::par, b, e, [](job& job){
           job();
         });
-#elif
+#else
         std::for_each(b, e, [](job& job){
           job();
         });
