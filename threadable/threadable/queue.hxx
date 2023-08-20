@@ -6,6 +6,9 @@
 #include <cassert>
 #include <compare>
 #include <cstddef>
+#if __has_include(<execution>)
+#include <execution>
+#endif
 #include <iterator>
 #include <limits>
 #include <thread>
@@ -265,13 +268,22 @@ namespace threadable
 
     std::size_t execute()
     {
-      std::size_t executed = 0;
-      for(auto& job : *this)
+      const auto b = begin();
+      const auto e = end();
+      const auto dis = e - b;
+      if(dis > 0)
       {
-        job();
-        ++executed;
+#ifdef __cpp_lib_execution
+        std::for_each(std::execution::par, b, e, [](job& job){
+          job();
+        });
+#elif
+        std::for_each(b, e, [](job& job){
+          job();
+        });
+#endif
       }
-      return executed;
+      return dis;
     }
 
     static constexpr std::size_t max_size() noexcept

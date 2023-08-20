@@ -38,34 +38,27 @@ namespace threadable
       details::atomic_clear(quit_);
 
       thread_ = std::thread([this]{
-        auto prevCount = readyCount_.load(std::memory_order_acquire);
         while(true)
         {
-          // claim job as soon as it becomes available, or wait in the meantime
-          while(prevCount == 0 || !readyCount_.compare_exchange_weak(prevCount, prevCount-1))
+          // 1. Check if quit = true.
+          // 2. Wait for jobs to executed.
+          // 3. Execute all jobs.
+          if(details::atomic_test(quit_, std::memory_order_relaxed))
+          UNLIKELY
           {
-            if(details::atomic_test(quit_, std::memory_order_relaxed))
-            UNLIKELY
-            {
-              // thread exit
-              return;
-            }
-            else if(prevCount == 0)
-            LIKELY
-            {
-              details::atomic_wait(readyCount_, std::size_t{0});
-              prevCount = readyCount_.load(std::memory_order_acquire);
-            }
+            // thread exit
+            break;
+          }
+          else
+          LIKELY
+          {
+            details::atomic_wait(readyCount_, std::size_t{0});
           }
           const auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
           for(auto& q : *queues)
           {
-            if(!q->empty())
-            {
-              std::for_each(std::execution::par, std::begin(*q), std::end(*q), [](job& job){
-                job();
-              });
-            }
+            auto executed = q->execute();
+            readyCount_.fetch_sub(executed, std::memory_order_release);
           }
         }
       });
@@ -74,7 +67,6 @@ namespace threadable
     ~pool()
     {
       details::atomic_test_and_set(quit_, std::memory_order_seq_cst);
-      // release & wait for thread
       notify_jobs(1);
       thread_.join();
     }

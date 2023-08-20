@@ -60,7 +60,6 @@ TEST_CASE("pool: job execution")
       {
         pool.add(queue);
       }
-      std::cout << "pool size: " << pool.size() << "\n";
       pool.wait();
     });
   }
