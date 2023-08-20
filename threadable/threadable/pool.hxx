@@ -60,9 +60,12 @@ namespace threadable
           const auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
           for(auto& q : *queues)
           {
-            std::for_each(std::execution::par, std::begin(*q), std::end(*q), [](job& job){
-              job();
-            });
+            if(!q->empty())
+            {
+              std::for_each(std::execution::par, std::begin(*q), std::end(*q), [](job& job){
+                job();
+              });
+            }
           }
         }
       });
