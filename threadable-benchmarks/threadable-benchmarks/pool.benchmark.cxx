@@ -30,7 +30,8 @@ TEST_CASE("pool: job execution")
 
   bench::Bench b;
   b.relative(true)
-   .batch(jobs_per_iteration);
+   .batch(jobs_per_iteration)
+   .unit("job");
 
   using queue_t = decltype(pool)::queue_t;
   using job_t = decltype([](){
