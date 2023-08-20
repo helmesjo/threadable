@@ -122,12 +122,6 @@ namespace threadable
     const details::atomic_flag& active;
   };
 
-  enum class execution_policy
-  {
-    sequential,
-    concurrent
-  };
-
   namespace details
   {
     constexpr std::size_t default_max_nr_of_jobs = 1024;

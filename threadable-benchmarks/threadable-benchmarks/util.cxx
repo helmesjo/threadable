@@ -2,6 +2,11 @@
 
 namespace
 {
+  int trivial_work(int& val)
+  {
+    return val;
+  }
+
   int non_trivial_work(int& val)
   {
     int total = val;
@@ -27,18 +32,13 @@ namespace
 
     return total;
   }
-
-  int trivial_work(int& val)
-  {
-    return val;
-  }
 }
 
 namespace threadable::utils
 {
   int do_trivial_work(int& val)
   {
-    return val;
+    return trivial_work(val);
   }
 
   int do_non_trivial_work(int& val)

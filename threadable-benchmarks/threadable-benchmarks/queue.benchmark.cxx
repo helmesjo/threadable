@@ -10,7 +10,7 @@
 #endif
 #include <functional>
 #if __has_include (<pstld/pstld.h>)
-    #include <pstld/pstld.h>
+  #include <pstld/pstld.h>
 #endif
 #include <vector>
 
@@ -137,9 +137,7 @@ TEST_CASE("queue: execute (sequential)")
 TEST_CASE("queue: execute (parallel)")
 {
   bench::Bench b;
-  b.warmup(3'000)
-   .relative(true)
-   .minEpochIterations(500)
+  b.relative(true)
    .batch(jobs_per_iteration);
 
   using job_t = decltype([](){
