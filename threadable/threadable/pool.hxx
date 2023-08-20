@@ -71,9 +71,9 @@ namespace threadable
       thread_.join();
     }
 
-    auto create() noexcept
+    auto create(execution_policy policy = execution_policy::parallel) noexcept
     {
-      auto q = std::make_shared<queue_t>(/*policy,*/);
+      auto q = std::make_shared<queue_t>(policy);
       add(q);
       return q;
     }

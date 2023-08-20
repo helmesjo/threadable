@@ -132,6 +132,12 @@ namespace threadable
     constexpr std::size_t default_max_nr_of_jobs = 1024;
   }
 
+  enum class execution_policy
+  {
+    sequential,
+    parallel
+  };
+
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class queue
   {
@@ -142,15 +148,15 @@ namespace threadable
 
     static_assert(max_nr_of_jobs > 1, "number of jobs must be greater than 1");
     static_assert((max_nr_of_jobs & index_mask) == 0, "number of jobs must be a power of 2");
+
   public:
-    template<std::invocable<queue&> callable_t>
-    queue(callable_t&& onJobReady) noexcept
+
+    queue(execution_policy policy = execution_policy::parallel) noexcept
+    : policy_(policy)
     {
-      set_notify(FWD(onJobReady));
+      set_notify(null_callback);
     }
-    queue() noexcept:
-      queue(null_callback)
-    {}
+
     queue(queue&&) = delete;
     queue(const queue&) = delete;
     auto operator=(queue&&) = delete;
@@ -233,6 +239,11 @@ namespace threadable
       auto& job = jobs_[mask(i)];
       assert(!job);
       job.set(FWD(func), FWD(args)...);
+
+      if(policy_ == execution_policy::sequential)
+      {
+        job.child_active = &jobs_[mask(i-1)].active;
+      }
 
       head_.store(i+1, std::memory_order_release);
       on_job_ready();
@@ -326,6 +337,7 @@ namespace threadable
     */
 
     // max() is intentional to easily detect wrap-around issues
+    execution_policy policy_ = execution_policy::parallel;
     index_t tail_{0};
     atomic_index_t head_{0};
     function<details::job_buffer_size> on_job_ready;

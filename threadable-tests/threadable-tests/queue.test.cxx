@@ -142,23 +142,31 @@ SCENARIO("queue: push & claim")
 
 SCENARIO("queue: execution order")
 {
-  auto queue = threadable::queue{};
 
-  std::vector<int> order;
-  GIVEN("push three jobs")
+  GIVEN("a sequential queue")
   {
-    queue.push([&order]{ order.push_back(1); });
-    queue.push([&order]{ order.push_back(2); });
-    queue.push([&order]{ order.push_back(3); });
-    WHEN("execute jobs")
+    auto queue = threadable::queue(threadable::execution_policy::sequential);
+
+    const auto nr_jobs = 1000;
+    auto order = std::vector<int>{};
+    auto m = std::mutex{};
+    for(auto i = 0; i < nr_jobs; ++i)
     {
-      REQUIRE(queue.execute() == 3);
+      queue.push([&order, &m, i]{
+        auto _ = std::scoped_lock{m};
+        order.push_back(i);
+      });
+    }
+    WHEN("queue & execute jobs")
+    {
+      REQUIRE(queue.execute() == nr_jobs);
       THEN("jobs are executed FIFO")
       {
-        REQUIRE(order.size() == 3);
-        REQUIRE(order[0] == 1);
-        REQUIRE(order[1] == 2);
-        REQUIRE(order[2] == 3);
+        REQUIRE(order.size() == nr_jobs);
+        for(auto i = 0; i < nr_jobs; ++i)
+        {
+          REQUIRE(order[i] == i);
+        }
       }
     }
   }
@@ -269,7 +277,8 @@ SCENARIO("queue: stress-test")
 {
   static constexpr std::size_t queue_capacity = 1 << 18;
   std::atomic_size_t notify_counter = 0;
-  auto queue = threadable::queue<queue_capacity>([&notify_counter](...){ ++notify_counter; });
+  auto queue = threadable::queue<queue_capacity>();
+  queue.set_notify([&notify_counter](...){ ++notify_counter; });
   GIVEN("1 producer & 1 consumer")
   {
     THEN("there are no race conditions")
