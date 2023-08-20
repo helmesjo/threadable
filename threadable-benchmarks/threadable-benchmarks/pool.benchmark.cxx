@@ -46,12 +46,21 @@ TEST_CASE("pool: job execution")
       queues.emplace_back(pool.create());
     }
     b.run("threadable::pool", [&] {
+      for(auto& queue : queues)
+      {
+        pool.remove(*queue);
+      }
       for_each(std::execution::par, std::begin(queues), std::end(queues), [&](auto& queue){
         for(std::size_t i=0; i<jobs_per_iteration/thread_count; ++i)
         {
           queue->push(job_t{});
         }
       });
+      for(auto& queue : queues)
+      {
+        pool.add(queue);
+      }
+      std::cout << "pool size: " << pool.size() << "\n";
       pool.wait();
     });
   }
