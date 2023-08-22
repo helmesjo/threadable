@@ -52,7 +52,7 @@ namespace threadable::details
 namespace threadable::details
 {
   template<typename atomic_t, typename obj_t>
-  inline void atomic_wait(const atomic_t& atomic, obj_t&& old, std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline void atomic_wait(const atomic_t& atomic, obj_t old, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     atomic.wait(FWD(old), order);
   }
