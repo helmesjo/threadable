@@ -25,8 +25,8 @@ namespace
 TEST_CASE("queue: iterate (sequential)")
 {
   bench::Bench b;
-  b.relative(true)
-   .minEpochIterations(1000)
+  b.warmup(1)
+   .relative(true)
    .batch(jobs_per_iteration)
    .unit("job");
 
@@ -63,9 +63,8 @@ TEST_CASE("queue: iterate (sequential)")
 TEST_CASE("queue: iterate (parallel)")
 {
   bench::Bench b;
-  b.warmup(3'000)
+  b.warmup(1)
    .relative(true)
-   .minEpochIterations(1000)
    .batch(jobs_per_iteration)
    .unit("job");
 
@@ -102,8 +101,8 @@ TEST_CASE("queue: iterate (parallel)")
 TEST_CASE("queue: execute (sequential)")
 {
   bench::Bench b;
-  b.relative(true)
-   .minEpochIterations(500)
+  b.warmup(1)
+   .relative(true)
    .batch(jobs_per_iteration)
    .unit("job");
 
@@ -140,7 +139,8 @@ TEST_CASE("queue: execute (sequential)")
 TEST_CASE("queue: execute (parallel)")
 {
   bench::Bench b;
-  b.relative(true)
+  b.warmup(1)
+   .relative(true)
    .batch(jobs_per_iteration)
    .unit("job");
 

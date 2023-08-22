@@ -15,7 +15,7 @@ namespace
 TEST_CASE("function")
 {
   bench::Bench b;
-  b.warmup(5'000)
+  b.warmup(1)
    .relative(true)
    .batch(1);
 

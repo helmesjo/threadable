@@ -29,7 +29,8 @@ TEST_CASE("pool: job execution")
   auto pool = threadable::pool<jobs_per_iteration>();
 
   bench::Bench b;
-  b.relative(true)
+  b.warmup(1)
+   .relative(true)
    .batch(jobs_per_iteration)
    .unit("job");
 
