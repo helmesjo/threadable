@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <threadable/function.hxx>
 #include <threadable/std_atomic.hxx>
 
@@ -148,6 +149,9 @@ namespace threadable
 
     static_assert(max_nr_of_jobs > 1, "number of jobs must be greater than 1");
     static_assert((max_nr_of_jobs & index_mask) == 0, "number of jobs must be a power of 2");
+#ifdef __cpp_lib_constexpr_cmath
+    static_assert(max_nr_of_jobs <= std::pow(2, (8 * sizeof(index_t)) - 1), "number of jobs must be <= half the index range");
+#endif
 
   public:
 
