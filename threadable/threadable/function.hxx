@@ -28,13 +28,13 @@ namespace threadable
 #endif
 
     template<typename callable_t>
-    static inline void invoke_func(void* addr)
+    inline constexpr void invoke_func(void* addr)
     {
       (*static_cast<callable_t*>(addr))();
     }
 
     template<typename callable_t>
-    static inline void invoke_dtor(void* addr)
+    inline constexpr void invoke_dtor(void* addr)
     {
       if constexpr(std::destructible<callable_t>)
       {
@@ -45,55 +45,55 @@ namespace threadable
     using invoke_func_t = decltype(&invoke_func<void(*)()>);
     using invoke_dtor_t = decltype(&invoke_dtor<void(*)()>);
     static_assert(sizeof(invoke_func_t) == sizeof(invoke_dtor_t));
-    static constexpr std::uint8_t header_size = sizeof(std::uint8_t);
-    static constexpr std::uint8_t func_ptr_size = sizeof(invoke_func_t);
+    inline constexpr std::uint8_t header_size = sizeof(std::uint8_t);
+    inline constexpr std::uint8_t func_ptr_size = sizeof(invoke_func_t);
 
-    inline std::uint8_t& size(std::uint8_t* buf) noexcept
+    inline constexpr std::uint8_t& size(std::uint8_t* buf) noexcept
     {
       return static_cast<std::uint8_t&>(*buf);
     }
 
-    inline std::uint8_t size(const std::uint8_t* buf) noexcept
+    inline constexpr std::uint8_t size(const std::uint8_t* buf) noexcept
     {
       return static_cast<std::uint8_t>(*buf);
     }
 
-    inline void size(std::uint8_t* buf, std::uint8_t s) noexcept
+    inline constexpr void size(std::uint8_t* buf, std::uint8_t s) noexcept
     {
       size(buf) = s;
     }
 
-    inline invoke_func_t& invoke_ptr(std::uint8_t* buf) noexcept
+    inline constexpr invoke_func_t& invoke_ptr(std::uint8_t* buf) noexcept
     {
       return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size));
     }
 
-    inline void invoke_ptr(std::uint8_t* buf, invoke_func_t func) noexcept
+    inline constexpr void invoke_ptr(std::uint8_t* buf, invoke_func_t func) noexcept
     {
       invoke_ptr(buf) = func;
     }
 
-    inline invoke_dtor_t& dtor_ptr(std::uint8_t* buf) noexcept
+    inline constexpr invoke_dtor_t& dtor_ptr(std::uint8_t* buf) noexcept
     {
       return *static_cast<invoke_dtor_t*>(static_cast<void*>(buf + header_size + func_ptr_size));
     }
 
-    inline void dtor_ptr(std::uint8_t* buf, invoke_dtor_t func) noexcept
+    inline constexpr void dtor_ptr(std::uint8_t* buf, invoke_dtor_t func) noexcept
     {
       dtor_ptr(buf) = func;
     }
 
-    inline typename std::uint8_t* body_ptr(std::uint8_t* buf) noexcept
+    inline constexpr typename std::uint8_t* body_ptr(std::uint8_t* buf) noexcept
     {
       return buf + header_size + func_ptr_size + func_ptr_size;
     }
 
-    inline void invoke(std::uint8_t* buf) noexcept
+    inline constexpr void invoke(std::uint8_t* buf) noexcept
     {
       invoke_ptr(buf)(body_ptr(buf));
     }
 
-    inline void invoke_dtor(std::uint8_t* buf) noexcept
+    inline constexpr void invoke_dtor(std::uint8_t* buf) noexcept
     {
       dtor_ptr(buf)(body_ptr(buf));
     }
