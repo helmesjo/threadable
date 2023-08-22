@@ -40,6 +40,28 @@ TEST_CASE("pool: job execution")
 
   b.title("push & wait");
   {
+    std::vector<std::queue<job_t>> queues;
+    queues.resize(thread_count);
+    b.run("std::queue", [&] {
+      for(auto& queue : queues)
+      {
+        for(std::size_t i=0; i<jobs_per_iteration/thread_count; ++i)
+        {
+          queue.push(job_t{});
+        }
+      }
+      for(auto& q : queues)
+      {
+        while(!q.empty())
+        {
+          auto& job = q.back();
+          job();
+          q.pop();
+        }
+      }
+    });
+  }
+  {
     std::vector<std::shared_ptr<queue_t>> queues;
     for(std::size_t i=0; i<thread_count; ++i)
     {
@@ -61,28 +83,6 @@ TEST_CASE("pool: job execution")
         pool.add(queue);
       }
       pool.wait();
-    });
-  }
-  {
-    std::vector<std::queue<job_t>> queues;
-    queues.resize(thread_count);
-    b.run("std::queue", [&] {
-      for(auto& queue : queues)
-      {
-        for(std::size_t i=0; i<jobs_per_iteration/thread_count; ++i)
-        {
-          queue.push(job_t{});
-        }
-      }
-      for(auto& q : queues)
-      {
-        while(!q.empty())
-        {
-          auto& job = q.back();
-          job();
-          q.pop();
-        }
-      }
     });
   }
 }

@@ -29,27 +29,27 @@ TEST_CASE("function")
   b.title("assign")
     .run("lambda", [&] {
       bench::doNotOptimizeAway(lambda = lambda_t{});
-  }).run("threadable::function", [&] {
-      bench::doNotOptimizeAway(func = lambda);
   }).run("std::function", [&] {
       bench::doNotOptimizeAway(funcStd = lambda);
+  }).run("threadable::function", [&] {
+        bench::doNotOptimizeAway(func = lambda);
   });
 
   b.title("invoke")
     .run("lambda", [&] {
       lambda();
-  }).run("threadable::function", [&] {
-      func();
   }).run("std::function", [&] {
       funcStd();
+  }).run("threadable::function", [&] {
+      func();
   });
 
   b.title("reset")
     .run("lambda", [&] {
       bench::doNotOptimizeAway(lambda = lambda_t{});
-  }).run("threadable::function", [&] {
-      bench::doNotOptimizeAway(func = nullptr);
   }).run("std::function", [&] {
       bench::doNotOptimizeAway(funcStd = nullptr);
+  }).run("threadable::function", [&] {
+      bench::doNotOptimizeAway(func = nullptr);
   });
 }
