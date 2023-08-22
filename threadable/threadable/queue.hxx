@@ -319,6 +319,7 @@ namespace threadable
     {
       return val & index_mask;
     }
+
   private:
     /*
       Circular job buffer. When tail or head
@@ -337,9 +338,10 @@ namespace threadable
     */
 
     // max() is intentional to easily detect wrap-around issues
+    alignas(details::cache_line_size) index_t tail_{0};
+    alignas(details::cache_line_size) atomic_index_t head_{0};
+
     execution_policy policy_ = execution_policy::parallel;
-    index_t tail_{0};
-    atomic_index_t head_{0};
     function<details::job_buffer_size> on_job_ready;
     // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
     // causing noity_all() to not wake thread(s). See completion token test "stress-test"
