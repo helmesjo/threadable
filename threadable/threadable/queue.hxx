@@ -267,7 +267,7 @@ namespace threadable
       auto head = head_.load(std::memory_order_acquire);
       if constexpr(consume)
       {
-        if(consume && tail_ < head)
+        if(tail_ < head)
         {
           auto& lastJob = jobs_[mask(head-1)];
           lastJob.set([this, head = head, func = function_dyn(lastJob.get())]() mutable {
