@@ -18,7 +18,7 @@ namespace bench = ankerl::nanobench;
 
 namespace
 {
-  constexpr std::size_t jobs_per_iteration = 1 << 16;
+  constexpr std::size_t jobs_per_iteration = 1 << 20;
   int val = 1;
 }
 
