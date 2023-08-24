@@ -343,7 +343,7 @@ SCENARIO("queue: standard algorithms")
           REQUIRE(queue.size() == 0);
         }
       }
-#if __has_include(<execution>)
+#ifdef __cpp_lib_execution
       AND_WHEN("std::for_each (parallel)")
       {
         std::for_each(std::execution::par, queue.begin(), queue.end(), [](auto& job) {
