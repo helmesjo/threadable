@@ -43,7 +43,7 @@ namespace threadable
           // 1. Check if quit = true.
           // 2. Wait for jobs to executed.
           // 3. Execute all jobs.
-          if(details::atomic_test(quit_, std::memory_order_relaxed))
+          if(details::atomic_test(quit_, std::memory_order_acquire))
           UNLIKELY
           {
             // thread exit
@@ -76,7 +76,7 @@ namespace threadable
 
     ~pool()
     {
-      details::atomic_test_and_set(quit_, std::memory_order_seq_cst);
+      details::atomic_test_and_set(quit_, std::memory_order_release);
       notify_jobs(1);
       thread_.join();
     }
