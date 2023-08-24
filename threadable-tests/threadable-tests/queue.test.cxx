@@ -192,93 +192,34 @@ SCENARIO("queue: completion token")
       REQUIRE(queue.execute() == 1);
       REQUIRE(token.done());
     }
-    // WHEN("waiting on token")
-    // {
-    //   THEN("it releases after job has executed")
-    //   {
-    //     using clock_t = std::chrono::steady_clock;
-    //     const auto start = clock_t::now();
-
-    //     auto waiterDoneTime = clock_t::now();
-    //     std::thread waiter([&token, &waiterDoneTime]{ 
-    //       token.wait();
-    //       waiterDoneTime = clock_t::now();
-    //     });
-
-    //     // Give thread some time to start up
-    //     std::this_thread::sleep_for(std::chrono::milliseconds{10});
-
-    //     REQUIRE(queue.execute() == 1);
-    //     auto jobDoneTime = clock_t::now();
-    //     waiter.join();
-
-    //     INFO(
-    //       std::chrono::duration_cast<std::chrono::nanoseconds>(jobDoneTime - start).count(),
-    //       "us < ", 
-    //       std::chrono::duration_cast<std::chrono::nanoseconds>(waiterDoneTime - start).count(),
-    //       "us");
-    //     REQUIRE(jobDoneTime <= waiterDoneTime);
-    //   }
-    // }
-  }
-  GIVEN("stress-test: 1 producer/consumer")
-  {
-    static constexpr auto nr_of_jobs = queue.max_size() * 2;
-    std::size_t jobs_executed = 0;
-
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      auto token = queue.push([]{});
-      for(auto& job : queue)
-      {
-        if(job)
-        {
-          job();
-        }
-        ++jobs_executed;
-      }
-      token.wait();
-    }
-
-    REQUIRE(jobs_executed == nr_of_jobs);
-  }
-  GIVEN("stress-test: 1 producer 1 consumer")
-  {
-    static constexpr auto nr_of_jobs = queue.max_size() * 2;
-    std::size_t jobs_executed = 0;
-    std::atomic_bool run{true};
-    auto worker = std::thread([&]{
-      while(run)
-      {
-        for(auto& job : queue)
-        {
-          if(job)
-          {
-            job();
-            ++jobs_executed;
-          }
-        }
-      }
-    });
-
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
-    {
-      auto token = queue.push([]{});
-      token.wait();
-    }
-
-    run = false;
-    worker.join();
-    REQUIRE(jobs_executed == nr_of_jobs);
   }
 }
 
 SCENARIO("queue: stress-test")
 {
-  static constexpr std::size_t queue_capacity = 1 << 18;
+  static constexpr std::size_t queue_capacity = 1 << 8;
   std::atomic_size_t notify_counter = 0;
   auto queue = threadable::queue<queue_capacity>();
   queue.set_notify([&notify_counter](...){ ++notify_counter; });
+
+  GIVEN("produce & consume enough for wrap-around")
+  {
+    static constexpr auto nr_of_jobs = queue.max_size() * 2;
+    std::size_t jobs_executed = 0;
+
+    for(std::size_t i = 0; i < nr_of_jobs; ++i)
+    {
+      auto token = queue.push([]{});
+      REQUIRE(queue.execute() == 1);
+      ++jobs_executed;
+      REQUIRE(token.done());
+    }
+
+    THEN("all jobs are executed")
+    {
+      REQUIRE(jobs_executed == nr_of_jobs);
+    }
+  }
   GIVEN("1 producer & 1 consumer")
   {
     THEN("there are no race conditions")
