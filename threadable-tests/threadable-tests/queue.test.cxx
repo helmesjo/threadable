@@ -317,9 +317,9 @@ SCENARIO("queue: stress-test")
 
 SCENARIO("queue: standard algorithms")
 {
-  GIVEN("queue with capacity 1 << 22")
+  GIVEN("queue with capacity of 1M")
   {
-    static constexpr auto queue_capacity = 1 << 18;
+    static constexpr auto queue_capacity = 1 << 20;
     auto queue = threadable::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
