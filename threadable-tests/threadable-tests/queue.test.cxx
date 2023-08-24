@@ -101,7 +101,7 @@ SCENARIO("queue: push & claim")
       }
       REQUIRE(queue.size() == queue_capacity);
 
-      AND_WHEN("iterate")
+      AND_WHEN("iterate and execute jobs")
       {
         for(auto& job : queue)
         {
@@ -121,7 +121,7 @@ SCENARIO("queue: push & claim")
             REQUIRE(queue.size() == 0);
           }
 
-          AND_WHEN("iterate")
+          AND_WHEN("iterate without executing jobs")
           {
             jobs_executed.clear();
             for(auto& job : queue)
