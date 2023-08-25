@@ -73,7 +73,7 @@ TEST_CASE("pool: job execution")
       {
         pool.remove(*queue);
       }
-      for_each(std::execution::par, std::begin(queues), std::end(queues), [&](auto& queue){
+      std::for_each(std::execution::par, std::begin(queues), std::end(queues), [&](auto& queue){
         for(std::size_t i=0; i<jobs_per_iteration/thread_count; ++i)
         {
           queue->push(job_t{});

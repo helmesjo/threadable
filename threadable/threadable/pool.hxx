@@ -4,6 +4,7 @@
 #include <threadable/std_atomic.hxx>
 #include <threadable/std_concepts.hxx>
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <thread>

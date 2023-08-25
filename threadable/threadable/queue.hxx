@@ -4,6 +4,7 @@
 #include <threadable/function.hxx>
 #include <threadable/std_atomic.hxx>
 
+#include <algorithm>
 #include <cassert>
 #include <compare>
 #include <cstddef>
