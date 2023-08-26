@@ -109,6 +109,24 @@ namespace threadable
       details::size(buffer_.data(), 0);
     }
 
+    function_buffer(const function_buffer& buffer)
+    : buffer_(buffer.buffer_)
+    {
+    }
+
+    function_buffer(function_buffer&& buffer)
+    : buffer_(std::move(buffer.buffer_))
+    {
+    }
+
+    template<typename callable_t>
+      requires (std::invocable<callable_t> &&
+                !std::convertible_to<function_buffer<buffer_size>, callable_t>)
+    function_buffer(callable_t&& callable) noexcept
+    {
+      set(FWD(callable));
+    }
+
     ~function_buffer()
     {
       reset();
@@ -163,6 +181,10 @@ namespace threadable
   private:
     buffer_t buffer_;
   };
+
+  template<typename callable_t>
+  requires std::invocable<callable_t>
+  function_buffer(callable_t&& callable) -> function_buffer<sizeof(callable) + details::header_size + (details::func_ptr_size * 2)>;
 
   struct function_dyn
   {

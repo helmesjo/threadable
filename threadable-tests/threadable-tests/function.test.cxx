@@ -3,6 +3,20 @@
 
 #include <type_traits>
 
+SCENARIO("function_buffer")
+{
+  WHEN("constructed with callable")
+  {
+    int called = 0;
+    auto buffer = threadable::function_buffer([&called]{ ++called; });
+    THEN("it can be invoked")
+    {
+      threadable::details::invoke(buffer.data());
+      REQUIRE(called == 1);
+    }
+  }
+}
+
 SCENARIO("function: set/reset")
 {
   auto func = threadable::function{};
