@@ -38,12 +38,12 @@ namespace threadable::details
 
   inline auto atomic_test_and_set(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
-    return atomic.store(true, order);
+    return atomic.exchange(true, order);
   }
 
   inline auto atomic_clear(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
-    return atomic.store(false, order);
+    return atomic.exchange(false, order);
   }
 }
 #endif
