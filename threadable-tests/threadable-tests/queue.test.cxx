@@ -192,6 +192,19 @@ SCENARIO("queue: completion token")
       REQUIRE(queue.execute() == 1);
       REQUIRE(token.done());
     }
+    WHEN("token is cancelled")
+    {
+      REQUIRE(token.cancel());
+      THEN("it is marked as 'done'")
+      {
+        REQUIRE(token.done());
+      }
+      THEN("job is still executed by queue")
+      {
+        // TODO: Fix so it's not executed. See queue::end().
+        REQUIRE(queue.execute() == 1);
+      }
+    }
   }
 }
 

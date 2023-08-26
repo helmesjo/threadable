@@ -111,22 +111,39 @@ namespace threadable
 
   struct job_token
   {
-    job_token(const details::atomic_flag& active):
-      active(active)
+    job_token(details::atomic_flag& active):
+      active(&active)
     {}
+
+    job_token(job_token&& rhs) noexcept
+    : active(rhs.active)
+    {
+      rhs.active = nullptr;
+    }
+
+    auto& operator=(job_token&& rhs) noexcept
+    {
+      this->active = rhs.active;
+      return *this;
+    }
 
     bool done() const noexcept
     {
-      return !details::atomic_test(active, std::memory_order_acquire);
+      return !details::atomic_test(*active, std::memory_order_acquire);
+    }
+
+    auto cancel() noexcept
+    {
+      return details::atomic_clear(*active, std::memory_order_release);
     }
 
     void wait() const noexcept
     {
-      details::atomic_wait(active, true, std::memory_order_acquire);
+      details::atomic_wait(*active, true, std::memory_order_acquire);
     }
 
   private:
-    const details::atomic_flag& active;
+    details::atomic_flag* active = nullptr;
   };
 
   namespace details
@@ -237,7 +254,7 @@ namespace threadable
     // Push jobs to non-claimed slots.
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-    const job_token push(callable_t&& func, arg_ts&&... args) noexcept
+    job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
       const index_t i = head_.load(std::memory_order_acquire);
 
