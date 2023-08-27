@@ -10,6 +10,7 @@ SCENARIO("function: type traits")
 
   static_assert(is_function_v<function<>>);
   static_assert(is_function_v<const function<>&>);
+  static_assert(is_function_v<function_dyn>);
   static_assert(!is_function_v<decltype([]{})>);
   static_assert(required_buffer_size_v<function<56>> == 56);
   constexpr auto lambda = []{};
@@ -89,6 +90,86 @@ SCENARIO("function_buffer")
       }
     }
   }
+}
+
+SCENARIO("function_dyn")
+{
+  WHEN("constructed with callable")
+  {
+    int called = 0;
+    auto func = threadable::function_dyn([&called]{ ++called; });
+    REQUIRE(func);
+    THEN("it can be invoked")
+    {
+      func();
+      REQUIRE(called == 1);
+    }
+  }
+  WHEN("constructed with function_buffer")
+  {
+    int called = 0;
+    auto func = threadable::function_dyn(threadable::function_buffer([&called]{ ++called; }));
+    REQUIRE(func);
+    THEN("it can be invoked")
+    {
+      func();
+      REQUIRE(called == 1);
+    }
+  }
+  WHEN("constructed with function")
+  {
+    int called = 0;
+    auto func = threadable::function_dyn(threadable::function([&called]{ ++called; }));
+    REQUIRE(func);
+    THEN("it can be invoked")
+    {
+      func();
+      REQUIRE(called == 1);
+    }
+  }
+  WHEN("copy-constructed")
+  {
+    int called = 0;
+    auto func1 = threadable::function_dyn([&called]{ ++called; });
+    auto func2 = threadable::function_dyn(func1);
+    REQUIRE(func1);
+    REQUIRE(func2);
+    THEN("copy can be invoked")
+    {
+      func2();
+      REQUIRE(called == 1);
+    }
+    THEN("original can be invoked")
+    {
+      func1();
+      REQUIRE(called == 1);
+    }
+  }
+  WHEN("move-constructed")
+  {
+    int called = 0;
+    auto copy = threadable::function_dyn([&called]{ ++called; });
+    auto func = threadable::function_dyn(std::move(copy));
+    REQUIRE(func);
+    THEN("it can be invoked")
+    {
+      func();
+      REQUIRE(called == 1);
+    }
+  }
+  // WHEN("constructed with callable capturing fynction_dyn")
+  // {
+  //   int called = 0;
+  //   auto func1 = threadable::function_dyn([&called]{ ++called; });
+  //   threadable::function_dyn func2([func1] mutable {
+  //     func1();
+  //   });
+  //   THEN("it can be invoked")
+  //   {
+  //     func2();
+  //     REQUIRE(called == 1);
+  //   }
+  // }
 }
 
 SCENARIO("function: set/reset")
@@ -330,7 +411,10 @@ SCENARIO("function: Conversion")
     WHEN("function is converted to function_dyn")
     {
       threadable::function_dyn funcDyn = func;
+
       static_assert(sizeof(funcDyn) == sizeof(std::unique_ptr<std::uint8_t[]>));
+      REQUIRE(funcDyn);
+      REQUIRE(funcDyn.size() == func.size());
 
       WHEN("it is invoked")
       {

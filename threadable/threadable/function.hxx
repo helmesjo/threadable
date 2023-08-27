@@ -20,6 +20,8 @@ namespace threadable
   template<std::size_t>
   struct function;
 
+  struct function_dyn;
+
   namespace details
   {
 #if __cpp_lib_hardware_interference_size >= 201603
@@ -108,6 +110,9 @@ namespace threadable
     template<std::size_t size>
     struct is_function<function<size>>: std::true_type{};
 
+    template<>
+    struct is_function<function_dyn>: std::true_type{};
+
     template<std::invocable callable_t>
     struct required_buffer_size: std::integral_constant<std::size_t, details::function_buffer_meta_size + sizeof(callable_t)>{};
 
@@ -131,19 +136,20 @@ namespace threadable
       details::size(buffer_.data(), 0);
     }
 
-    explicit function_buffer(const function_buffer& buffer)
+    function_buffer(const function_buffer& buffer)
     : buffer_(buffer.buffer_)
     {
     }
 
-    explicit function_buffer(function_buffer&& buffer)
+    function_buffer(function_buffer&& buffer)
     : buffer_(std::move(buffer.buffer_))
     {
+      details::size(buffer.buffer_.data(), 0);
     }
 
     template<std::size_t size>
     explicit function_buffer(const function<size>& func) noexcept
-    : function_buffer<size>(FWD(func).buffer())
+    : function_buffer<size>(func.buffer())
     {
     }
 
@@ -174,7 +180,7 @@ namespace threadable
     template<std::size_t size>
     void set(const function<size>& func) noexcept
     {
-      (*this) = FWD(func).buffer();
+      (*this) = func.buffer();
     }
 
     template<std::size_t size>
@@ -238,6 +244,18 @@ namespace threadable
 
   struct function_dyn
   {
+    function_dyn(const function_dyn& that)
+    {
+      const auto size = that.size();
+      buffer_ = std::make_unique<std::uint8_t[]>(size);
+      std::memcpy(buffer_.get(), that.buffer_.get(), size);
+    }
+
+    function_dyn(function_dyn&& that)
+    : buffer_(std::move(that.buffer_))
+    {
+    }
+
     template<std::size_t buffer_size>
     explicit function_dyn(const function_buffer<buffer_size>& buffer)
     {
@@ -250,7 +268,13 @@ namespace threadable
 
     template<std::size_t size>
     function_dyn(const function<size>& func) noexcept
-    : function_dyn(FWD(func).buffer())
+    : function_dyn(func.buffer())
+    {
+    }
+
+    function_dyn(std::invocable auto&& callable) noexcept
+      requires (!is_function_v<decltype(callable)>)
+    : function_dyn(function_buffer(FWD(callable)))
     {
     }
 
@@ -261,7 +285,12 @@ namespace threadable
 
     inline operator bool() const noexcept
     {
-      return details::size(buffer_.get()) != 0;
+      return size() != 0;
+    }
+
+    inline std::uint8_t size() const noexcept
+    {
+      return details::size(buffer_.get());
     }
 
   private:
@@ -285,7 +314,7 @@ namespace threadable
     {
     }
 
-    function(std::invocable auto&& func)
+    explicit function(std::invocable auto&& func)
       requires (!is_function_v<decltype(func)>)
     {
       set(FWD(func));
