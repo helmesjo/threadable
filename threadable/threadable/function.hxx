@@ -99,6 +99,9 @@ namespace threadable
     }
   }
 
+  template<std::size_t>
+  struct function;
+
   template<std::size_t buffer_size = details::cache_line_size - details::header_size - (details::func_ptr_size * 2)>
   struct function_buffer
   {
@@ -119,12 +122,10 @@ namespace threadable
     {
     }
 
-    template<typename callable_t>
-      requires (std::invocable<callable_t> &&
-                !std::convertible_to<function_buffer<buffer_size>, callable_t>)
-    function_buffer(callable_t&& callable) noexcept
+    template<std::size_t size>
+    explicit function_buffer(const function<size>& func) noexcept
+    : function_buffer(FWD(func).buffer())
     {
-      set(FWD(callable));
     }
 
     ~function_buffer()
@@ -182,9 +183,8 @@ namespace threadable
     buffer_t buffer_;
   };
 
-  template<typename callable_t>
-  requires std::invocable<callable_t>
-  function_buffer(callable_t&& callable) -> function_buffer<sizeof(callable) + details::header_size + (details::func_ptr_size * 2)>;
+  template<std::size_t size>
+  function_buffer(const function<size>& func) -> function_buffer<size>;
 
   struct function_dyn
   {
@@ -198,8 +198,9 @@ namespace threadable
       std::memcpy(buffer_.get(), buffer.data(), size);
     }
 
-    function_dyn(function_dyn&& func):
-      buffer_(std::move(func.buffer_))
+    template<std::size_t size>
+    function_dyn(const function<size>& func) noexcept
+    : function_dyn(FWD(func).buffer())
     {
     }
 
@@ -220,6 +221,8 @@ namespace threadable
   template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
   struct function
   {
+    using buffer_t = function_buffer<buffer_size>;
+
     function() = default;
 
     function(const function& func):
@@ -273,9 +276,14 @@ namespace threadable
       return buffer_.size() != 0;
     }
 
-    operator function_dyn() const noexcept
+    const buffer_t& buffer() const noexcept
     {
-      return function_dyn(buffer_);
+      return buffer_;
+    }
+
+    buffer_t& buffer() noexcept
+    {
+      return buffer_;
     }
 
     template<typename callable_t>
@@ -305,7 +313,7 @@ namespace threadable
     }
 
   private:
-    function_buffer<buffer_size> buffer_;
+    buffer_t buffer_;
   };
 }
 

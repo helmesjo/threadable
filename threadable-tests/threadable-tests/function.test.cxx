@@ -5,10 +5,11 @@
 
 SCENARIO("function_buffer")
 {
-  WHEN("constructed with callable")
+  WHEN("constructed with threadable::function")
   {
     int called = 0;
-    auto buffer = threadable::function_buffer([&called]{ ++called; });
+    auto func = threadable::function([&called]{ ++called; });
+    auto buffer = threadable::function_buffer(func);
     THEN("it can be invoked")
     {
       threadable::details::invoke(buffer.data());
