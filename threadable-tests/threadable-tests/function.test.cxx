@@ -29,6 +29,47 @@ SCENARIO("function_buffer")
       REQUIRE(called == 1);
     }
   }
+  WHEN("constructed with callable capturing unique_ptr")
+  {
+    auto uniquePtr = std::make_unique<int>(1);
+    auto buffer = threadable::function_buffer([ptr = std::move(uniquePtr)]{});
+    AND_WHEN("copied then both destroyed")
+    {
+      auto copy = buffer;
+      THEN("they destroy different pointers")
+      {
+        buffer.~function_buffer();
+        // This will free the unique_ptr a second time, causing segfault.
+        copy.~function_buffer();
+      }
+    }
+  }
+  WHEN("nested in lambda capture (by value)")
+  {
+    int called = 0;
+    auto buffer = threadable::function_buffer([&called]{ ++called; });
+    auto lambda = [buffer = buffer] mutable {
+      threadable::details::invoke(buffer.data());
+    };
+    THEN("it can be invoked")
+    {
+      lambda();
+      REQUIRE(called == 1);
+    }
+  }
+  WHEN("nested in lambda capture (by r-value)")
+  {
+    int called = 0;
+    auto buffer = threadable::function_buffer([&called]{ ++called; });
+    auto lambda = [buffer = std::move(buffer)] mutable {
+      threadable::details::invoke(buffer.data());
+    };
+    THEN("it can be invoked")
+    {
+      lambda();
+      REQUIRE(called == 1);
+    }
+  }
   WHEN("set with callable")
   {
     int called = 0;
