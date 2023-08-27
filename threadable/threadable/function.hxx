@@ -17,6 +17,9 @@
 
 namespace threadable
 {
+  template<std::size_t>
+  struct function;
+
   namespace details
   {
 #if __cpp_lib_hardware_interference_size >= 201603
@@ -47,6 +50,7 @@ namespace threadable
     static_assert(sizeof(invoke_func_t) == sizeof(invoke_dtor_t));
     inline constexpr std::uint8_t header_size = sizeof(std::uint8_t);
     inline constexpr std::uint8_t func_ptr_size = sizeof(invoke_func_t);
+    inline constexpr std::size_t function_buffer_meta_size = details::header_size + (details::func_ptr_size * 2);
 
     inline constexpr std::uint8_t& size(std::uint8_t* buf) noexcept
     {
@@ -97,12 +101,27 @@ namespace threadable
     {
       dtor_ptr(buf)(body_ptr(buf));
     }
+
+    template<typename T>
+    struct is_function: std::false_type{};
+
+    template<std::size_t size>
+    struct is_function<function<size>>: std::true_type{};
+
+    template<std::invocable callable_t>
+    struct required_buffer_size: std::integral_constant<std::size_t, details::function_buffer_meta_size + sizeof(callable_t)>{};
+
+    template<std::size_t size>
+    struct required_buffer_size<function<size>>: std::integral_constant<std::size_t, size>{};
   }
 
-  template<std::size_t>
-  struct function;
+  template<typename func_t>
+  constexpr bool is_function_v = details::is_function<std::remove_cvref_t<func_t>>::value;
 
-  template<std::size_t buffer_size = details::cache_line_size - details::header_size - (details::func_ptr_size * 2)>
+  template<std::invocable func_t>
+  constexpr std::size_t required_buffer_size_v = details::required_buffer_size<std::remove_cvref_t<func_t>>::value;
+
+  template<std::size_t buffer_size>
   struct function_buffer
   {
     using buffer_t = std::array<std::uint8_t, buffer_size>;
@@ -112,20 +131,27 @@ namespace threadable
       details::size(buffer_.data(), 0);
     }
 
-    function_buffer(const function_buffer& buffer)
+    explicit function_buffer(const function_buffer& buffer)
     : buffer_(buffer.buffer_)
     {
     }
 
-    function_buffer(function_buffer&& buffer)
+    explicit function_buffer(function_buffer&& buffer)
     : buffer_(std::move(buffer.buffer_))
     {
     }
 
     template<std::size_t size>
     explicit function_buffer(const function<size>& func) noexcept
-    : function_buffer(FWD(func).buffer())
+    : function_buffer<size>(FWD(func).buffer())
     {
+    }
+
+    explicit function_buffer(std::invocable auto&& callable) noexcept
+      requires (!is_function_v<decltype(callable)>)
+    {
+      details::size(buffer_.data(), 0);
+      set(FWD(callable));
     }
 
     ~function_buffer()
@@ -133,13 +159,37 @@ namespace threadable
       reset();
     }
 
+    auto& operator=(const function_buffer& buffer)
+    {
+      buffer_ = buffer.buffer_;
+      return *this;
+    }
+
+    auto& operator=(function_buffer&& buffer)
+    {
+      buffer_ = std::move(buffer.buffer_);
+      return *this;
+    }
+
+    template<std::size_t size>
+    void set(const function<size>& func) noexcept
+    {
+      (*this) = FWD(func).buffer();
+    }
+
+    template<std::size_t size>
+    void set(function<size>&& func) noexcept
+    {
+      (*this) = std::move(FWD(func).buffer());
+    }
+
     template<typename callable_t>
       requires std::invocable<callable_t>
+            && (!is_function_v<callable_t>)
     void set(callable_t&& callable) noexcept
     {
       using callable_value_t = std::remove_reference_t<callable_t>;
-      static constexpr std::uint8_t callable_size = sizeof(callable_value_t);
-      static constexpr std::uint8_t total_size = details::header_size + (details::func_ptr_size * 2) + callable_size;
+      static constexpr std::uint8_t total_size = required_buffer_size_v<callable_t>;
 
       static_assert(total_size <= buffer_size, "callable won't fit in function buffer");
       reset();
@@ -183,8 +233,8 @@ namespace threadable
     buffer_t buffer_;
   };
 
-  template<std::size_t size>
-  function_buffer(const function<size>& func) -> function_buffer<size>;
+  template<std::invocable callable_t>
+  function_buffer(callable_t&&) -> function_buffer<required_buffer_size_v<callable_t>>;
 
   struct function_dyn
   {
@@ -236,7 +286,7 @@ namespace threadable
     }
 
     function(std::invocable auto&& func)
-      requires (!std::same_as<function, std::remove_cvref_t<decltype(func)>>)
+      requires (!is_function_v<decltype(func)>)
     {
       set(FWD(func));
     }

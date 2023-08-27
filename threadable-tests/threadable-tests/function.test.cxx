@@ -2,18 +2,91 @@
 #include <threadable-tests/doctest_include.hxx>
 
 #include <type_traits>
+#include <memory>
+
+SCENARIO("function: type traits")
+{
+  using namespace threadable;
+
+  static_assert(is_function_v<function<>>);
+  static_assert(is_function_v<const function<>&>);
+  static_assert(!is_function_v<decltype([]{})>);
+  static_assert(required_buffer_size_v<function<56>> == 56);
+  constexpr auto lambda = []{};
+  static_assert(required_buffer_size_v<decltype(lambda)> == details::header_size + (details::func_ptr_size * 2) + sizeof(lambda));
+}
 
 SCENARIO("function_buffer")
 {
-  WHEN("constructed with threadable::function")
+  WHEN("constructed with callable")
   {
     int called = 0;
-    auto func = threadable::function([&called]{ ++called; });
-    auto buffer = threadable::function_buffer(func);
+    auto buffer = threadable::function_buffer([&called]{ ++called; });
     THEN("it can be invoked")
     {
       threadable::details::invoke(buffer.data());
       REQUIRE(called == 1);
+    }
+  }
+  WHEN("set with callable")
+  {
+    int called = 0;
+    auto lambda = [&called]{ ++called; };
+    auto buffer = threadable::function_buffer(lambda);
+    buffer.reset();
+    buffer.set(lambda);
+    THEN("it can be invoked")
+    {
+      threadable::details::invoke(buffer.data());
+      REQUIRE(called == 1);
+    }
+  }
+  WHEN("constructed with threadable::function")
+  {
+    int called = 0;
+    auto func = threadable::function([&called]{ ++called; });
+    AND_WHEN("by value")
+    {
+      auto buffer = threadable::function_buffer(func);
+      THEN("it can be invoked")
+      {
+        threadable::details::invoke(buffer.data());
+        REQUIRE(called == 1);
+      }
+    }
+    AND_WHEN("by r-value")
+    {
+      auto buffer = threadable::function_buffer(std::move(func));
+      THEN("it can be invoked")
+      {
+        threadable::details::invoke(buffer.data());
+        REQUIRE(called == 1);
+      }
+    }
+  }
+  WHEN("set with threadable::function")
+  {
+    int called = 0;
+    auto func = threadable::function([&called]{ ++called; });
+    auto buffer = threadable::function_buffer(func);
+    buffer.reset();
+    AND_WHEN("by value")
+    {
+      buffer.set(func);
+      THEN("it can be invoked")
+      {
+        threadable::details::invoke(buffer.data());
+        REQUIRE(called == 1);
+      }
+    }
+    AND_WHEN("by r-value")
+    {
+      buffer.set(std::move(func));
+      THEN("it can be invoked")
+      {
+        threadable::details::invoke(buffer.data());
+        REQUIRE(called == 1);
+      }
     }
   }
 }
@@ -257,6 +330,7 @@ SCENARIO("function: Conversion")
     WHEN("function is converted to function_dyn")
     {
       threadable::function_dyn funcDyn = func;
+      static_assert(sizeof(funcDyn) == sizeof(std::unique_ptr<std::uint8_t[]>));
 
       WHEN("it is invoked")
       {
