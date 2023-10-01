@@ -77,7 +77,7 @@ namespace threadable
 
     ~pool()
     {
-      details::atomic_test_and_set(quit_, std::memory_order_release);
+      details::atomic_set(quit_, std::memory_order_release);
       notify_jobs(1);
       thread_.join();
     }
