@@ -22,6 +22,45 @@ namespace
   int val = 1;
 }
 
+TEST_CASE("queue: push")
+{
+  bench::Bench b;
+  b.warmup(1)
+   .relative(true)
+   .batch(jobs_per_iteration)
+   .unit("job");
+
+  using job_t = decltype([](){
+    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+  });
+
+  b.title("push");
+  {
+    auto queue = std::vector<std::function<void()>>();
+    queue.reserve(jobs_per_iteration);
+
+    b.run("std::vector", [&] {
+      queue.clear();
+      for(std::size_t i = 0; i < jobs_per_iteration; ++i)
+      {
+        queue.push_back(job_t{});
+      }
+    });
+  }
+  b.title("push");
+  {
+    auto queue = threadable::queue<jobs_per_iteration>();
+
+    b.run("threadable::queue", [&] {
+      queue.clear();
+      for(std::size_t i = 0; i < jobs_per_iteration; ++i)
+      {
+        queue.push(job_t{});
+      }
+    });
+  }
+}
+
 TEST_CASE("queue: iterate (sequential)")
 {
   bench::Bench b;
