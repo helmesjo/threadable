@@ -275,7 +275,7 @@ namespace threadable
 
     void clear()
     {
-      for(auto& job : *this){ (void)job; }
+      for(auto& job : *this){ (void)job.reset(); }
     }
 
     auto begin() noexcept
