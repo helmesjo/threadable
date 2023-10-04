@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -194,8 +195,8 @@ namespace threadable
             && (!is_function_v<callable_t>)
     void set(callable_t&& callable) noexcept
     {
-      using callable_value_t = std::remove_reference_t<callable_t>;
-      static constexpr std::uint8_t total_size = required_buffer_size_v<callable_t>;
+      using callable_value_t = std::remove_reference_t<decltype(callable)>;
+      static constexpr std::uint8_t total_size = required_buffer_size_v<decltype(callable)>;
 
       static_assert(total_size <= buffer_size, "callable won't fit in function buffer");
       reset();
@@ -208,7 +209,7 @@ namespace threadable
       details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<callable_value_t>));
       details::dtor_ptr(buffer_.data(), std::addressof(details::invoke_dtor<callable_value_t>));
       auto bodyPtr = details::body_ptr(buffer_.data());
-      std::construct_at(reinterpret_cast<callable_value_t*>(bodyPtr), callable_value_t(FWD(callable)));
+      std::construct_at(reinterpret_cast<std::remove_const_t<callable_value_t>*>(bodyPtr), callable_value_t(FWD(callable)));
     }
 
     inline void reset() noexcept
