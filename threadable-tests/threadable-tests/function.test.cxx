@@ -48,7 +48,7 @@ SCENARIO("function_buffer")
   {
     int called = 0;
     auto buffer = threadable::function_buffer([&called]{ ++called; });
-    auto lambda = [buffer = buffer] mutable {
+    auto lambda = [buffer = buffer]() mutable {
       threadable::details::invoke(buffer.data());
     };
     THEN("it can be invoked")
@@ -61,7 +61,7 @@ SCENARIO("function_buffer")
   {
     int called = 0;
     auto buffer = threadable::function_buffer([&called]{ ++called; });
-    auto lambda = [buffer = std::move(buffer)] mutable {
+    auto lambda = [buffer = std::move(buffer)]() mutable {
       threadable::details::invoke(buffer.data());
     };
     THEN("it can be invoked")
