@@ -134,7 +134,7 @@ namespace threadable
 
     auto cancel() noexcept
     {
-      return details::atomic_clear(*active, std::memory_order_release);
+      return details::atomic_test_and_clear(*active, std::memory_order_release);
     }
 
     void wait() const noexcept

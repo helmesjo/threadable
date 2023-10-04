@@ -30,6 +30,13 @@ namespace threadable::details
   {
     atomic.clear(order);
   }
+
+  inline auto atomic_test_and_clear(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  {
+    auto wasTrue = atomic.test(order);
+    atomic.clear(order);
+    return wasTrue;
+  }
 }
 #else
 namespace threadable::details
@@ -54,6 +61,12 @@ namespace threadable::details
   inline void atomic_clear(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     atomic.exchange(false, order);
+  }
+
+  inline auto atomic_test_and_clear(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  {
+    bool expected = true;
+    return atomic.compare_exchange_weak(expected, false, order);
   }
 }
 #endif
