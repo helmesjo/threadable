@@ -267,15 +267,16 @@ SCENARIO("function: set/reset")
       struct type
       {
         type() = default;
+        type(const type&) = default;
         type(type&&) = default;
         ~type()
         {
           ++destroyed;
         }
         void operator()(){}
-        std::unique_ptr<std::uint8_t[]> member;
       };
       static_assert(!std::is_trivially_copyable_v<type>);
+      static_assert(std::copy_constructible<type>);
       static_assert(std::is_destructible_v<type>);
 
       func.set(type{});
