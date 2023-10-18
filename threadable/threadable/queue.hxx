@@ -252,7 +252,7 @@ namespace threadable
     }
 
     // Push jobs to non-claimed slots.
-    template<typename callable_t, typename... arg_ts>
+    template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
     job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {

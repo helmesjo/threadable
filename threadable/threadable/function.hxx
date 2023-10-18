@@ -155,7 +155,7 @@ namespace threadable
     }
 
     explicit function_buffer(std::invocable auto&& callable) noexcept
-      requires (!is_function_v<decltype(callable)>)
+      requires requires { this->set(FWD(callable)); }
     {
       details::size(buffer_.data(), 0);
       set(FWD(callable));
@@ -190,8 +190,8 @@ namespace threadable
       (*this) = std::move(FWD(func).buffer());
     }
 
-    template<typename callable_t>
-      requires std::invocable<callable_t>
+    template<std::invocable callable_t>
+      requires std::copy_constructible<callable_t>
             && (!is_function_v<callable_t>)
     void set(callable_t&& callable) noexcept
     {
