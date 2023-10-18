@@ -39,18 +39,43 @@ namespace threadable
       (*static_cast<callable_t*>(addr))();
     }
 
-    template<typename callable_t>
-    inline constexpr void invoke_dtor(void* addr)
+    enum class method : std::uint8_t
     {
-      if constexpr(std::destructible<callable_t>)
+      copy_ctor,
+      move_ctor,
+      dtor
+    };
+
+    template<typename callable_t>
+    inline constexpr void invoke_special_func(void* addr, method m)
+    {
+      using callable_value_t = std::remove_cvref_t<callable_t>;
+      switch(m)
       {
-        std::destroy_at(static_cast<callable_t*>(addr));
-      }
+        case method::copy_ctor:
+          {
+            static_assert(std::copy_constructible<callable_value_t>);
+            std::construct_at(static_cast<callable_value_t*>(addr), *static_cast<const callable_t*>(addr));
+          }
+          break;
+        case method::move_ctor:
+          {
+            static_assert(std::move_constructible<callable_value_t>);
+            std::construct_at(static_cast<callable_value_t*>(addr), std::move(*static_cast<callable_t*>(addr)));
+          }
+          break;
+        case method::dtor:
+          {
+            static_assert(std::destructible<callable_value_t>);
+            std::destroy_at(static_cast<callable_value_t*>(addr));
+          }
+          break;
+        }
     }
 
     using invoke_func_t = decltype(&invoke_func<void(*)()>);
-    using invoke_dtor_t = decltype(&invoke_dtor<void(*)()>);
-    static_assert(sizeof(invoke_func_t) == sizeof(invoke_dtor_t));
+    using invoke_special_func_t = decltype(&invoke_special_func<void(*)()>);
+    static_assert(sizeof(invoke_func_t) == sizeof(invoke_special_func_t));
     inline constexpr std::uint8_t header_size = sizeof(std::uint8_t);
     inline constexpr std::uint8_t func_ptr_size = sizeof(invoke_func_t);
     inline constexpr std::size_t function_buffer_meta_size = details::header_size + (details::func_ptr_size * 2);
@@ -80,17 +105,17 @@ namespace threadable
       invoke_ptr(buf) = func;
     }
 
-    inline constexpr invoke_dtor_t& dtor_ptr(std::uint8_t* buf) noexcept
+    inline constexpr invoke_special_func_t& special_func_ptr(std::uint8_t* buf) noexcept
     {
-      return *static_cast<invoke_dtor_t*>(static_cast<void*>(buf + header_size + func_ptr_size));
+      return *static_cast<invoke_special_func_t*>(static_cast<void*>(buf + header_size + func_ptr_size));
     }
 
-    inline constexpr void dtor_ptr(std::uint8_t* buf, invoke_dtor_t func) noexcept
+    inline constexpr void special_func_ptr(std::uint8_t* buf, invoke_special_func_t func) noexcept
     {
-      dtor_ptr(buf) = func;
+      special_func_ptr(buf) = func;
     }
 
-    inline constexpr typename std::uint8_t* body_ptr(std::uint8_t* buf) noexcept
+    inline constexpr std::uint8_t* body_ptr(std::uint8_t* buf) noexcept
     {
       return buf + header_size + func_ptr_size + func_ptr_size;
     }
@@ -100,9 +125,9 @@ namespace threadable
       invoke_ptr(buf)(body_ptr(buf));
     }
 
-    inline constexpr void invoke_dtor(std::uint8_t* buf) noexcept
+    inline constexpr void invoke_special_func(std::uint8_t* buf, method m) noexcept
     {
-      dtor_ptr(buf)(body_ptr(buf));
+      special_func_ptr(buf)(body_ptr(buf), m);
     }
 
     template<typename T>
@@ -138,14 +163,13 @@ namespace threadable
     }
 
     function_buffer(const function_buffer& buffer)
-    : buffer_(buffer.buffer_)
     {
+      *this = buffer;
     }
 
     function_buffer(function_buffer&& buffer)
-    : buffer_(std::move(buffer.buffer_))
     {
-      details::size(buffer.buffer_.data(), 0);
+      *this = std::move(buffer);
     }
 
     template<std::size_t size>
@@ -154,7 +178,7 @@ namespace threadable
     {
     }
 
-    explicit function_buffer(std::invocable auto&& callable) noexcept
+    function_buffer(std::invocable auto&& callable) noexcept
       requires requires { this->set(FWD(callable)); }
     {
       details::size(buffer_.data(), 0);
@@ -169,12 +193,15 @@ namespace threadable
     auto& operator=(const function_buffer& buffer)
     {
       buffer_ = buffer.buffer_;
+      details::invoke_special_func(data(), details::method::copy_ctor);
       return *this;
     }
 
     auto& operator=(function_buffer&& buffer)
     {
       buffer_ = std::move(buffer.buffer_);
+      details::invoke_special_func(data(), details::method::move_ctor);
+      details::size(buffer.data(), 0);
       return *this;
     }
 
@@ -191,8 +218,8 @@ namespace threadable
     }
 
     template<std::invocable callable_t>
-      requires std::copy_constructible<callable_t>
-            && (!is_function_v<callable_t>)
+      requires (!is_function_v<callable_t>)
+            && std::copy_constructible<std::remove_reference_t<callable_t>>
     void set(callable_t&& callable) noexcept
     {
       using callable_value_t = std::remove_reference_t<decltype(callable)>;
@@ -207,16 +234,16 @@ namespace threadable
       // body (callable)
       details::size(buffer_.data(), total_size);
       details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<callable_value_t>));
-      details::dtor_ptr(buffer_.data(), std::addressof(details::invoke_dtor<callable_value_t>));
+      details::special_func_ptr(buffer_.data(), std::addressof(details::invoke_special_func<callable_value_t>));
       auto bodyPtr = details::body_ptr(buffer_.data());
-      std::construct_at(reinterpret_cast<std::remove_const_t<callable_value_t>*>(bodyPtr), callable_value_t(FWD(callable)));
+      std::construct_at(reinterpret_cast<std::remove_const_t<callable_value_t>*>(bodyPtr), FWD(callable));
     }
 
     inline void reset() noexcept
     {
       if(size() > 0)
       {
-        details::invoke_dtor(data());
+        details::invoke_special_func(data(), details::method::dtor);
         details::size(buffer_.data(), 0);
       }
     }

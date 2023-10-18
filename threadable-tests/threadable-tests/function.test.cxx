@@ -29,19 +29,39 @@ SCENARIO("function_buffer")
       REQUIRE(called == 1);
     }
   }
-  WHEN("constructed with callable capturing unique_ptr")
+  WHEN("constructed with copy")
   {
-    auto uniquePtr = std::make_unique<int>(1);
-    auto buffer = threadable::function_buffer([ptr = std::move(uniquePtr)]{});
-    AND_WHEN("copied then both destroyed")
+    thread_local int const_copied = 0;
+    thread_local int move_copied = 0;
+    struct type
+    {
+      type() = default;
+      type(const type&)
+      {
+        ++const_copied;
+      }
+      type(type&&)
+      {
+        ++move_copied;
+      }
+      void operator()(){}
+    };
+    static_assert(std::copy_constructible<type>);
+
+    auto buffer = threadable::function_buffer(type{});
+    const_copied = 0;
+    move_copied = 0;
+    THEN("the callables' copy-ctor is invoked")
     {
       auto copy = buffer;
-      THEN("they destroy different pointers")
-      {
-        buffer.~function_buffer();
-        // This will free the unique_ptr a second time, causing segfault.
-        copy.~function_buffer();
-      }
+      REQUIRE(const_copied == 1);
+      REQUIRE_NOTHROW(threadable::details::invoke(buffer.data()));
+    }
+    THEN("the callables' move-ctor is invoked")
+    {
+      auto copy = std::move(buffer);
+      REQUIRE(move_copied == 1);
+      REQUIRE_NOTHROW(threadable::details::invoke(buffer.data()));
     }
   }
   WHEN("nested in lambda capture (by value)")
