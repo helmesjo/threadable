@@ -47,7 +47,7 @@ namespace threadable
     };
 
     template<typename callable_t>
-    inline constexpr void invoke_special_func(void* addr, method m)
+    inline constexpr void invoke_special_func(void* self, method m, void* that)
     {
       using callable_value_t = std::remove_cvref_t<callable_t>;
       switch(m)
@@ -55,19 +55,19 @@ namespace threadable
         case method::copy_ctor:
           {
             static_assert(std::copy_constructible<callable_value_t>);
-            std::construct_at(static_cast<callable_value_t*>(addr), *static_cast<const callable_t*>(addr));
+            std::construct_at(static_cast<callable_value_t*>(self), *static_cast<const callable_t*>(that));
           }
           break;
         case method::move_ctor:
           {
             static_assert(std::move_constructible<callable_value_t>);
-            std::construct_at(static_cast<callable_value_t*>(addr), std::move(*static_cast<callable_t*>(addr)));
+            std::construct_at(static_cast<callable_value_t*>(self), std::move(*static_cast<callable_t*>(that)));
           }
           break;
         case method::dtor:
           {
             static_assert(std::destructible<callable_value_t>);
-            std::destroy_at(static_cast<callable_value_t*>(addr));
+            std::destroy_at(static_cast<callable_value_t*>(self));
           }
           break;
         }
@@ -125,9 +125,9 @@ namespace threadable
       invoke_ptr(buf)(body_ptr(buf));
     }
 
-    inline constexpr void invoke_special_func(std::uint8_t* buf, method m) noexcept
+    inline constexpr void invoke_special_func(std::uint8_t* buf, method m, std::uint8_t* that = nullptr) noexcept
     {
-      special_func_ptr(buf)(body_ptr(buf), m);
+      special_func_ptr(buf)(body_ptr(buf), m, that ? body_ptr(that) : nullptr);
     }
 
     template<typename T>
@@ -192,15 +192,15 @@ namespace threadable
 
     auto& operator=(const function_buffer& buffer)
     {
-      buffer_ = buffer.buffer_;
-      details::invoke_special_func(data(), details::method::copy_ctor);
+      std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
+      details::invoke_special_func(data(), details::method::copy_ctor, const_cast<std::uint8_t*>(buffer.data()));
       return *this;
     }
 
     auto& operator=(function_buffer&& buffer)
     {
-      buffer_ = std::move(buffer.buffer_);
-      details::invoke_special_func(data(), details::method::move_ctor);
+      std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
+      details::invoke_special_func(data(), details::method::move_ctor, buffer.data());
       details::size(buffer.data(), 0);
       return *this;
     }
@@ -275,13 +275,14 @@ namespace threadable
     function_dyn(const function_dyn& that)
     {
       const auto size = that.size();
-      buffer_ = std::make_unique<std::uint8_t[]>(size);
-      std::memcpy(buffer_.get(), that.buffer_.get(), size);
+      buffer_ = new std::uint8_t[size];
+      std::memcpy(buffer_, that.buffer_, size);
     }
 
     function_dyn(function_dyn&& that)
-    : buffer_(std::move(that.buffer_))
+    : buffer_(that.buffer_)
     {
+      that.buffer_ = nullptr;
     }
 
     template<std::size_t buffer_size>
@@ -289,9 +290,8 @@ namespace threadable
     {
       assert(buffer.size() > 0);
       const auto size = buffer.size();
-      // buffer_ = std::make_unique_for_overwrite<std::uint8_t[]>(size);
-      buffer_ = std::make_unique<std::uint8_t[]>(size);
-      std::memcpy(buffer_.get(), buffer.data(), size);
+      buffer_ = new std::uint8_t[size];
+      std::memcpy(buffer_, buffer.data(), size);
     }
 
     template<std::size_t size>
@@ -306,9 +306,14 @@ namespace threadable
     {
     }
 
+    ~function_dyn()
+    {
+      delete[] buffer_;
+    }
+
     inline void operator()()
     {
-      details::invoke(buffer_.get());
+      details::invoke(buffer_);
     }
 
     inline operator bool() const noexcept
@@ -318,11 +323,11 @@ namespace threadable
 
     inline std::uint8_t size() const noexcept
     {
-      return details::size(buffer_.get());
+      return buffer_ ? details::size(buffer_) : 0;
     }
 
   private:
-    std::unique_ptr<std::uint8_t[]> buffer_;
+    std::uint8_t* buffer_ = nullptr;
   };
 
   template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
@@ -393,19 +398,18 @@ namespace threadable
       return buffer_;
     }
 
-    template<typename callable_t>
-      requires std::invocable<callable_t>
-    void set(callable_t&& callable) noexcept
+    void set(auto&& callable) noexcept
+      requires requires{ this->buffer_.set(FWD(callable)); }
     {
       buffer_.set(FWD(callable));
     }
 
-    template<typename callable_t, typename... arg_ts>
-      requires std::invocable<callable_t, arg_ts...>
-    void set(callable_t&& func, arg_ts&&... args) noexcept
+    template<typename... arg_ts>
+      requires (sizeof...(arg_ts) > 0)
+    void set(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
     {
-      set([func = FWD(func), ...args = FWD(args)]() mutable {
-        std::invoke(FWD(func), FWD(args)...);
+      set([callable = FWD(callable), ...args = FWD(args)]() mutable {
+        std::invoke(FWD(callable), FWD(args)...);
       });
     }
 

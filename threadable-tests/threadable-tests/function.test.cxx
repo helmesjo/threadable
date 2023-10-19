@@ -1,3 +1,4 @@
+#include <concepts>
 #include <threadable/function.hxx>
 #include <threadable-tests/doctest_include.hxx>
 
@@ -218,19 +219,31 @@ SCENARIO("function_dyn")
       REQUIRE(called == 1);
     }
   }
-  // WHEN("constructed with callable capturing fynction_dyn")
-  // {
-  //   int called = 0;
-  //   auto func1 = threadable::function_dyn([&called]{ ++called; });
-  //   threadable::function_dyn func2([func1] mutable {
-  //     func1();
-  //   });
-  //   THEN("it can be invoked")
-  //   {
-  //     func2();
-  //     REQUIRE(called == 1);
-  //   }
-  // }
+  WHEN("constructed with callable capturing function_dyn")
+  {
+    int called = 0;
+    auto func1 = threadable::function_dyn([&called]{ ++called; });
+    auto func2 = threadable::function([func1]() mutable { func1(); });
+    THEN("it can be invoked")
+    {
+      func2();
+      REQUIRE(called == 1);
+    }
+    AND_WHEN("a copy is constructed")
+    {
+      auto func2Copy = func2;
+      THEN("it can be invoked")
+      {
+        func2Copy();
+        REQUIRE(called == 1);
+      }
+      THEN("both can be cleared")
+      {
+        func2 = {};
+        func2Copy = {};
+      }
+    }
+  }
 }
 
 SCENARIO("function: set/reset")
