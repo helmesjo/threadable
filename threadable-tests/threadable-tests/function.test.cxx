@@ -210,13 +210,54 @@ SCENARIO("function_dyn")
   WHEN("move-constructed")
   {
     int called = 0;
-    auto copy = threadable::function_dyn([&called]{ ++called; });
-    auto func = threadable::function_dyn(std::move(copy));
-    REQUIRE(func);
+    auto func1 = threadable::function_dyn([&called]{ ++called; });
+    auto func2 = threadable::function_dyn(std::move(func1));
+    REQUIRE(func2);
     THEN("it can be invoked")
     {
-      func();
+      func2();
       REQUIRE(called == 1);
+    }
+  }
+  WHEN("deep-copy constructed")
+  {
+    struct type
+    {
+      type(int v)
+      {
+        val = new int{};
+        *val = v;
+      }
+      type(const type& that)
+      {
+        val = new int(*that.val);
+      }
+      ~type()
+      {
+        // make sure we modify the memory address
+        // so the "right" values doesn't stick around.
+        *val = 8;
+        delete val;
+        val = nullptr;
+      }
+      int* val = nullptr;
+    };
+
+    // this order and combination of things is
+    // important to trigger the obscure case,
+    // so leave as-is.
+    auto func = threadable::function();
+    func.set([obj = type{5}]{
+      REQUIRE(*obj.val == 5);
+    });
+    auto funcDyn = threadable::function_dyn(func);
+    func.set([func = funcDyn]() mutable {
+      func();
+    });
+    THEN("it's invocable after source object has been destroyed")
+    {
+      funcDyn.reset();
+      func();
     }
   }
   WHEN("constructed with callable capturing function_dyn")

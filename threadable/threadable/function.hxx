@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <threadable/std_concepts.hxx>
 
 #include <array>
@@ -274,9 +275,7 @@ namespace threadable
   {
     function_dyn(const function_dyn& that)
     {
-      const auto size = that.size();
-      buffer_ = new std::uint8_t[size];
-      std::memcpy(buffer_, that.buffer_, size);
+      copy_buffer({ that.buffer_, that.size() });
     }
 
     function_dyn(function_dyn&& that)
@@ -288,10 +287,7 @@ namespace threadable
     template<std::size_t buffer_size>
     explicit function_dyn(const function_buffer<buffer_size>& buffer)
     {
-      assert(buffer.size() > 0);
-      const auto size = buffer.size();
-      buffer_ = new std::uint8_t[size];
-      std::memcpy(buffer_, buffer.data(), size);
+      copy_buffer({ buffer.data(), buffer.size() });
     }
 
     template<std::size_t size>
@@ -308,7 +304,7 @@ namespace threadable
 
     ~function_dyn()
     {
-      delete[] buffer_;
+      reset();
     }
 
     inline void operator()()
@@ -326,7 +322,21 @@ namespace threadable
       return buffer_ ? details::size(buffer_) : 0;
     }
 
+    inline void reset() noexcept
+    {
+      delete[] buffer_;
+      buffer_ = nullptr;
+    }
+
   private:
+    void copy_buffer(std::span<const std::uint8_t> src)
+    {
+      assert(src.size() > details::function_buffer_meta_size);
+      buffer_ = new std::uint8_t[src.size()];
+      std::memcpy(buffer_, src.data(), details::function_buffer_meta_size);
+      details::invoke_special_func(buffer_, details::method::copy_ctor, const_cast<std::uint8_t*>(src.data()));
+    }
+
     std::uint8_t* buffer_ = nullptr;
   };
 
