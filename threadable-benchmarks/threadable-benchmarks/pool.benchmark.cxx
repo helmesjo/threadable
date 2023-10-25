@@ -66,13 +66,9 @@ TEST_CASE("pool: job execution")
     std::vector<std::shared_ptr<queue_t>> queues;
     for(std::size_t i=0; i<thread_count; ++i)
     {
-      queues.emplace_back(pool.create());
+      queues.emplace_back(std::make_shared<queue_t>(threadable::execution_policy::parallel));
     }
     b.run("threadable::pool", [&] {
-      for(auto& queue : queues)
-      {
-        pool.remove(*queue);
-      }
       std::for_each(std::execution::par, std::begin(queues), std::end(queues), [&](auto& queue){
         for(std::size_t i=0; i<jobs_per_iteration/thread_count; ++i)
         {

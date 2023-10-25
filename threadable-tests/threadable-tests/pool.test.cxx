@@ -10,11 +10,11 @@ SCENARIO("pool: create/remove queues")
   auto pool = threadable::pool();
   GIVEN("queue is created")
   {
-    auto queue = pool.create();
+    auto& queue = pool.create();
     int called = 0;
     WHEN("job is pushed")
     {
-      auto token = queue->push([&called]{ ++called; });
+      auto token = queue.push([&called]{ ++called; });
       THEN("it gets executed")
       {
         token.wait();
@@ -23,7 +23,7 @@ SCENARIO("pool: create/remove queues")
     }
     THEN("queue can be removed")
     {
-      REQUIRE(pool.remove(*queue));
+      REQUIRE(pool.remove(std::move(queue)));
     }
   }
   GIVEN("queue is pre-created")
@@ -51,7 +51,7 @@ SCENARIO("pool: create/remove queues")
       }
       AND_WHEN("removed from pool")
       {
-        REQUIRE(pool.remove(*queue));
+        REQUIRE(pool.remove(std::move(*queue)));
         THEN("it can be readded")
         {
           REQUIRE(pool.add(queue));
@@ -84,10 +84,10 @@ SCENARIO("pool: stress-test")
       std::vector<threadable::job_token> tokens;
       tokens.reserve(nr_of_jobs);
 
-      auto queue = pool.create();
+      auto& queue = pool.create();
       for(std::size_t i = 0; i < nr_of_jobs; ++i)
       {
-        tokens.emplace_back(queue->push([&counter]{ ++counter; }));
+        tokens.emplace_back(queue.push([&counter]{ ++counter; }));
       }
 
       for(const auto& token : tokens)

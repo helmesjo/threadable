@@ -82,11 +82,11 @@ namespace threadable
       thread_.join();
     }
 
-    auto create(execution_policy policy = execution_policy::parallel) noexcept
+    queue_t& create(execution_policy policy = execution_policy::parallel) noexcept
     {
       auto q = std::make_shared<queue_t>(policy);
       add(q);
-      return q;
+      return *q;
     }
 
     bool add(std::shared_ptr<queue_t> q)
@@ -113,7 +113,7 @@ namespace threadable
       return true;
     }
 
-    bool remove(queue_t& q) noexcept
+    bool remove(queue_t&& q) noexcept
     {
       // create copy of queues & remove queue, then atomically swap
       auto newQueues = copy_queues();
