@@ -111,6 +111,10 @@ namespace threadable
 
   struct job_token
   {
+    job_token():
+      job_token(null_flag)
+    {}
+
     job_token(details::atomic_flag& active):
       active(&active)
     {}
@@ -123,7 +127,7 @@ namespace threadable
 
     auto& operator=(job_token&& rhs) noexcept
     {
-      this->active = rhs.active;
+      std::atomic_store(active, rhs.active);
       return *this;
     }
 
@@ -144,6 +148,7 @@ namespace threadable
 
   private:
     details::atomic_flag* active = nullptr;
+    inline static details::atomic_flag null_flag;
   };
 
   namespace details
