@@ -47,7 +47,7 @@ namespace threadable
     job(const job&) = delete;
     auto operator=(job&&) = delete;
     auto operator=(const job&) = delete;
-  
+
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
@@ -271,6 +271,19 @@ namespace threadable
       on_job_ready();
 
       return job.active;
+    }
+
+    template<std::copy_constructible callable_t, typename... arg_ts>
+      requires std::invocable<callable_t, arg_ts...>
+    job_token push_slow(callable_t&& func, arg_ts&&... args) noexcept
+    {
+      auto pack = std::make_tuple(FWD(func), FWD(args)...);
+      return push([argPack = std::make_shared<decltype(pack)>(std::move(pack))]
+      {
+        std::apply([](auto&& func, auto&&... args){
+          func(FWD(args)...);
+        }, *argPack);
+      });
     }
 
     void clear()
