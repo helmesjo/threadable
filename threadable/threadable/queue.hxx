@@ -117,37 +117,38 @@ namespace threadable
 
     job_token(details::atomic_flag& active):
       active(&active)
-    {}
+    {
+    }
 
-    job_token(job_token&& rhs) noexcept
-    : active(rhs.active)
+    job_token(job_token&& rhs) noexcept:
+      active(rhs.active.load(std::memory_order_acquire))
     {
       rhs.active = nullptr;
     }
 
     auto& operator=(job_token&& rhs) noexcept
     {
-      std::atomic_store(active, rhs.active);
+      active.store(rhs.active, std::memory_order_release);
       return *this;
     }
 
     bool done() const noexcept
     {
-      return !details::atomic_test(*active, std::memory_order_acquire);
+      return !details::atomic_test(*active.load(std::memory_order_acquire), std::memory_order_acquire);
     }
 
     auto cancel() noexcept
     {
-      return details::atomic_test_and_clear(*active, std::memory_order_release);
+      return details::atomic_test_and_clear(*active.load(std::memory_order_acquire), std::memory_order_acq_rel);
     }
 
     void wait() const noexcept
     {
-      details::atomic_wait(*active, true, std::memory_order_acquire);
+      details::atomic_wait(*active.load(std::memory_order_acquire), true, std::memory_order_acquire);
     }
 
   private:
-    details::atomic_flag* active = nullptr;
+    std::atomic<details::atomic_flag*> active = nullptr;
     inline static details::atomic_flag null_flag;
   };
 

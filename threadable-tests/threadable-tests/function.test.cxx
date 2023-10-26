@@ -335,6 +335,28 @@ SCENARIO("function: set/reset")
         }
       }
     }
+    WHEN("callable with argument is set")
+    {
+      int argReceived = 0;
+      func.set([&argReceived](int arg){
+        argReceived = arg;
+      }, 5);
+      THEN("it can be invoked")
+      {
+        func();
+        REQUIRE(argReceived == 5);
+      }
+    }
+    WHEN("recursive callable is set")
+    {
+      int val = 0;
+      auto callable = [&val](auto self) -> void {
+        (void)val;
+        static_assert(sizeof(self) == 8);
+      };
+      static_assert(sizeof(callable) == 8);
+      func.set(callable, callable);
+    }
     WHEN("non-trivially-copyable callable is set")
     {
       thread_local int destroyed = 0;
