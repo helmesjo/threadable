@@ -5,6 +5,14 @@
 #include <type_traits>
 #include <memory>
 
+namespace
+{
+  void free_func(int& arg)
+  {
+    ++arg;
+  }
+}
+
 SCENARIO("function: type traits")
 {
   using namespace threadable;
@@ -15,11 +23,44 @@ SCENARIO("function: type traits")
   static_assert(!is_function_v<decltype([]{})>);
   static_assert(required_buffer_size_v<function<56>> == 56);
   constexpr auto lambda = []{};
-  static_assert(required_buffer_size_v<decltype(lambda)> == details::header_size + (details::func_ptr_size * 2) + sizeof(lambda));
+  static_assert(
+    required_buffer_size_v<decltype(lambda)> == details::function_buffer_meta_size + sizeof(lambda)
+  );
+  static_assert(
+    required_buffer_size_v<decltype(lambda), int, int> == details::function_buffer_meta_size + sizeof(lambda) + sizeof(int) + sizeof(int)
+  );
 }
 
 SCENARIO("function_buffer")
 {
+  WHEN("constructed with function pointer")
+  {
+    int called = 0;
+    auto buffer = threadable::function_buffer<64>(free_func, std::ref(called));
+    THEN("it can be invoked")
+    {
+      threadable::details::invoke(buffer.data());
+      REQUIRE(called == 1);
+    }
+  }
+  WHEN("constructed with member function pointer")
+  {
+    struct type
+    {
+      void func(int& called)
+      {
+        ++called;
+      }
+    };
+
+    int called = 0;
+    auto buffer = threadable::function_buffer<64>(&type::func, type{}, std::ref(called));
+    THEN("it can be invoked")
+    {
+      threadable::details::invoke(buffer.data());
+      REQUIRE(called == 1);
+    }
+  }
   WHEN("constructed with callable")
   {
     int called = 0;
@@ -28,6 +69,22 @@ SCENARIO("function_buffer")
     {
       threadable::details::invoke(buffer.data());
       REQUIRE(called == 1);
+    }
+  }
+  WHEN("constructed with callable + arguments")
+  {
+    int passedArg1 = 0;
+    float passedArg2 = 0;
+    auto buffer = threadable::function_buffer<64>([&](int arg1, float arg2){
+      passedArg1 = arg1;
+      passedArg2= arg2;
+    }, 1, 3.4f);
+
+    THEN("it can be invoked & arguments are forwarded")
+    {
+      threadable::details::invoke(buffer.data());
+      REQUIRE(passedArg1 == 1);
+      REQUIRE(passedArg2 == doctest::Approx(3.4f));
     }
   }
   WHEN("constructed with copy")
@@ -397,14 +454,6 @@ SCENARIO("function: set/reset")
         }
       }
     }
-  }
-}
-
-namespace
-{
-  void free_func(int& arg)
-  {
-    ++arg;
   }
 }
 
