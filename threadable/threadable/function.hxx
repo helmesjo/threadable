@@ -65,9 +65,16 @@ namespace threadable
         std::byte* buffer_byte_ptr = static_cast<std::byte*>(buffer);
 
         auto callable_ptr = advance_buffer_ptr<callable_t>(buffer_byte_ptr);
-        auto arg_ptrs = std::tuple{ advance_buffer_ptr<std::remove_reference_t<arg_ts>>(buffer_byte_ptr)... };
 
-        std::invoke(*callable_ptr, static_cast<arg_ts&&>(*std::get<std::remove_reference_t<arg_ts>*>(arg_ptrs))...);
+        if constexpr(sizeof...(arg_ts) > 0)
+        {
+          auto arg_ptrs = std::tuple{ advance_buffer_ptr<std::remove_reference_t<arg_ts>>(buffer_byte_ptr)... };
+          std::invoke(*callable_ptr, static_cast<arg_ts&&>(*std::get<std::remove_reference_t<arg_ts>*>(arg_ptrs))...);
+        }
+        else
+        {
+          std::invoke(*callable_ptr);
+        }
     }
 
     enum class method : std::uint8_t
