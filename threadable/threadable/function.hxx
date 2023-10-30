@@ -34,47 +34,10 @@ namespace threadable
     constexpr auto cache_line_size = std::size_t{64};
 #endif
 
-    template<typename obj_t, typename... obj_ts>
-      requires std::copy_constructible<std::remove_reference_t<obj_t>>
-            && (std::copy_constructible<std::remove_reference_t<obj_ts>> && ...)
-    inline constexpr void* construct_at(void* buffer, obj_t&& obj, obj_ts&&... objs)
-    {
-      std::construct_at(static_cast<std::remove_cvref_t<obj_t>*>(buffer), FWD(obj));
-      auto* next = static_cast<std::uint8_t*>(buffer) + sizeof(obj_t);
-      if constexpr(sizeof...(objs) > 0)
-      {
-        return construct_at(static_cast<void*>(next), FWD(objs)...);
-      }
-      else
-      {
-        return next;
-      }
-    }
-
-    template <typename T>
-    inline constexpr T* advance_buffer_ptr(std::byte*& buffer_byte_ptr) noexcept
-    {
-        T* ptr = reinterpret_cast<T*>(buffer_byte_ptr);
-        buffer_byte_ptr += sizeof(T);
-        return ptr;
-    }
-
-    template<typename callable_t, typename... arg_ts>
+    template<typename callable_t>
     inline constexpr void invoke_func(void* buffer)
     {
-        std::byte* buffer_byte_ptr = static_cast<std::byte*>(buffer);
-
-        auto callable_ptr = advance_buffer_ptr<callable_t>(buffer_byte_ptr);
-
-        if constexpr(sizeof...(arg_ts) > 0)
-        {
-          auto arg_ptrs = std::tuple{ advance_buffer_ptr<std::remove_reference_t<arg_ts>>(buffer_byte_ptr)... };
-          std::invoke(*callable_ptr, static_cast<arg_ts&&>(*std::get<std::remove_reference_t<arg_ts>*>(arg_ptrs))...);
-        }
-        else
-        {
-          std::invoke(*callable_ptr);
-        }
+      std::invoke(*static_cast<callable_t*>(buffer));
     }
 
     enum class method : std::uint8_t
@@ -257,22 +220,48 @@ namespace threadable
       (*this) = std::move(FWD(func).buffer());
     }
 
-    template<typename... arg_ts>
-    void set(std::invocable<arg_ts&&...> auto&& func, arg_ts&&... args) noexcept
-      requires std::is_function_v<std::remove_reference_t<decltype(func)>>
+    template<typename func_t, typename... arg_ts>
+    void set(func_t&& func, arg_ts&&... args) noexcept
+      requires std::invocable<func_t&&, arg_ts&&...> && (sizeof...(args) > 0)
     {
-      set([func=func](arg_ts&&... args){
-        func(FWD(args)...);
-      }, FWD(args)...);
+      using func_value_t = std::remove_reference_t<decltype(func)>;
+      if constexpr(std::is_function_v<func_value_t> || std::is_member_function_pointer_v<func_value_t>)
+      {
+        set([func, ...args = FWD(args)]() mutable {
+          std::invoke(func, FWD(args)...);
+        });
+      }
+      else
+      {
+        struct wrapper final : func_value_t
+        {
+          explicit wrapper(func_t&& func, arg_ts&&... args)
+          : func_value_t(FWD(func)),
+            args_(FWD(args)...)
+          {}
+
+          decltype(auto) operator()()
+          {
+            std::apply([this](auto&&... args) mutable {
+              (void)this; // silence clang 'unused this'-warning
+              func_value_t::operator()(static_cast<arg_ts&&>(args)...);
+            }, args_);
+          }
+
+          using tuple_t = decltype(std::tuple(FWD(args)...));
+          tuple_t args_;
+        };
+
+        set(wrapper(FWD(func), FWD(args)...));
+      }
     }
 
-    template<typename... arg_ts>
-    void set(std::invocable<arg_ts&&...> auto&& callable, arg_ts&&... args) noexcept
-      requires (!is_function_v<decltype(callable)>)
-            && requires{ details::construct_at(nullptr, FWD(callable), FWD(args)...); }
+    template<std::invocable callable_t, typename callable_value_t = std::remove_reference_t<callable_t>>
+    void set(callable_t&& callable) noexcept
+      requires (!is_function_v<callable_t>)
+            && std::copy_constructible<callable_value_t>
     {
-      using callable_value_t = std::remove_reference_t<decltype(callable)>;
-      static constexpr std::uint8_t total_size = required_buffer_size_v<decltype(callable), arg_ts...>;
+      static constexpr std::uint8_t total_size = required_buffer_size_v<decltype(callable)>;
 
       static_assert(total_size <= buffer_size, "callable won't fit in function buffer");
       reset();
@@ -282,10 +271,10 @@ namespace threadable
       // body (destructor pointer)
       // body (callable)
       details::size(buffer_.data(), total_size);
-      details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<callable_value_t, arg_ts&&...>));
+      details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<callable_value_t>));
       details::special_func_ptr(buffer_.data(), std::addressof(details::invoke_special_func<callable_value_t>));
       auto bodyPtr = details::body_ptr(buffer_.data());
-      details::construct_at(bodyPtr, FWD(callable), FWD(args)...);
+      std::construct_at(reinterpret_cast<std::remove_const_t<callable_value_t>*>(bodyPtr), FWD(callable));
     }
 
     inline void reset() noexcept
