@@ -187,54 +187,6 @@ namespace threadable
   {
     using buffer_t = std::array<std::uint8_t, buffer_size>;
 
-    function_buffer()
-    {
-      details::size(buffer_.data(), 0);
-    }
-
-    function_buffer(const function_buffer& buffer)
-    {
-      *this = buffer;
-    }
-
-    function_buffer(function_buffer&& buffer)
-    {
-      *this = std::move(buffer);
-    }
-
-    template<std::size_t size>
-    explicit function_buffer(const function<size>& func) noexcept
-    : function_buffer<size>(func.buffer())
-    {
-    }
-
-    function_buffer(auto&& callable, auto&&... args) noexcept
-      requires requires { this->set(FWD(callable), FWD(args)...); }
-    {
-      details::size(buffer_.data(), 0);
-      set(FWD(callable), FWD(args)...);
-    }
-
-    ~function_buffer()
-    {
-      reset();
-    }
-
-    auto& operator=(const function_buffer& buffer)
-    {
-      std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
-      details::invoke_special_func(data(), details::method::copy_ctor, const_cast<std::uint8_t*>(buffer.data()));
-      return *this;
-    }
-
-    auto& operator=(function_buffer&& buffer)
-    {
-      std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
-      details::invoke_special_func(data(), details::method::move_ctor, buffer.data());
-      details::size(buffer.data(), 0);
-      return *this;
-    }
-
     template<std::size_t size>
     void set(const function<size>& func) noexcept
     {
@@ -267,10 +219,10 @@ namespace threadable
     template<std::invocable callable_t, typename callable_value_t = std::remove_reference_t<callable_t>>
     void set(callable_t&& callable) noexcept
       requires (!is_function_v<callable_t>)
-            && std::copy_constructible<callable_value_t>
     {
       static constexpr std::uint8_t total_size = required_buffer_size_v<decltype(callable)>;
 
+      static_assert(std::copy_constructible<callable_value_t>, "callable must be copy-constructible");
       static_assert(total_size <= buffer_size, "callable won't fit in function buffer");
       reset();
 
@@ -283,6 +235,54 @@ namespace threadable
       details::special_func_ptr(buffer_.data(), std::addressof(details::invoke_special_func<callable_value_t>));
       auto bodyPtr = details::body_ptr(buffer_.data());
       std::construct_at(reinterpret_cast<std::remove_const_t<callable_value_t>*>(bodyPtr), FWD(callable));
+    }
+
+    function_buffer()
+    {
+      details::size(buffer_.data(), 0);
+    }
+
+    function_buffer(const function_buffer& buffer)
+    {
+      *this = buffer;
+    }
+
+    function_buffer(function_buffer&& buffer)
+    {
+      *this = std::move(buffer);
+    }
+
+    template<std::size_t size>
+    explicit function_buffer(const function<size>& func) noexcept
+    : function_buffer<size>(func.buffer())
+    {
+    }
+
+    function_buffer(auto&& callable, auto&&... args) noexcept
+      requires requires{ this->set(FWD(callable), FWD(args)...); }
+    {
+      details::size(buffer_.data(), 0);
+      set(FWD(callable), FWD(args)...);
+    }
+
+    ~function_buffer()
+    {
+      reset();
+    }
+
+    auto& operator=(const function_buffer& buffer)
+    {
+      std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
+      details::invoke_special_func(data(), details::method::copy_ctor, const_cast<std::uint8_t*>(buffer.data()));
+      return *this;
+    }
+
+    auto& operator=(function_buffer&& buffer)
+    {
+      std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
+      details::invoke_special_func(data(), details::method::move_ctor, buffer.data());
+      details::size(buffer.data(), 0);
+      return *this;
     }
 
     inline void reset() noexcept
@@ -388,7 +388,10 @@ namespace threadable
   template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
   struct function
   {
+  private:
     using buffer_t = function_buffer<buffer_size>;
+    buffer_t buffer_;
+  public:
 
     function() = default;
 
@@ -469,9 +472,6 @@ namespace threadable
     {
       return buffer_.size();
     }
-
-  private:
-    buffer_t buffer_;
   };
 }
 
