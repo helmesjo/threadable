@@ -131,6 +131,33 @@ namespace threadable
       special_func_ptr(buf)(body_ptr(buf), m, that ? body_ptr(that) : nullptr);
     }
 
+    template<typename callable_t, typename... arg_ts>
+    struct deferred_callable final : std::remove_cvref_t<callable_t>
+    {
+      using base_t = std::remove_cvref_t<callable_t>;
+
+      explicit deferred_callable(callable_t func, arg_ts... args)
+      : base_t(FWD(func)),
+        args_(FWD(args)...)
+      {}
+
+      decltype(auto) operator()()
+        requires std::invocable<base_t, arg_ts...>
+      {
+        return std::apply([this](auto&&... args) mutable {
+          (void)this; // silence clang 'unused this'-warning
+          return base_t::operator()(static_cast<arg_ts>(args)...);
+        }, args_);
+      }
+
+      using tuple_t = decltype(std::tuple(std::declval<arg_ts>()...));
+      tuple_t args_;
+    };
+
+    template<typename callable_t, typename... arg_ts>
+    deferred_callable(callable_t&& callable, arg_ts&&... args)
+      -> deferred_callable<decltype(callable), decltype(args)...>;
+
     template<typename T>
     struct is_function: std::false_type{};
 
@@ -233,26 +260,7 @@ namespace threadable
       }
       else
       {
-        struct wrapper final : func_value_t
-        {
-          explicit wrapper(func_t&& func, arg_ts&&... args)
-          : func_value_t(FWD(func)),
-            args_(FWD(args)...)
-          {}
-
-          decltype(auto) operator()()
-          {
-            std::apply([this](auto&&... args) mutable {
-              (void)this; // silence clang 'unused this'-warning
-              func_value_t::operator()(static_cast<arg_ts&&>(args)...);
-            }, args_);
-          }
-
-          using tuple_t = decltype(std::tuple(FWD(args)...));
-          tuple_t args_;
-        };
-
-        set(wrapper(FWD(func), FWD(args)...));
+        set(details::deferred_callable(FWD(func), FWD(args)...));
       }
     }
 

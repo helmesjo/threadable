@@ -75,9 +75,9 @@ SCENARIO("function_buffer")
   {
     int passedArg1 = 0;
     float passedArg2 = 0;
-    auto buffer = threadable::function_buffer<64>([&](int arg1, float arg2){
+    auto buffer = threadable::function_buffer<64>([&](int arg1, float&& arg2){
       passedArg1 = arg1;
-      passedArg2= arg2;
+      passedArg2 = arg2;
     }, 1, 3.4f);
 
     THEN("it can be invoked & arguments are forwarded")
