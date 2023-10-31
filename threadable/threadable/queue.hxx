@@ -81,9 +81,15 @@ namespace threadable
       details::atomic_notify_all(active);
     }
 
+    bool done() const noexcept
+    {
+      return !details::atomic_test(active, std::memory_order_acquire);
+    }
+
     void operator()()
     {
       assert(func_);
+      assert(!done());
 
       if(child_active)
       UNLIKELY
@@ -96,7 +102,7 @@ namespace threadable
 
     operator bool() const noexcept
     {
-      return details::atomic_test(active, std::memory_order_acquire);
+      return !done();
     }
 
     auto& get() noexcept
@@ -260,13 +266,24 @@ namespace threadable
     // Push jobs to non-claimed slots.
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
+            || std::invocable<callable_t, const job&, arg_ts...>
     job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
       const index_t i = head_.load(std::memory_order_acquire);
 
       auto& job = jobs_[mask(i)];
       assert(!job);
-      job.set(FWD(func), FWD(args)...);
+
+      if constexpr(std::invocable<callable_t&&, const threadable::job&, arg_ts&&...>)
+      {
+        job.set(FWD(func), std::ref(job), FWD(args)...);
+      }
+      else
+      {
+        job.set(FWD(func), FWD(args)...);
+      }
+
+      assert(job);
 
       if(policy_ == execution_policy::sequential)
       {

@@ -83,6 +83,19 @@ SCENARIO("queue: push & claim")
         }
       }
     }
+    WHEN("push callable expecting 'const job&' as first parameter")
+    {
+      bool wasActive = false;
+      queue.push([&wasActive](const threadable::job& job){
+        wasActive = !job.done();
+      });
+      REQUIRE(queue.size() == 1);
+      THEN("the job will be passed when the job is executed")
+      {
+        REQUIRE(queue.execute() == 1);
+        REQUIRE(wasActive);
+      }
+    }
     WHEN("push_slow")
     {
       THEN("a callable that is too large can be pushed")
