@@ -298,13 +298,21 @@ namespace threadable
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
+            || std::invocable<callable_t, const job&, arg_ts...>
     job_token push_slow(callable_t&& func, arg_ts&&... args) noexcept
     {
-      auto pack = std::make_tuple(FWD(func), FWD(args)...);
-      return push([argPack = std::make_shared<decltype(pack)>(std::move(pack))]
+      using tuple_t = decltype(std::tuple(FWD(func), FWD(args)...));
+      return push([argPack = std::make_shared<tuple_t>(FWD(func), FWD(args)...)](const job& j)
       {
-        std::apply([](auto&& func, auto&&... args){
-          func(FWD(args)...);
+        std::apply([&j](auto&& func, auto&&... args){
+          if constexpr(std::invocable<callable_t&&, const threadable::job&, arg_ts&&...>)
+          {
+            func(j, FWD(args)...);
+          }
+          else
+          {
+            func(FWD(args)...);
+          }
         }, *argPack);
       });
     }
