@@ -91,6 +91,7 @@ namespace threadable
 
     bool add(std::shared_ptr<queue_t> q)
     {
+      auto _ = std::scoped_lock{queueMutex_};
       if(std::find_if(std::begin(*queues_), std::end(*queues_), [&q](const auto& q2){
         return q2.get() == q.get();
       }) != std::end(*queues_))
@@ -115,6 +116,7 @@ namespace threadable
 
     bool remove(queue_t&& q) noexcept
     {
+      auto _ = std::scoped_lock{queueMutex_};
       // create copy of queues & remove queue, then atomically swap
       auto newQueues = copy_queues();
       if(std::erase_if(*newQueues, [&q](const auto& q2){ return q2.get() == &q; }) > 0)
@@ -130,6 +132,14 @@ namespace threadable
       {
         return false;
       }
+    }
+
+    template<std::copy_constructible callable_t, typename... arg_ts>
+    auto push(callable_t&& func, arg_ts&&... args) noexcept
+      requires requires(queue_t q){ q.push(FWD(func), FWD(args)...); }
+    {
+      thread_local queue_t& queue = create(execution_policy::parallel);
+      return queue.push(FWD(func), FWD(args)...);
     }
 
     void wait() const noexcept
@@ -164,9 +174,10 @@ namespace threadable
       return newQueues;
     }
 
-    details::atomic_flag quit_;
-    std::atomic_size_t readyCount_{0};
-    std::shared_ptr<queues_t> queues_ = std::make_shared<queues_t>();
+    std::mutex queueMutex_;
+    alignas(details::cache_line_size) details::atomic_flag quit_;
+    alignas(details::cache_line_size) std::atomic_size_t readyCount_{0};
+    alignas(details::cache_line_size) std::shared_ptr<queues_t> queues_ = std::make_shared<queues_t>();
     std::thread thread_;
   };
 }
