@@ -14,6 +14,7 @@ switch $cxx.id: regex.match
     if($build.host.class == 'macos')
     {
       import intf_libs += libpstld%lib{pstld}
+      cxx.poptions += -DPSTLD_HACK_INTO_STD
       cxx.export.poptions += -DPSTLD_HACK_INTO_STD
     }
   }

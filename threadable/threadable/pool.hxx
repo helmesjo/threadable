@@ -142,22 +142,6 @@ namespace threadable
       }
     }
 
-    template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
-    auto push(callable_t&& func, arg_ts&&... args) noexcept
-      requires requires(queue_t q){ q.push(FWD(func), FWD(args)...); }
-    {
-      thread_local queue_t& queue = create(policy);
-      return queue.push(FWD(func), FWD(args)...);
-    }
-
-    template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
-    auto push_slow(callable_t&& func, arg_ts&&... args) noexcept
-      requires requires(queue_t q){ q.push_slow(FWD(func), FWD(args)...); }
-    {
-      thread_local queue_t& queue = create(policy);
-      return queue.push_slow(FWD(func), FWD(args)...);
-    }
-
     void wait() const noexcept
     {
       while(readyCount_.load(std::memory_order_relaxed) > 0){ std::this_thread::yield(); };
@@ -196,6 +180,33 @@ namespace threadable
     alignas(details::cache_line_size) std::shared_ptr<queues_t> queues_ = std::make_shared<queues_t>();
     std::thread thread_;
   };
+
+  namespace details
+  {
+    extern pool<(1 << 22)> pool_;
+    using queue_t = decltype(pool_)::queue_t;
+  }
+
+  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
+  auto push(callable_t&& func, arg_ts&&... args) noexcept
+    requires requires(details::queue_t q){ q.push(FWD(func), FWD(args)...); }
+  {
+    thread_local auto& queue = details::pool_.create(policy);
+    return queue.push(FWD(func), FWD(args)...);
+  }
+
+  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
+  auto push_slow(callable_t&& func, arg_ts&&... args) noexcept
+    requires requires(details::queue_t q){ q.push_slow(FWD(func), FWD(args)...); }
+  {
+    thread_local auto& queue = details::pool_.create(policy);
+    return queue.push_slow(FWD(func), FWD(args)...);
+  }
+
+  void wait() noexcept
+  {
+    details::pool_.wait();
+  }
 }
 
 #undef FWD

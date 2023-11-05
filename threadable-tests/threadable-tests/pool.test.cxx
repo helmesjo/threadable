@@ -72,22 +72,21 @@ SCENARIO("pool: create/remove queues")
   }
 }
 
-SCENARIO("pool: push jobs")
+SCENARIO("pool: push jobs to global pool")
 {
   constexpr auto nr_of_jobs = 1024;
-  auto pool = threadable::pool<nr_of_jobs>();
   std::mutex mutex;
   std::vector<int> results;
   GIVEN("a job is pushed to sequential queue")
   {
     for(std::size_t i=0; i<nr_of_jobs; ++i)
     {
-      pool.push<threadable::execution_policy::sequential>([i, &results, &mutex]{
+      threadable::push<threadable::execution_policy::sequential>([i, &results, &mutex]{
         std::scoped_lock _{mutex};
         results.push_back(i);
       });
     }
-    pool.wait();
+    threadable::wait();
     THEN("all jobs are executed in order")
     {
       for(std::size_t i=0; i<nr_of_jobs; ++i)
@@ -101,11 +100,11 @@ SCENARIO("pool: push jobs")
     std::atomic_size_t counter = 0;
     for(std::size_t i=0; i<nr_of_jobs; ++i)
     {
-      pool.push<threadable::execution_policy::parallel>([&counter]{
+      threadable::push<threadable::execution_policy::parallel>([&counter]{
         ++counter;
       });
     }
-    pool.wait();
+    threadable::wait();
     THEN("all jobs are executed")
     {
       REQUIRE(counter == nr_of_jobs);
@@ -116,7 +115,6 @@ SCENARIO("pool: push jobs")
 SCENARIO("pool: stress-test")
 {
   static constexpr std::size_t nr_of_jobs = 1 << 18;
-  auto pool = threadable::pool<nr_of_jobs>();
   GIVEN("pool with multiple threads")
   {
     WHEN("single producer pushes a large amount of jobs")
@@ -127,7 +125,7 @@ SCENARIO("pool: stress-test")
 
       for(std::size_t i = 0; i < nr_of_jobs; ++i)
       {
-        tokens.emplace_back(pool.push([&counter]{ ++counter; }));
+        tokens.emplace_back(threadable::push([&counter]{ ++counter; }));
       }
 
       for(const auto& token : tokens)
@@ -148,10 +146,10 @@ SCENARIO("pool: stress-test")
 
       for(std::size_t i = 0; i < nr_producers; ++i)
       {
-        producers.emplace_back(std::thread([&pool, &counter, &nr_producers]{
+        producers.emplace_back(std::thread([&counter, &nr_producers]{
           for(std::size_t j = 0; j < nr_of_jobs/nr_producers; ++j)
           {
-            (void)pool.push([&counter]{ ++counter; });
+            (void)threadable::push([&counter]{ ++counter; });
           }
         }));
       }
@@ -161,7 +159,7 @@ SCENARIO("pool: stress-test")
         thread.join();
       }
 
-      pool.wait();
+      threadable::wait();
 
       THEN("all gets executed")
       {
