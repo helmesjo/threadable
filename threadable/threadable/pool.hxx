@@ -61,7 +61,7 @@ namespace threadable
           else
           LIKELY
           {
-            details::atomic_wait(readyCount_, std::size_t{0});
+            details::atomic_wait(readyCount_, std::size_t{0}, std::memory_order_acquire);
           }
 
           // aquire a copy of queues, and run all jobs available in each
@@ -142,12 +142,20 @@ namespace threadable
       }
     }
 
-    template<std::copy_constructible callable_t, typename... arg_ts>
+    template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
     auto push(callable_t&& func, arg_ts&&... args) noexcept
       requires requires(queue_t q){ q.push(FWD(func), FWD(args)...); }
     {
-      thread_local queue_t& queue = create(execution_policy::parallel);
+      thread_local queue_t& queue = create(policy);
       return queue.push(FWD(func), FWD(args)...);
+    }
+
+    template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
+    auto push_slow(callable_t&& func, arg_ts&&... args) noexcept
+      requires requires(queue_t q){ q.push_slow(FWD(func), FWD(args)...); }
+    {
+      thread_local queue_t& queue = create(policy);
+      return queue.push_slow(FWD(func), FWD(args)...);
     }
 
     void wait() const noexcept

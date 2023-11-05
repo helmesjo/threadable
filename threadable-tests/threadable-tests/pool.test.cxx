@@ -74,14 +74,41 @@ SCENARIO("pool: create/remove queues")
 
 SCENARIO("pool: push jobs")
 {
-  auto pool = threadable::pool();
-  GIVEN("a job is pushed")
+  constexpr auto nr_of_jobs = 1024;
+  auto pool = threadable::pool<nr_of_jobs>();
+  std::mutex mutex;
+  std::vector<int> results;
+  GIVEN("a job is pushed to sequential queue")
   {
-    auto token = pool.push([]{});
-    THEN("it gets executed")
+    for(std::size_t i=0; i<nr_of_jobs; ++i)
     {
-      token.wait();
-      REQUIRE(token.done());
+      pool.push<threadable::execution_policy::sequential>([i, &results, &mutex]{
+        std::scoped_lock _{mutex};
+        results.push_back(i);
+      });
+    }
+    pool.wait();
+    THEN("all jobs are executed in order")
+    {
+      for(std::size_t i=0; i<nr_of_jobs; ++i)
+      {
+        REQUIRE(results[i] == i);
+      }
+    }
+  }
+  GIVEN("a job is pushed to parallel queue")
+  {
+    std::atomic_size_t counter = 0;
+    for(std::size_t i=0; i<nr_of_jobs; ++i)
+    {
+      pool.push<threadable::execution_policy::parallel>([&counter]{
+        ++counter;
+      });
+    }
+    pool.wait();
+    THEN("all jobs are executed")
+    {
+      REQUIRE(counter == nr_of_jobs);
     }
   }
 }
