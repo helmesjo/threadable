@@ -10,7 +10,18 @@
 #include <compare>
 #include <cstddef>
 #if __has_include(<execution>)
-#include <execution>
+  #include <execution>
+#endif
+#if __has_include (<pstld/pstld.h>)
+  #ifndef __cpp_lib_execution
+  #define __cpp_lib_execution 201902L
+  #endif
+
+  #ifndef __cpp_lib_parallel_algorithm
+  #define __cpp_lib_parallel_algorithm 201603L
+  #endif
+
+  #include <pstld/pstld.h>
 #endif
 #include <iterator>
 #include <limits>
