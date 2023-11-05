@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cmath>
 #include <threadable/function.hxx>
 #include <threadable/std_atomic.hxx>
@@ -33,7 +34,7 @@ namespace threadable
     struct job_base
     {
       atomic_flag active;
-      atomic_flag* child_active = nullptr;
+      std::atomic<atomic_flag*> child_active = nullptr;
     };
     static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
@@ -59,6 +60,11 @@ namespace threadable
       // details::atomic_notify_all(active);
     }
 
+    inline void wait_for(details::atomic_flag& child)
+    {
+      child_active.store(&child, std::memory_order_release);
+    }
+
     template<typename callable_t>
       requires std::invocable<callable_t>
     auto& operator=(callable_t&& func) noexcept
@@ -76,7 +82,7 @@ namespace threadable
     void reset() noexcept
     {
       func_.reset();
-      child_active = nullptr;
+      child_active.store(nullptr, std::memory_order_release);
       details::atomic_clear(active, std::memory_order_release);
       details::atomic_notify_all(active);
     }
@@ -91,10 +97,10 @@ namespace threadable
       assert(func_);
       assert(!done());
 
-      if(child_active)
+      if(auto flag = child_active.load(std::memory_order_acquire))
       UNLIKELY
       {
-        details::atomic_wait(*child_active, true, std::memory_order_acquire);
+        details::atomic_wait(*flag, true, std::memory_order_acquire);
       }
       func_();
       reset();
@@ -286,8 +292,13 @@ namespace threadable
       assert(job);
 
       if(policy_ == execution_policy::sequential)
+      UNLIKELY
       {
-        job.child_active = &jobs_[mask(i-1)].active;
+        if(auto& childJob = jobs_[mask(i-1)])
+        LIKELY
+        {
+          job.wait_for(childJob.active);
+        }
       }
 
       head_.store(i+1, std::memory_order_release);
@@ -353,9 +364,18 @@ namespace threadable
       if(dis > 0)
       {
 #ifdef __cpp_lib_execution
+      if(policy_ == execution_policy::parallel)
+      {
         std::for_each(std::execution::par, b, e, [](job& job){
           job();
         });
+      }
+      else
+      {
+        std::for_each(b, e, [](job& job){
+          job();
+        });
+      }
 #else
         std::for_each(b, e, [](job& job){
           job();

@@ -175,9 +175,9 @@ SCENARIO("queue: execution order")
 
   GIVEN("a sequential queue")
   {
-    auto queue = threadable::queue(threadable::execution_policy::sequential);
+    constexpr auto nr_jobs = 32;
+    auto queue = threadable::queue<nr_jobs>(threadable::execution_policy::sequential);
 
-    const auto nr_jobs = 1000;
     auto order = std::vector<int>{};
     auto m = std::mutex{};
     for(auto i = 0; i < nr_jobs; ++i)
