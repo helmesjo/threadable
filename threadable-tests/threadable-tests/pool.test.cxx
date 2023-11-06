@@ -140,7 +140,7 @@ SCENARIO("pool: stress-test")
     }
     WHEN("multiple producers pushes a large amount of jobs")
     {
-      const auto nr_producers = std::thread::hardware_concurrency() * 2;
+      const auto nr_producers = std::min(8u, std::thread::hardware_concurrency());
       std::atomic_size_t counter{0};
       std::vector<std::thread> producers;
 

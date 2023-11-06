@@ -183,8 +183,9 @@ namespace threadable
 
   namespace details
   {
-    extern pool<(1 << 22)>& pool();
-    using queue_t = threadable::pool<(1 << 22)>::queue_t;
+    using pool_t = threadable::pool<(1 << 22)>;
+    extern pool_t& pool();
+    using queue_t = pool_t::queue_t;
   }
 
   template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>

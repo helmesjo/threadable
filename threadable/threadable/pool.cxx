@@ -2,9 +2,9 @@
 
 namespace threadable::details
 {
-  extern threadable::pool<(1 << 22)>& pool()
+  pool_t& pool()
   {
-    static threadable::pool<(1 << 22)> pool_ = {};
+    static pool_t pool_ = {};
     return pool_;
   }
 }
