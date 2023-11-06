@@ -188,7 +188,7 @@ namespace threadable
   }
 
   template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
-  auto push(callable_t&& func, arg_ts&&... args) noexcept
+  inline auto push(callable_t&& func, arg_ts&&... args) noexcept
     requires requires(details::queue_t q){ q.push(FWD(func), FWD(args)...); }
   {
     thread_local auto& queue = details::pool().create(policy);
@@ -196,14 +196,14 @@ namespace threadable
   }
 
   template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
-  auto push_slow(callable_t&& func, arg_ts&&... args) noexcept
+  inline auto push_slow(callable_t&& func, arg_ts&&... args) noexcept
     requires requires(details::queue_t q){ q.push_slow(FWD(func), FWD(args)...); }
   {
     thread_local auto& queue = details::pool().create(policy);
     return queue.push_slow(FWD(func), FWD(args)...);
   }
 
-  void wait() noexcept
+  inline void wait() noexcept
   {
     details::pool().wait();
   }

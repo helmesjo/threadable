@@ -74,9 +74,9 @@ SCENARIO("pool: create/remove queues")
 
 SCENARIO("pool: push jobs to global pool")
 {
-  constexpr auto nr_of_jobs = 1024;
+  constexpr std::size_t nr_of_jobs = 1024;
   std::mutex mutex;
-  std::vector<int> results;
+  std::vector<std::size_t> results;
   GIVEN("a job is pushed to sequential queue")
   {
     for(std::size_t i=0; i<nr_of_jobs; ++i)
