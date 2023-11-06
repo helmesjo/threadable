@@ -28,7 +28,7 @@ switch $cxx.target.system
   }
 }
 
-lib{threadable}: {hxx ixx txx cxx}{** -version} hxx{version} $impl_libs $intf_libs
+lib{threadable}: libul{threadable}: {hxx ixx txx cxx}{** -version} hxx{version} $impl_libs $intf_libs
 
 # Include the generated version header into the distribution (so that we don't
 # pick up an installed one) and don't remove it when cleaning in src (so that
@@ -40,25 +40,22 @@ hxx{version}: in{version} $src_root/manifest
   clean = ($src_root != $out_root)
 }
 
-hxx{export}@./: cxx.importable = false
-
 # Build options.
 #
 cxx.poptions =+ "-I$out_root" "-I$src_root"
 
-{hbmia obja}{*}: cxx.poptions += -DTHREADABLE_STATIC_BUILD
-{hbmis objs}{*}: cxx.poptions += -DTHREADABLE_SHARED_BUILD
-
 # Export options.
-#
+libs{threadable}: def{threadable}: include = ($cxx.target.system == 'win32-msvc')
+def{threadable}: libul{threadable}
+
+if ($cxx.target.system == 'mingw32')
+  cxx.loptions += -Wl,--export-all-symbols
+
 lib{threadable}:
 {
   cxx.export.poptions += "-I$out_root" "-I$src_root"
   cxx.export.libs += $intf_libs
 }
-
-liba{threadable}: cxx.export.poptions += -DTHREADABLE_STATIC
-libs{threadable}: cxx.export.poptions += -DTHREADABLE_SHARED
 
 # For pre-releases use the complete version to make sure they cannot be used
 # in place of another pre-release or the final version. See the version module
