@@ -11,7 +11,7 @@ switch $cxx.id: regex.match
   case 'clang.*'
   {
     import intf_libs += libtbb%lib{tbb}
-    if($build.host.class == 'macos')
+    if($cxx.target.class == 'macos')
     {
       import intf_libs += libpstld%lib{pstld}
       cxx.poptions += -DPSTLD_HACK_INTO_STD
