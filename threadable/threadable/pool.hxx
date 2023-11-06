@@ -183,7 +183,7 @@ namespace threadable
 
   namespace details
   {
-    using pool_t = threadable::pool<(1 << 22)>;
+    using pool_t = threadable::pool<(1 << 16)>;
     extern pool_t& pool();
     using queue_t = pool_t::queue_t;
   }
