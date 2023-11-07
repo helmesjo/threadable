@@ -19,7 +19,9 @@ SCENARIO("function: type traits")
 
   static_assert(is_function_v<function<>>);
   static_assert(is_function_v<const function<>&>);
-  static_assert(is_function_v<function_dyn>);
+  static_assert(!is_function_v<function_dyn>);
+  static_assert(!is_function_dyn_v<const function<>&>);
+  static_assert(is_function_dyn_v<function_dyn>);
   static_assert(!is_function_v<decltype([]{})>);
   static_assert(required_buffer_size_v<function<56>> == 56);
   constexpr auto lambda = []{};

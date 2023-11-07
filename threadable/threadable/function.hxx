@@ -164,8 +164,11 @@ namespace threadable
     template<std::size_t size>
     struct is_function<function<size>>: std::true_type{};
 
+    template<typename T>
+    struct is_function_dyn: std::false_type{};
+
     template<>
-    struct is_function<function_dyn>: std::true_type{};
+    struct is_function_dyn<function_dyn>: std::true_type{};
 
     template<typename callable_t, typename... arg_ts>
     struct required_buffer_size:
@@ -177,6 +180,9 @@ namespace threadable
 
   template<typename callable_t>
   constexpr bool is_function_v = details::is_function<std::remove_cvref_t<callable_t>>::value;
+
+  template<typename callable_t>
+  constexpr bool is_function_dyn_v = details::is_function_dyn<std::remove_cvref_t<callable_t>>::value;
 
   template<typename callable_t, typename... arg_ts>
   constexpr std::size_t required_buffer_size_v =
@@ -342,7 +348,8 @@ namespace threadable
     }
 
     function_dyn(std::invocable auto&& callable) noexcept
-      requires (!is_function_v<decltype(callable)>)
+      requires (!is_function_v<decltype(callable)>
+             && !is_function_dyn_v<decltype(callable)>)
     : function_dyn(function_buffer(FWD(callable)))
     {
     }
