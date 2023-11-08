@@ -114,18 +114,20 @@ SCENARIO("pool: push jobs to global pool")
 
 SCENARIO("pool: stress-test")
 {
-  static constexpr std::size_t nr_of_jobs = 1 << 18;
+  static constexpr std::size_t capacity = 1 << 18;
+  auto pool = threadable::pool<capacity>();
+  auto& queue = pool.create(threadable::execution_policy::parallel);
   GIVEN("pool with multiple threads")
   {
     WHEN("single producer pushes a large amount of jobs")
     {
       std::atomic_size_t counter{0};
       std::vector<threadable::job_token> tokens;
-      tokens.reserve(nr_of_jobs);
+      tokens.reserve(capacity);
 
-      for(std::size_t i = 0; i < nr_of_jobs; ++i)
+      for(std::size_t i = 0; i < queue.max_size(); ++i)
       {
-        tokens.emplace_back(threadable::push([&counter]{ ++counter; }));
+        tokens.emplace_back(queue.push([&counter]{ ++counter; }));
       }
 
       for(const auto& token : tokens)
@@ -135,21 +137,22 @@ SCENARIO("pool: stress-test")
 
       THEN("all gets executed")
       {
-        REQUIRE(counter.load() == nr_of_jobs);
+        REQUIRE(counter.load() == queue.max_size());
       }
     }
     WHEN("multiple producers pushes a large amount of jobs")
     {
-      const auto nr_producers = std::min(8u, std::thread::hardware_concurrency());
+      static constexpr auto nr_producers = 3;
       std::atomic_size_t counter{0};
       std::vector<std::thread> producers;
 
       for(std::size_t i = 0; i < nr_producers; ++i)
       {
-        producers.emplace_back(std::thread([&counter, &nr_producers]{
-          for(std::size_t j = 0; j < nr_of_jobs/nr_producers; ++j)
+        producers.emplace_back(std::thread([&counter, &queue]{
+          static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0, "All jobs must be pushed");
+          for(std::size_t j = 0; j < queue.max_size()/nr_producers; ++j)
           {
-            (void)threadable::push([&counter]{ ++counter; });
+            (void)queue.push([&counter]{ ++counter; });
           }
         }));
       }
@@ -159,11 +162,11 @@ SCENARIO("pool: stress-test")
         thread.join();
       }
 
-      threadable::wait();
+      pool.wait();
 
       THEN("all gets executed")
       {
-        REQUIRE(counter.load() == nr_of_jobs);
+        REQUIRE(counter.load() == queue.max_size());
       }
     }
   }

@@ -19,13 +19,12 @@ namespace bench = ankerl::nanobench;
 
 namespace
 {
-  constexpr std::size_t jobs_per_iteration = 1 << 20;
+  constexpr std::size_t jobs_per_iteration = 1 << 12;
   int val = 1;
 }
 
 TEST_CASE("pool: job execution")
 {
-  const auto thread_count = std::thread::hardware_concurrency();
   auto pool = threadable::pool<jobs_per_iteration>();
 
   bench::Bench b;
@@ -34,50 +33,32 @@ TEST_CASE("pool: job execution")
    .batch(jobs_per_iteration)
    .unit("job");
 
-  using queue_t = decltype(pool)::queue_t;
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(val = threadable::utils::do_non_trivial_work(val) );
   });
 
   b.title("push & wait");
   {
-    std::vector<std::queue<job_t>> queues;
-    queues.resize(thread_count);
+    std::queue<job_t> queue;
     b.run("std::queue", [&] {
-      for(auto& queue : queues)
+      for(std::size_t i = 0; i < jobs_per_iteration; ++i)
       {
-        for(std::size_t i=0; i<jobs_per_iteration/thread_count; ++i)
-        {
-          queue.push(job_t{});
-        }
+        queue.push(job_t{});
       }
-      for(auto& q : queues)
+      while(!queue.empty())
       {
-        while(!q.empty())
-        {
-          auto& job = q.back();
-          job();
-          q.pop();
-        }
+        auto& job = queue.back();
+        job();
+        queue.pop();
       }
     });
   }
   {
-    std::vector<std::shared_ptr<queue_t>> queues;
-    for(std::size_t i=0; i<thread_count; ++i)
-    {
-      queues.emplace_back(std::make_shared<queue_t>(threadable::execution_policy::parallel));
-    }
+    auto& queue = pool.create(threadable::execution_policy::parallel);
     b.run("threadable::pool", [&] {
-      std::for_each(std::execution::par, std::begin(queues), std::end(queues), [&](auto& queue){
-        for(std::size_t i=0; i<jobs_per_iteration/thread_count; ++i)
-        {
-          queue->push(job_t{});
-        }
-      });
-      for(auto& queue : queues)
+      for(std::size_t i = 0; i < queue.max_size(); ++i)
       {
-        pool.add(queue);
+        queue.push(job_t{});
       }
       pool.wait();
     });

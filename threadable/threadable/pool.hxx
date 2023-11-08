@@ -68,17 +68,10 @@ namespace threadable
           const auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
           const auto begin = std::begin(*queues);
           const auto end = std::end(*queues);
-#ifdef __cpp_lib_execution
-          std::for_each(std::execution::par, begin, end, [this](const auto& q){
-            auto executed = q->execute();
-            readyCount_.fetch_sub(executed, std::memory_order_release);
-          });
-#else
           std::for_each(begin, end, [this](const auto& q){
             auto executed = q->execute();
             readyCount_.fetch_sub(executed, std::memory_order_release);
           });
-#endif
         }
       });
     }
@@ -192,7 +185,7 @@ namespace threadable
   inline auto push(callable_t&& func, arg_ts&&... args) noexcept
     requires requires(details::queue_t q){ q.push(FWD(func), FWD(args)...); }
   {
-    thread_local auto& queue = details::pool().create(policy);
+    static auto& queue = details::pool().create(policy);
     return queue.push(FWD(func), FWD(args)...);
   }
 
@@ -200,7 +193,7 @@ namespace threadable
   inline auto push_slow(callable_t&& func, arg_ts&&... args) noexcept
     requires requires(details::queue_t q){ q.push_slow(FWD(func), FWD(args)...); }
   {
-    thread_local auto& queue = details::pool().create(policy);
+    static auto& queue = details::pool().create(policy);
     return queue.push_slow(FWD(func), FWD(args)...);
   }
 

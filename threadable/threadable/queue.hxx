@@ -200,6 +200,11 @@ namespace threadable
     static_assert(max_nr_of_jobs <= std::pow(2, (8 * sizeof(index_t)) - 1), "number of jobs must be <= half the index range");
 #endif
 
+    static constexpr inline auto mask(index_t val) noexcept
+    {
+      return val & index_mask;
+    }
+
   public:
 
     queue(execution_policy policy = execution_policy::parallel) noexcept
@@ -248,6 +253,7 @@ namespace threadable
       inline auto operator<=>(const iterator& rhs) const noexcept { return index_ <=> rhs.index_; }
       inline bool operator== (const iterator& other) const noexcept { return index_ == other.index_; }
 
+      // todo: Add tests and make sure iterator works for wrap-around
       inline difference_type operator+ (const iterator& rhs) const noexcept { return index_ + rhs.index_; }
       inline difference_type operator- (const iterator& rhs) const noexcept { return index_ - rhs.index_; }
       inline iterator        operator+ (difference_type rhs) const noexcept { return iterator(jobs_, index_ + rhs); }
@@ -286,11 +292,14 @@ namespace threadable
             || std::invocable<callable_t, const job&, arg_ts...>
     job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
-      const index_t i = head_.load(std::memory_order_acquire);
+      // 1. Acquire a slot
+      const index_t slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
+      assert(mask(slot+1) != mask(tail_));
 
-      auto& job = jobs_[mask(i)];
+      auto& job = jobs_[mask(slot)];
       assert(!job);
 
+      // 2. Assign job
       if constexpr(std::invocable<callable_t&&, const threadable::job&, arg_ts&&...>)
       {
         job.set(FWD(func), std::ref(job), FWD(args)...);
@@ -305,16 +314,24 @@ namespace threadable
       if(policy_ == execution_policy::sequential)
       UNLIKELY
       {
-        if(auto& childJob = jobs_[mask(i-1)])
+        if(auto& childJob = jobs_[mask(slot-1)])
         LIKELY
         {
           job.wait_for(childJob.active);
         }
       }
 
-      head_.store(i+1, std::memory_order_release);
-      on_job_ready();
+      std::atomic_thread_fence(std::memory_order_release);
 
+      // 3. Commit slot
+      index_t expected;
+      do
+      {
+        expected = slot;
+      }
+      while(!head_.compare_exchange_weak(expected, slot+1, std::memory_order_relaxed));
+
+      on_job_ready();
       return job.active;
     }
 
@@ -341,7 +358,27 @@ namespace threadable
 
     void clear()
     {
-      for(auto& job : *this){ (void)job.reset(); }
+#ifdef __cpp_lib_execution
+        if(policy_ == execution_policy::parallel)
+        LIKELY
+        {
+          std::for_each(std::execution::par, begin(), end(), [](job& job){
+            job.reset();
+          });
+        }
+        else
+        UNLIKELY
+        {
+          std::for_each(begin(), end(), [](job& job){
+            job.reset();
+          });
+        }
+#else
+        std::for_each(begin(), end(), [](job& job){
+          job.reset();
+        });
+#endif
+      tail_ = head_.load(std::memory_order_acquire);
     }
 
     auto begin() noexcept
@@ -355,13 +392,13 @@ namespace threadable
       auto head = head_.load(std::memory_order_acquire);
       if constexpr(consume)
       {
-        if(tail_ < head)
+        if(auto& lastJob = jobs_[mask(head-1)])
+        LIKELY
         {
-          auto& lastJob = jobs_[mask(head-1)];
-          lastJob.set([this, head = head, func = function_dyn(lastJob.get())]() mutable {
+          lastJob.set(function_dyn([this, head, func = lastJob.get()]() mutable {
             func();
             tail_ = head;
-          });
+          }));
         }
       }
       return iterator(nullptr, head);
@@ -373,20 +410,24 @@ namespace threadable
       const auto e = end();
       const auto dis = e - b;
       if(dis > 0)
+      LIKELY
       {
+        assert(b != e);
 #ifdef __cpp_lib_execution
-      if(policy_ == execution_policy::parallel)
-      {
-        std::for_each(std::execution::par, b, e, [](job& job){
-          job();
-        });
-      }
-      else
-      {
-        std::for_each(b, e, [](job& job){
-          job();
-        });
-      }
+        if(policy_ == execution_policy::parallel)
+        LIKELY
+        {
+          std::for_each(std::execution::par, b, e, [](job& job){
+            job();
+          });
+        }
+        else
+        UNLIKELY
+        {
+          std::for_each(b, e, [](job& job){
+            job();
+          });
+        }
 #else
         std::for_each(b, e, [](job& job){
           job();
@@ -398,23 +439,18 @@ namespace threadable
 
     static constexpr std::size_t max_size() noexcept
     {
-      return max_nr_of_jobs;
+      return max_nr_of_jobs - 1;
     }
 
     std::size_t size() const noexcept
     {
-      const auto head = head_.load(std::memory_order_acquire);
-      return head - tail_;
+      const auto head = head_.load(std::memory_order_relaxed);
+      return mask(head - tail_);
     }
 
     bool empty() const noexcept
     {
       return size() == 0;
-    }
-
-    static constexpr inline auto mask(index_t val) noexcept
-    {
-      return val & index_mask;
     }
 
   private:
@@ -437,6 +473,7 @@ namespace threadable
     // max() is intentional to easily detect wrap-around issues
     alignas(details::cache_line_size) index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
+    alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
 
     execution_policy policy_ = execution_policy::parallel;
     function<details::job_buffer_size> on_job_ready;
