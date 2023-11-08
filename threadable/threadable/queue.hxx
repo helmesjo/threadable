@@ -395,7 +395,7 @@ namespace threadable
         if(auto& lastJob = jobs_[mask(head-1)])
         LIKELY
         {
-          lastJob.set(function_dyn([this, head, func = lastJob.get()]() mutable {
+          lastJob.set(function_dyn([this, head, func = function_dyn(lastJob.get())]() mutable {
             func();
             tail_ = head;
           }));

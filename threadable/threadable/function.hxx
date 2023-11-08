@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <span>
 #include <threadable/std_concepts.hxx>
 
@@ -186,11 +187,12 @@ namespace threadable
 
   template<typename callable_t, typename... arg_ts>
   constexpr std::size_t required_buffer_size_v =
-    details::required_buffer_size<std::remove_cvref_t<callable_t>, std::remove_reference_t<arg_ts>...>::value;
+    details::required_buffer_size<std::remove_cvref_t<callable_t>, std::remove_cvref_t<arg_ts>...>::value;
 
   template<std::size_t buffer_size>
   struct function_buffer
   {
+    static_assert(buffer_size <= std::numeric_limits<std::uint8_t>::max(), "Buffer size must be <= 255");
     using buffer_t = std::array<std::uint8_t, buffer_size>;
 
     template<std::size_t size>
