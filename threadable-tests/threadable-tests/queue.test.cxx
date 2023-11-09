@@ -7,14 +7,15 @@
 #include <cmath>
 #include <cstddef>
 #if __has_include(<execution>)
-#include <execution>
+  #include <execution>
+#endif
+#if __has_include (<pstld/pstld.h>)
+  #include <atomic> // missing include
+  #include <pstld/pstld.h>
 #endif
 #include <functional>
 #include <type_traits>
 #include <thread>
-#if __has_include (<pstld/pstld.h>)
-    #include <pstld/pstld.h>
-#endif
 
 SCENARIO("queue: push & claim")
 {

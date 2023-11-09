@@ -6,12 +6,13 @@
 
 #include <algorithm>
 #if __has_include(<execution>)
-#include <execution>
+  #include <execution>
 #endif
-#include <functional>
 #if __has_include (<pstld/pstld.h>)
+  #include <atomic> // missing include
   #include <pstld/pstld.h>
 #endif
+#include <functional>
 #include <vector>
 
 namespace bench = ankerl::nanobench;

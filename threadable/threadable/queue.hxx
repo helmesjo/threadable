@@ -13,6 +13,7 @@
   #include <execution>
 #endif
 #if __has_include (<pstld/pstld.h>)
+  #include <atomic> // missing include
   #include <pstld/pstld.h>
 #endif
 #include <iterator>
