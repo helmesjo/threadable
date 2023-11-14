@@ -178,7 +178,7 @@ SCENARIO("queue: execution order")
   {
     auto queue = threadable::queue<32>(threadable::execution_policy::sequential);
 
-    auto order = std::vector<int>{};
+    auto order = std::vector<std::size_t>{};
     auto m = std::mutex{};
     for(std::size_t i = 0; i < queue.max_size(); ++i)
     {

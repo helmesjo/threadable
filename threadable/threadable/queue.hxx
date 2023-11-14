@@ -193,6 +193,10 @@ namespace threadable
     static_assert(max_nr_of_jobs <= std::pow(2, (8 * sizeof(index_t)) - 1), "number of jobs must be <= half the index range");
 #endif
 
+// Workaround for bug in MSVC with nested types accessing outer (private) members
+#ifdef _WIN32
+public:
+#endif
     static constexpr inline auto mask(index_t val) noexcept
     {
       return val & index_mask;
