@@ -87,8 +87,8 @@ SCENARIO("queue: push & claim")
     WHEN("push callable expecting 'const job&' as first parameter")
     {
       bool wasActive = false;
-      queue.push([&wasActive](const threadable::job& job){
-        wasActive = !job.done();
+      queue.push([&wasActive](const threadable::job_token& token){
+        wasActive = !token.done();
       });
       REQUIRE(queue.size() == 1);
       THEN("the job will be passed when the job is executed")
@@ -104,7 +104,7 @@ SCENARIO("queue: push & claim")
         int called = 0;
         static constexpr auto too_big = threadable::details::cache_line_size * 2;
         // both capturing big data & passing as argument
-        queue.push_slow([&called, bigData = std::make_shared<std::uint8_t[]>(too_big)](const threadable::job&, int arg, const std::shared_ptr<std::uint8_t[]>& data){
+        queue.push_slow([&called, bigData = std::make_shared<std::uint8_t[]>(too_big)](const threadable::job_token&, int arg, const std::shared_ptr<std::uint8_t[]>& data){
           called = arg;
           (void)data;
         }, 16, std::make_shared<std::uint8_t[]>(too_big));

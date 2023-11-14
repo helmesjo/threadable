@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <concepts>
 #include <threadable/function.hxx>
 #include <threadable/std_atomic.hxx>
 
@@ -136,10 +137,21 @@ namespace threadable
     {
     }
 
+    job_token(const job_token& rhs) noexcept:
+      active(rhs.active.load(std::memory_order_acquire))
+    {
+    }
+
     job_token(job_token&& rhs) noexcept:
       active(rhs.active.load(std::memory_order_acquire))
     {
       rhs.active = nullptr;
+    }
+
+    auto& operator=(const job_token& rhs) noexcept
+    {
+      active.store(rhs.active, std::memory_order_release);
+      return *this;
     }
 
     auto& operator=(job_token&& rhs) noexcept
@@ -167,6 +179,7 @@ namespace threadable
     std::atomic<details::atomic_flag*> active = nullptr;
     inline static details::atomic_flag null_flag;
   };
+  static_assert(std::copy_constructible<job_token>);
 
   namespace details
   {
@@ -286,7 +299,7 @@ public:
     // Push jobs to non-claimed slots.
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-            || std::invocable<callable_t, const job&, arg_ts...>
+            || std::invocable<callable_t, job_token, arg_ts...>
     job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
       // 1. Acquire a slot
@@ -297,9 +310,9 @@ public:
       assert(!job);
 
       // 2. Assign job
-      if constexpr(std::invocable<callable_t&&, const threadable::job&, arg_ts&&...>)
+      if constexpr(std::invocable<callable_t&&, threadable::job_token, arg_ts&&...>)
       {
-        job.set(FWD(func), std::ref(job), FWD(args)...);
+        job.set(FWD(func), job_token{ job.active }, FWD(args)...);
       }
       else
       {
@@ -334,19 +347,20 @@ public:
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-            || std::invocable<callable_t, const job&, arg_ts...>
+            || std::invocable<callable_t, job_token, arg_ts...>
     job_token push_slow(callable_t&& func, arg_ts&&... args) noexcept
     {
       using tuple_t = decltype(std::tuple(FWD(func), FWD(args)...));
-      return push([argPack = std::make_shared<tuple_t>(FWD(func), FWD(args)...)](const job& j)
+      return push([argPack = std::make_shared<tuple_t>(FWD(func), FWD(args)...)](job_token&& token)
       {
-        std::apply([&j](auto&& func, auto&&... args){
-          if constexpr(std::invocable<callable_t&&, const threadable::job&, arg_ts&&...>)
+        std::apply([&token](auto&& func, auto&&... args){
+          if constexpr(std::invocable<callable_t&&, job_token&&, arg_ts&&...>)
           {
-            func(j, FWD(args)...);
+            func(std::move(token), FWD(args)...);
           }
           else
           {
+            (void)token;
             func(FWD(args)...);
           }
         }, *argPack);
