@@ -61,10 +61,17 @@ namespace threadable
           const auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
           const auto begin = std::begin(*queues);
           const auto end = std::end(*queues);
+#ifdef __cpp_lib_execution
+          std::for_each(std::execution::par, begin, end, [this](const auto& q){
+            auto executed = q->execute();
+            readyCount_.fetch_sub(executed, std::memory_order_release);
+          });
+#else
           std::for_each(begin, end, [this](const auto& q){
             auto executed = q->execute();
             readyCount_.fetch_sub(executed, std::memory_order_release);
           });
+#endif
         }
       });
     }
