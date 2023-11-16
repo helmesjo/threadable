@@ -134,35 +134,23 @@ namespace threadable
 
   struct job_token
   {
-    job_token():
-      job_token(null_flag)
-    {}
+    job_token() = default;
 
     job_token(details::atomic_bitfield& states):
       states(&states)
     {
     }
 
-    job_token(const job_token& rhs) noexcept:
-      states(rhs.states.load(std::memory_order_acquire))
-    {
-    }
-
     job_token(job_token&& rhs) noexcept:
       states(rhs.states.load(std::memory_order_acquire))
     {
-      rhs.states = nullptr;
-    }
-
-    auto& operator=(const job_token& rhs) noexcept
-    {
-      states.store(rhs.states, std::memory_order_release);
-      return *this;
+      rhs.states.store(nullptr, std::memory_order_release);
     }
 
     auto& operator=(job_token&& rhs) noexcept
     {
       states.store(rhs.states, std::memory_order_release);
+      rhs.states.store(nullptr, std::memory_order_release);
       return *this;
     }
 
@@ -173,34 +161,43 @@ namespace threadable
 
     void cancel() noexcept
     {
-      details::set<job_state::cancelled, true>(*states.load(std::memory_order_acquire), std::memory_order_release);
+      details::atomic_set(cancelled_, std::memory_order_release);
     }
 
     bool cancelled() const noexcept
     {
-      return details::test<job_state::cancelled>(*states.load(std::memory_order_acquire), std::memory_order_acquire);
+      return details::atomic_test(cancelled_, std::memory_order_acquire);
     }
 
     void wait() const noexcept
     {
       // take into account that the underlying states-ptr might have
       // been re-assigned while waiting (eg. for a recursive/self-queueing job)
-      while(true)
+      auto statesPtr = states.load(std::memory_order_acquire);
+      while(statesPtr)
       {
-        auto statesPtr = states.load(std::memory_order_acquire);
         details::wait<job_state::active, true>(*statesPtr, std::memory_order_acquire);
-        if(statesPtr == states.load(std::memory_order_acquire))
+
+        if(auto next = states.load(std::memory_order_acquire); next == statesPtr)
+        LIKELY
         {
           break;
+        }
+        else
+        UNLIKELY
+        {
+          statesPtr = next;
         }
       }
     }
 
   private:
+    details::atomic_flag cancelled_ = false;
     std::atomic<details::atomic_bitfield*> states = nullptr;
     inline static details::atomic_bitfield null_flag;
   };
-  static_assert(std::copy_constructible<job_token>);
+  static_assert(std::move_constructible<job_token>);
+  static_assert(std::is_move_assignable_v<job_token>);
 
   namespace details
   {
@@ -317,10 +314,9 @@ public:
       on_job_ready.set(null_callback, std::ref(*this));
     }
 
-    // Push jobs to non-claimed slots.
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-    job_token push(callable_t&& func, arg_ts&&... args) noexcept
+    void push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept
     {
       // 1. Acquire a slot
       const index_t slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
@@ -330,7 +326,14 @@ public:
       assert(!job);
 
       // 2. Assign job
-      job.set(FWD(func), FWD(args)...);
+      if constexpr(std::invocable<callable_t, const job_token&, arg_ts...>)
+      {
+        job.set(FWD(func), std::ref(token), FWD(args)...);
+      }
+      else
+      {
+        job.set(FWD(func), FWD(args)...);
+      }
 
       assert(job);
 
@@ -344,6 +347,8 @@ public:
         }
       }
 
+      token = job.states;
+
       std::atomic_thread_fence(std::memory_order_release);
 
       // 3. Commit slot
@@ -355,7 +360,15 @@ public:
       while(!head_.compare_exchange_weak(expected, slot+1, std::memory_order_relaxed));
 
       on_job_ready();
-      return job.states;
+    }
+
+    template<std::copy_constructible callable_t, typename... arg_ts>
+      requires std::invocable<callable_t, arg_ts...>
+    job_token push(callable_t&& func, arg_ts&&... args) noexcept
+    {
+      job_token token;
+      push(token, FWD(func), FWD(args)...);
+      return token;
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>
