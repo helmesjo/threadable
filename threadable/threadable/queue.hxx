@@ -320,7 +320,6 @@ public:
     // Push jobs to non-claimed slots.
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-            || std::invocable<callable_t, job_token, arg_ts...>
     job_token push(callable_t&& func, arg_ts&&... args) noexcept
     {
       // 1. Acquire a slot
@@ -331,14 +330,7 @@ public:
       assert(!job);
 
       // 2. Assign job
-      if constexpr(std::invocable<callable_t&&, threadable::job_token, arg_ts&&...>)
-      {
-        job.set(FWD(func), job_token{ job.states }, FWD(args)...);
-      }
-      else
-      {
-        job.set(FWD(func), FWD(args)...);
-      }
+      job.set(FWD(func), FWD(args)...);
 
       assert(job);
 
@@ -368,22 +360,13 @@ public:
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-            || std::invocable<callable_t, job_token, arg_ts...>
     job_token push_slow(callable_t&& func, arg_ts&&... args) noexcept
     {
       using tuple_t = decltype(std::tuple(FWD(func), FWD(args)...));
-      return push([argPack = std::make_shared<tuple_t>(FWD(func), FWD(args)...)](job_token&& token)
+      return push([argPack = std::make_shared<tuple_t>(FWD(func), FWD(args)...)]()
       {
-        std::apply([&token](auto&& func, auto&&... args){
-          if constexpr(std::invocable<callable_t&&, job_token&&, arg_ts&&...>)
-          {
-            func(std::move(token), FWD(args)...);
-          }
-          else
-          {
-            (void)token;
-            func(FWD(args)...);
-          }
+        std::apply([](auto&& func, auto&&... args){
+          func(FWD(args)...);
         }, *argPack);
       });
     }
