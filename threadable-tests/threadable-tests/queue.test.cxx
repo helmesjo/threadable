@@ -17,6 +17,29 @@
 #include <type_traits>
 #include <thread>
 
+SCENARIO("queue: job_token")
+{
+  GIVEN("a token")
+  {
+    threadable::details::atomic_bitfield states{0};
+    threadable::details::set<threadable::job_state::active, true>(states);
+    threadable::details::set<threadable::job_state::cancelled, true>(states);
+    threadable::job_token token(states);
+    WHEN("cancelled")
+    {
+      AND_WHEN("reassigned")
+      {
+        THEN("all state except 'active' is transferred from old to new")
+        {
+          threadable::details::atomic_bitfield states2{0};
+          token = threadable::job_token(states2);
+          REQUIRE_FALSE(states2 == ~(1 << threadable::job_state::active));
+        }
+      }
+    }
+  }
+}
+
 SCENARIO("queue: push & claim")
 {
   GIVEN("queue with capacity 2 (max size 1)")
