@@ -224,10 +224,10 @@ SCENARIO("queue: completion token")
     }
     WHEN("token is cancelled")
     {
-      REQUIRE(token.cancel());
-      THEN("it is marked as 'done'")
+      token.cancel();
+      THEN("it is marked as 'cancelled'")
       {
-        REQUIRE(token.done());
+        REQUIRE(token.cancelled());
       }
       THEN("job is still executed by queue")
       {

@@ -165,9 +165,14 @@ namespace threadable
       return !details::test<0>(*active.load(std::memory_order_acquire), std::memory_order_acquire);
     }
 
-    auto cancel() noexcept
+    void cancel() noexcept
     {
-      return details::test_and_set<0, false>(*active.load(std::memory_order_acquire), std::memory_order_acq_rel);
+      details::set<1, true>(*active.load(std::memory_order_acquire), std::memory_order_release);
+    }
+
+    bool cancelled() const noexcept
+    {
+      return details::test<1>(*active.load(std::memory_order_acquire), std::memory_order_acquire);
     }
 
     void wait() const noexcept
