@@ -183,7 +183,17 @@ namespace threadable
 
     void wait() const noexcept
     {
-      details::wait<job_state::active, true>(*states.load(std::memory_order_acquire), std::memory_order_acquire);
+      // take into account that the underlying states-ptr might have
+      // been re-assigned while waiting (eg. for a recursive/self-queueing job)
+      while(true)
+      {
+        auto statesPtr = states.load(std::memory_order_acquire);
+        details::wait<job_state::active, true>(*statesPtr, std::memory_order_acquire);
+        if(statesPtr == states.load(std::memory_order_acquire))
+        {
+          break;
+        }
+      }
     }
 
   private:
