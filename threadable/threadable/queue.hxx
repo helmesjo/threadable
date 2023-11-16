@@ -134,10 +134,17 @@ namespace threadable
 
   struct job_token
   {
-    job_token() = default;
+    job_token():
+      job_token(null_flag)
+    {}
 
     job_token(details::atomic_bitfield& states):
       states(&states)
+    {
+    }
+
+    job_token(const job_token& rhs) noexcept:
+      states(rhs.states.load(std::memory_order_acquire))
     {
     }
 
@@ -147,16 +154,14 @@ namespace threadable
       rhs.states = nullptr;
     }
 
+    auto& operator=(const job_token& rhs) noexcept
+    {
+      states.store(rhs.states, std::memory_order_release);
+      return *this;
+    }
+
     auto& operator=(job_token&& rhs) noexcept
     {
-      auto* from = states.load(std::memory_order_acquire);
-      auto* to = rhs.states.load(std::memory_order_acquire);
-      if(from && to)
-      {
-        // transfer state (all but 'active')
-        static constexpr auto mask = ~(1 << job_state::active);
-        (void)to->fetch_or(mask & from->load(std::memory_order_acquire), std::memory_order_release);
-      }
       states.store(rhs.states, std::memory_order_release);
       return *this;
     }
@@ -193,9 +198,9 @@ namespace threadable
 
   private:
     std::atomic<details::atomic_bitfield*> states = nullptr;
+    inline static details::atomic_bitfield null_flag;
   };
-  static_assert(std::move_constructible<job_token>);
-  static_assert(std::is_move_assignable_v<job_token>);
+  static_assert(std::copy_constructible<job_token>);
 
   namespace details
   {
