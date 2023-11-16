@@ -38,11 +38,17 @@ namespace threadable
   {
     struct job_base
     {
-      atomic_bitfield active;
-      std::atomic<atomic_bitfield*> child_active = nullptr;
+      atomic_bitfield states;
+      std::atomic<atomic_bitfield*> child_states = nullptr;
     };
     static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
+
+  enum job_state: std::uint8_t
+  {
+    active = 0,
+    cancelled = 1
+  };
 
   struct alignas(details::cache_line_size) job final: details::job_base
   {
@@ -59,7 +65,7 @@ namespace threadable
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
       this->func_.set(FWD(func), FWD(args)...);
-      details::test_and_set<0, true>(active, std::memory_order_release);
+      details::test_and_set<job_state::active, true>(states, std::memory_order_release);
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on (checking state true -> false)
       // details::atomic_notify_all(active);
@@ -67,7 +73,7 @@ namespace threadable
 
     inline void wait_for(details::atomic_bitfield& child)
     {
-      child_active.store(&child, std::memory_order_release);
+      child_states.store(&child, std::memory_order_release);
     }
 
     template<typename callable_t>
@@ -87,14 +93,14 @@ namespace threadable
     void reset() noexcept
     {
       func_.reset();
-      child_active.store(nullptr, std::memory_order_release);
-      details::clear(active, std::memory_order_release);
-      details::atomic_notify_all(active);
+      child_states.store(nullptr, std::memory_order_release);
+      details::clear(states, std::memory_order_release);
+      details::atomic_notify_all(states);
     }
 
     bool done() const noexcept
     {
-      return !details::test<0>(active, std::memory_order_acquire);
+      return !details::test<job_state::active>(states, std::memory_order_acquire);
     }
 
     void operator()()
@@ -102,10 +108,10 @@ namespace threadable
       assert(func_);
       assert(!done());
 
-      if(auto flag = child_active.load(std::memory_order_acquire))
+      if(auto flag = child_states.load(std::memory_order_acquire))
       UNLIKELY
       {
-        details::wait<0, true>(*flag, std::memory_order_acquire);
+        details::wait<job_state::active, true>(*flag, std::memory_order_acquire);
       }
       func_();
       reset();
@@ -132,56 +138,56 @@ namespace threadable
       job_token(null_flag)
     {}
 
-    job_token(details::atomic_bitfield& active):
-      active(&active)
+    job_token(details::atomic_bitfield& states):
+      states(&states)
     {
     }
 
     job_token(const job_token& rhs) noexcept:
-      active(rhs.active.load(std::memory_order_acquire))
+      states(rhs.states.load(std::memory_order_acquire))
     {
     }
 
     job_token(job_token&& rhs) noexcept:
-      active(rhs.active.load(std::memory_order_acquire))
+      states(rhs.states.load(std::memory_order_acquire))
     {
-      rhs.active = nullptr;
+      rhs.states = nullptr;
     }
 
     auto& operator=(const job_token& rhs) noexcept
     {
-      active.store(rhs.active, std::memory_order_release);
+      states.store(rhs.states, std::memory_order_release);
       return *this;
     }
 
     auto& operator=(job_token&& rhs) noexcept
     {
-      active.store(rhs.active, std::memory_order_release);
+      states.store(rhs.states, std::memory_order_release);
       return *this;
     }
 
     bool done() const noexcept
     {
-      return !details::test<0>(*active.load(std::memory_order_acquire), std::memory_order_acquire);
+      return !details::test<job_state::active>(*states.load(std::memory_order_acquire), std::memory_order_acquire);
     }
 
     void cancel() noexcept
     {
-      details::set<1, true>(*active.load(std::memory_order_acquire), std::memory_order_release);
+      details::set<job_state::cancelled, true>(*states.load(std::memory_order_acquire), std::memory_order_release);
     }
 
     bool cancelled() const noexcept
     {
-      return details::test<1>(*active.load(std::memory_order_acquire), std::memory_order_acquire);
+      return details::test<job_state::cancelled>(*states.load(std::memory_order_acquire), std::memory_order_acquire);
     }
 
     void wait() const noexcept
     {
-      details::wait<0, true>(*active.load(std::memory_order_acquire), std::memory_order_acquire);
+      details::wait<job_state::active, true>(*states.load(std::memory_order_acquire), std::memory_order_acquire);
     }
 
   private:
-    std::atomic<details::atomic_bitfield*> active = nullptr;
+    std::atomic<details::atomic_bitfield*> states = nullptr;
     inline static details::atomic_bitfield null_flag;
   };
   static_assert(std::copy_constructible<job_token>);
@@ -317,7 +323,7 @@ public:
       // 2. Assign job
       if constexpr(std::invocable<callable_t&&, threadable::job_token, arg_ts&&...>)
       {
-        job.set(FWD(func), job_token{ job.active }, FWD(args)...);
+        job.set(FWD(func), job_token{ job.states }, FWD(args)...);
       }
       else
       {
@@ -332,7 +338,7 @@ public:
         if(auto& childJob = jobs_[mask(slot-1)])
         LIKELY
         {
-          job.wait_for(childJob.active);
+          job.wait_for(childJob.states);
         }
       }
 
@@ -347,7 +353,7 @@ public:
       while(!head_.compare_exchange_weak(expected, slot+1, std::memory_order_relaxed));
 
       on_job_ready();
-      return job.active;
+      return job.states;
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>
