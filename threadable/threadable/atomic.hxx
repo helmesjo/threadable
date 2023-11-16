@@ -10,7 +10,7 @@ namespace threadable::details
   using atomic_bitfield = std::atomic<std::uint8_t>;
 
   template<std::uint8_t bit>
-  bool test(const atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+  inline bool test(const atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
     requires (bit < sizeof(bit) * 8)
   {
     static constexpr std::uint8_t mask = 1 << bit;
@@ -19,7 +19,14 @@ namespace threadable::details
 
   template<std::uint8_t bit, bool value>
     requires (bit < sizeof(bit) * 8)
-  bool test_and_set(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+  inline void set(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+  {
+    (void)test_and_set<bit, value>(field, order);
+  }
+
+  template<std::uint8_t bit, bool value>
+    requires (bit < sizeof(bit) * 8)
+  inline bool test_and_set(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
   {
     static constexpr std::uint8_t mask = 1 << bit;
     if constexpr(value)
@@ -34,9 +41,14 @@ namespace threadable::details
     }
   }
 
+  inline void clear(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+  {
+    field.exchange(0, order);
+  }
+
   template<std::uint8_t bit, bool old>
     requires (bit < sizeof(bit) * 8)
-  void wait(const atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+  inline void wait(const atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
   {
     static constexpr std::uint8_t mask = 1 << bit;
     auto current = field.load(order);

@@ -88,7 +88,7 @@ namespace threadable
     {
       func_.reset();
       child_active.store(nullptr, std::memory_order_release);
-      details::test_and_set<0, false>(active, std::memory_order_release);
+      details::clear(active, std::memory_order_release);
       details::atomic_notify_all(active);
     }
 
