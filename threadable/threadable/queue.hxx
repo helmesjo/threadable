@@ -4,7 +4,7 @@
 #include <cmath>
 #include <concepts>
 #include <threadable/function.hxx>
-#include <threadable/std_atomic.hxx>
+#include <threadable/atomic.hxx>
 
 #include <algorithm>
 #include <cassert>
@@ -38,8 +38,8 @@ namespace threadable
   {
     struct job_base
     {
-      atomic_flag active;
-      std::atomic<atomic_flag*> child_active = nullptr;
+      atomic_bitfield active;
+      std::atomic<atomic_bitfield*> child_active = nullptr;
     };
     static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
@@ -59,13 +59,13 @@ namespace threadable
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
       this->func_.set(FWD(func), FWD(args)...);
-      details::atomic_set(active, std::memory_order_release);
+      details::test_and_set<0, true>(active, std::memory_order_release);
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on (checking state true -> false)
       // details::atomic_notify_all(active);
     }
 
-    inline void wait_for(details::atomic_flag& child)
+    inline void wait_for(details::atomic_bitfield& child)
     {
       child_active.store(&child, std::memory_order_release);
     }
@@ -88,13 +88,13 @@ namespace threadable
     {
       func_.reset();
       child_active.store(nullptr, std::memory_order_release);
-      details::atomic_clear(active, std::memory_order_release);
+      details::test_and_set<0, false>(active, std::memory_order_release);
       details::atomic_notify_all(active);
     }
 
     bool done() const noexcept
     {
-      return !details::atomic_test(active, std::memory_order_acquire);
+      return !details::test<0>(active, std::memory_order_acquire);
     }
 
     void operator()()
@@ -105,7 +105,7 @@ namespace threadable
       if(auto flag = child_active.load(std::memory_order_acquire))
       UNLIKELY
       {
-        details::atomic_wait(*flag, true, std::memory_order_acquire);
+        details::wait<0, true>(*flag, std::memory_order_acquire);
       }
       func_();
       reset();
@@ -132,7 +132,7 @@ namespace threadable
       job_token(null_flag)
     {}
 
-    job_token(details::atomic_flag& active):
+    job_token(details::atomic_bitfield& active):
       active(&active)
     {
     }
@@ -162,22 +162,22 @@ namespace threadable
 
     bool done() const noexcept
     {
-      return !details::atomic_test(*active.load(std::memory_order_acquire), std::memory_order_acquire);
+      return !details::test<0>(*active.load(std::memory_order_acquire), std::memory_order_acquire);
     }
 
     auto cancel() noexcept
     {
-      return details::atomic_test_and_clear(*active.load(std::memory_order_acquire), std::memory_order_acq_rel);
+      return details::test_and_set<0, false>(*active.load(std::memory_order_acquire), std::memory_order_acq_rel);
     }
 
     void wait() const noexcept
     {
-      details::atomic_wait(*active.load(std::memory_order_acquire), true, std::memory_order_acquire);
+      details::wait<0, true>(*active.load(std::memory_order_acquire), std::memory_order_acquire);
     }
 
   private:
-    std::atomic<details::atomic_flag*> active = nullptr;
-    inline static details::atomic_flag null_flag;
+    std::atomic<details::atomic_bitfield*> active = nullptr;
+    inline static details::atomic_bitfield null_flag;
   };
   static_assert(std::copy_constructible<job_token>);
 

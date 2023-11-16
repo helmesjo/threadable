@@ -1,10 +1,55 @@
 #pragma once
 
 #include <atomic>
-#include <utility>
-#include <version>
+#include <cstdint>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
+
+namespace threadable::details
+{
+  using atomic_bitfield = std::atomic<std::uint8_t>;
+
+  template<std::uint8_t bit>
+  bool test(const atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+    requires (bit < sizeof(bit) * 8)
+  {
+    static constexpr std::uint8_t mask = 1 << bit;
+    return mask & field.load(order);
+  }
+
+  template<std::uint8_t bit, bool value>
+    requires (bit < sizeof(bit) * 8)
+  bool test_and_set(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+  {
+    static constexpr std::uint8_t mask = 1 << bit;
+    if constexpr(value)
+    {
+      // Set the bit
+      return mask & field.fetch_or(mask, order);
+    }
+    else
+    {
+      // Clear the bit
+      return mask & field.fetch_and(static_cast<std::uint8_t>(~mask), order);
+    }
+  }
+
+  template<std::uint8_t bit, bool old>
+    requires (bit < sizeof(bit) * 8)
+  void wait(const atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+  {
+    static constexpr std::uint8_t mask = 1 << bit;
+    auto current = field.load(order);
+    while (static_cast<bool>(current & mask) == old)
+    {
+      // Wait for any change in atomicVar
+      field.wait(current, order);
+
+      // Reload the current value
+      current = field.load(order);
+    }
+  }
+}
 
 #if 0// __cpp_lib_atomic_flag_test >= 201907 // a bunch of compilers define this without supporting it.
 namespace threadable::details

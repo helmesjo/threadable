@@ -1,7 +1,6 @@
 #pragma once
 
 #include <threadable/queue.hxx>
-#include <threadable/std_atomic.hxx>
 #include <threadable/std_concepts.hxx>
 
 #include <algorithm>
