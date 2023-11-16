@@ -46,8 +46,7 @@ namespace threadable
 
   enum job_state: std::uint8_t
   {
-    active = 0,
-    cancelled = 1
+    active = 0
   };
 
   struct alignas(details::cache_line_size) job final: details::job_base
@@ -64,7 +63,7 @@ namespace threadable
       requires std::invocable<callable_t, arg_ts...>
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
-      this->func_.set(FWD(func), FWD(args)...);
+      func_.set(FWD(func), FWD(args)...);
       details::set<job_state::active, true>(states, std::memory_order_release);
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on (checking state true -> false)
@@ -369,19 +368,6 @@ public:
       job_token token;
       push(token, FWD(func), FWD(args)...);
       return token;
-    }
-
-    template<std::copy_constructible callable_t, typename... arg_ts>
-      requires std::invocable<callable_t, arg_ts...>
-    job_token push_slow(callable_t&& func, arg_ts&&... args) noexcept
-    {
-      using tuple_t = decltype(std::tuple(FWD(func), FWD(args)...));
-      return push([argPack = std::make_shared<tuple_t>(FWD(func), FWD(args)...)]()
-      {
-        std::apply([](auto&& func, auto&&... args){
-          func(FWD(args)...);
-        }, *argPack);
-      });
     }
 
     void clear()

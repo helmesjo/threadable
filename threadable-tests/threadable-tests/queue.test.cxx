@@ -99,14 +99,14 @@ SCENARIO("queue: push & claim")
         REQUIRE(wasCancelled);
       }
     }
-    WHEN("push_slow")
+    WHEN("push")
     {
-      THEN("a callable that is too large can be pushed")
+      THEN("a callable that is larger than buffer size can be pushed")
       {
         int called = 0;
-        static constexpr auto too_big = threadable::details::cache_line_size * 2;
+        static constexpr auto too_big = threadable::details::job_buffer_size * 2;
         // both capturing big data & passing as argument
-        queue.push_slow([&called, bigData = std::make_shared<std::uint8_t[]>(too_big)](int arg, const std::shared_ptr<std::uint8_t[]>& data){
+        queue.push([&called, bigData = std::make_shared<std::uint8_t[]>(too_big)](int arg, const std::shared_ptr<std::uint8_t[]>& data){
           called = arg;
           (void)data;
         }, 16, std::make_shared<std::uint8_t[]>(too_big));

@@ -227,11 +227,21 @@ namespace threadable
     template<std::invocable callable_t, typename callable_value_t = std::remove_reference_t<callable_t>>
     void set(callable_t&& callable) noexcept
       requires (!is_function_v<callable_t>)
+            && (required_buffer_size_v<decltype(callable)> > buffer_size)
+    {
+      set([func = std::make_shared<std::remove_reference_t<decltype(callable)>>(FWD(callable))]{
+        std::forward<callable_t>(*func)();
+      });
+    }
+
+    template<std::invocable callable_t, typename callable_value_t = std::remove_reference_t<callable_t>>
+    void set(callable_t&& callable) noexcept
+      requires (!is_function_v<callable_t>)
+            && (required_buffer_size_v<decltype(callable)> <= buffer_size)
     {
       static constexpr std::uint8_t total_size = required_buffer_size_v<decltype(callable)>;
 
       static_assert(std::copy_constructible<callable_value_t>, "callable must be copy-constructible");
-      static_assert(total_size <= buffer_size, "callable won't fit in function buffer");
       reset();
 
       // header (size)

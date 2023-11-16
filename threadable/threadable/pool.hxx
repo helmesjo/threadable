@@ -189,14 +189,6 @@ namespace threadable
     return queue.push(FWD(func), FWD(args)...);
   }
 
-  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
-  inline auto push_slow(callable_t&& func, arg_ts&&... args) noexcept
-    requires requires(details::queue_t q){ q.push_slow(FWD(func), FWD(args)...); }
-  {
-    static auto& queue = details::pool().create(policy);
-    return queue.push_slow(FWD(func), FWD(args)...);
-  }
-
   inline void wait() noexcept
   {
     details::pool().wait();
