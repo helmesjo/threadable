@@ -65,7 +65,7 @@ namespace threadable
     decltype(auto) set(callable_t&& func, arg_ts&&... args) noexcept
     {
       this->func_.set(FWD(func), FWD(args)...);
-      details::test_and_set<job_state::active, true>(states, std::memory_order_release);
+      details::set<job_state::active, true>(states, std::memory_order_release);
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on (checking state true -> false)
       // details::atomic_notify_all(active);
