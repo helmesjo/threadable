@@ -19,13 +19,6 @@ namespace threadable::details
 
   template<std::uint8_t bit, bool value>
     requires (bit < sizeof(bit) * 8)
-  inline void set(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
-  {
-    (void)test_and_set<bit, value>(field, order);
-  }
-
-  template<std::uint8_t bit, bool value>
-    requires (bit < sizeof(bit) * 8)
   inline bool test_and_set(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
   {
     static constexpr std::uint8_t mask = 1 << bit;
@@ -39,6 +32,13 @@ namespace threadable::details
       // Clear the bit
       return mask & field.fetch_and(static_cast<std::uint8_t>(~mask), order);
     }
+  }
+
+  template<std::uint8_t bit, bool value>
+    requires (bit < sizeof(bit) * 8)
+  inline void set(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+  {
+    (void)test_and_set<bit, value>(field, order);
   }
 
   inline void clear(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
