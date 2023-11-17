@@ -84,11 +84,11 @@ SCENARIO("queue: push & claim")
         }
       }
     }
-    WHEN("push callable with 'job_token' as first parameter")
+    WHEN("push callable with 'job_token&' as first parameter")
     {
       bool wasCancelled = false;
       threadable::job_token token;
-      token = queue.push([&wasCancelled](const threadable::job_token& token){
+      token = queue.push([&wasCancelled](threadable::job_token& token){
         wasCancelled = token.cancelled();
       }, std::ref(token));
       REQUIRE(queue.size() == 1);

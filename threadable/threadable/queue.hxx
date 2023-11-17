@@ -150,6 +150,7 @@ public:
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
+            || std::invocable<callable_t, job_token&, arg_ts...>
     void push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept
     {
       // 1. Acquire a slot
@@ -160,7 +161,7 @@ public:
       assert(!job);
 
       // 2. Assign job
-      if constexpr(std::invocable<callable_t, const job_token&, arg_ts...>)
+      if constexpr(std::invocable<callable_t, job_token&, arg_ts...>)
       {
         job.set(FWD(func), std::ref(token), FWD(args)...);
       }
