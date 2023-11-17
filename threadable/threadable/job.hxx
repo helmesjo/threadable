@@ -136,7 +136,8 @@ namespace threadable
 
     bool done() const noexcept
     {
-      return !details::test<job_state::active>(*states.load(std::memory_order_acquire), std::memory_order_acquire);
+      auto statesPtr = states.load(std::memory_order_acquire);
+      return !statesPtr || !details::test<job_state::active>(*statesPtr, std::memory_order_acquire);
     }
 
     void cancel() noexcept
