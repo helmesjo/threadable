@@ -1,6 +1,6 @@
 libs =
 import libs += \
-  threadable%lib{threadable} \
+  libthreadable%lib{threadable} \
   doctest%lib{doctest} \
   libnanobench%lib{nanobench}
 

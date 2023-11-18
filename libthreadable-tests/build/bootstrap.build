@@ -1,4 +1,4 @@
-project = threadable-benchmarks
+project = libthreadable-tests
 
 using version
 using config

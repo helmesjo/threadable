@@ -1,6 +1,6 @@
 : 1
-location: threadable/
+location: libthreadable/
 :
-location: threadable-tests/
+location: libthreadable-tests/
 :
-location: threadable-benchmarks/
+location: libthreadable-benchmarks/

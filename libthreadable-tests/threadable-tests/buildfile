@@ -1,5 +1,7 @@
 libs =
-import libs += threadable%lib{threadable} doctest%lib{doctest}
+import libs += \
+  libthreadable%lib{threadable} \
+  doctest%lib{doctest}
 
 exe{threadable-tests}: {hxx ixx txx cxx}{**} $libs
 {

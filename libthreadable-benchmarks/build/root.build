@@ -20,7 +20,7 @@ hxx{*}: cxx.importable = true
 test.target = $cxx.target
 
 # Enable benchmarks tests
-config [bool] config.threadable_benchmarks.run ?= false
+config [bool] config.libthreadable_benchmarks.run ?= false
 
 # Make system libs importable (eg. libtbb)
 switch $cxx.id: regex.match

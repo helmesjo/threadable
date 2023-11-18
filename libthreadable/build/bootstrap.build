@@ -1,4 +1,4 @@
-project = threadable
+project = libthreadable
 
 using version
 using config
