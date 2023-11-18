@@ -1,16 +1,14 @@
 intf_libs = # Interface dependencies.
 impl_libs = # Implementation dependencies.
-#import xxxx_libs += libhello%lib{hello}
 
-switch $cxx.id: regex.match
+switch $cxx.stdlib, $cxx.id: regex.match
 {
-  case 'gcc'
+  case 'libstdc++', 'gcc' | 'clang'
   {
     import intf_libs += libtbb%lib{tbb}
   }
-  case 'clang.*'
+  case 'libc++'
   {
-    import intf_libs += libtbb%lib{tbb}
     if($cxx.target.class == 'macos')
     {
       import intf_libs += libpstld%lib{pstld}

@@ -7,8 +7,8 @@ description-file: README.md
 url: https://github.com/helmesjo/threadable
 email: helmesjo@gmail.com
 #build-error-email: helmesjo@gmail.com
-depends: libpstld ^0.1.1 ? ($cxx.target.class == 'macos' && ($cxx.id == 'clang' || $cxx.id == 'clang-apple'))
 depends: * build2 >= 0.16.0
 depends: * bpkg >= 0.16.0
+depends: libpstld ^0.1.1 ? ($cxx.target.class == 'macos' && $cxx.stdlib == 'libc++')
 tests: libthreadable-tests == $
 benchmarks: libthreadable-benchmarks == $
