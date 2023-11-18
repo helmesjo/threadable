@@ -122,6 +122,7 @@ namespace threadable
     }
 
     job_token(job_token&& rhs) noexcept:
+      cancelled_(rhs.cancelled_.load(std::memory_order_acquire)),
       states(rhs.states.load(std::memory_order_acquire))
     {
       rhs.states.store(nullptr, std::memory_order_release);
@@ -129,9 +130,15 @@ namespace threadable
 
     auto& operator=(job_token&& rhs) noexcept
     {
+      cancelled_.store(rhs.cancelled_, std::memory_order_release);
       states.store(rhs.states, std::memory_order_release);
       rhs.states.store(nullptr, std::memory_order_release);
       return *this;
+    }
+
+    void reassign(details::atomic_bitfield& newStates) noexcept
+    {
+      states.store(&newStates, std::memory_order_release);
     }
 
     bool done() const noexcept

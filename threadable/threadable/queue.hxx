@@ -182,7 +182,7 @@ public:
         }
       }
 
-      token = job.states;
+      token.reassign(job.states);
 
       std::atomic_thread_fence(std::memory_order_release);
 
