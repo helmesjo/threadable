@@ -35,7 +35,7 @@ namespace threadable
 
   namespace details
   {
-    constexpr std::size_t default_max_nr_of_jobs = 1024;
+    constexpr std::size_t default_max_nr_of_jobs = 1 << 16;
   }
 
   enum class execution_policy
