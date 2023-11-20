@@ -14,6 +14,7 @@
   #include <pstld/pstld.h>
 #endif
 #include <functional>
+#include <mutex>
 #include <type_traits>
 #include <thread>
 

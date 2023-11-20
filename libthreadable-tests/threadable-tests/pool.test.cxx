@@ -2,6 +2,7 @@
 #include <threadable-tests/doctest_include.hxx>
 
 #include <cstddef>
+#include <mutex>
 #include <thread>
 #include <vector>
 
