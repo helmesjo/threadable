@@ -1,11 +1,12 @@
 intf_libs = # Interface dependencies.
 impl_libs = # Implementation dependencies.
 
+sys_libs =
 switch $cxx.stdlib, $cxx.id: regex.match
 {
   case 'libstdc++', 'gcc' | 'clang'
   {
-    import intf_libs += libtbb%lib{tbb}
+    sys_libs += -ltbb
   }
   case 'libc++'
   {
@@ -13,16 +14,7 @@ switch $cxx.stdlib, $cxx.id: regex.match
     {
       import intf_libs += libpstld%lib{pstld}
       cxx.poptions += -DPSTLD_HACK_INTO_STD
-      cxx.export.poptions += -DPSTLD_HACK_INTO_STD
     }
-  }
-}
-switch $cxx.target.system
-{
-  case 'linux' | 'bsd' | 'darwin'
-  {
-    cxx.libs += -lpthread
-    cxx.export.libs += -lpthread
   }
 }
 
@@ -40,6 +32,7 @@ hxx{version}: in{version} $src_root/manifest
 
 # Build options.
 #
+cxx.libs += $sys_libs
 cxx.poptions =+ "-I$out_root" "-I$src_root"
 
 # Export options.
@@ -51,8 +44,8 @@ if ($cxx.target.system == 'mingw32')
 
 lib{threadable}:
 {
-  cxx.export.poptions += "-I$out_root" "-I$src_root"
-  cxx.export.libs += $intf_libs
+  cxx.export.poptions += "-I$out_root" "-I$src_root" -DPSTLD_HACK_INTO_STD
+  cxx.export.libs += $intf_libs $sys_libs
 }
 
 # For pre-releases use the complete version to make sure they cannot be used
