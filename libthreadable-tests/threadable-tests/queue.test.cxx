@@ -27,9 +27,41 @@ SCENARIO("queue: push & claim")
 
     WHEN("push 1")
     {
-      queue.push([]{});
+      thread_local int called = 0;
+      thread_local int destroyed = 0;
+      struct type
+      {
+        type() = default;
+        type(const type&) = default;
+        type(type&&) = default;
+        ~type()
+        {
+          ++destroyed;
+        }
+        void operator()()
+        {
+          ++called;
+        }
+      };
+      queue.push(type{});
       REQUIRE(queue.size() == 1);
 
+      called = 0;
+      destroyed = 0;
+      AND_WHEN("queue is destroyed")
+      {
+        {
+          auto queue2 = threadable::queue<2>{};
+          queue2.push(type{});
+          called = 0;
+          destroyed = 0;
+        }
+        THEN("it resets & destroys pushed jobs")
+        {
+          REQUIRE(called == 0);
+          REQUIRE(destroyed == 1); // some temporaries might also be destroyed
+        }
+      }
       AND_WHEN("iterate without executing jobs")
       {
         auto nrJobs = 0;
@@ -41,6 +73,7 @@ SCENARIO("queue: push & claim")
         THEN("1 valid job existed")
         {
           REQUIRE(nrJobs == 1);
+          REQUIRE(called == 0);
 
           AND_WHEN("iterate without executing jobs")
           {

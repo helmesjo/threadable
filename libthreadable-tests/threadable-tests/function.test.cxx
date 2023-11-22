@@ -438,9 +438,9 @@ SCENARIO("function: set/reset")
       AND_WHEN("function is reset")
       {
         destroyed = 0;
-        func.set([]{});
+        func.reset();
 
-        AND_THEN("destructor is invoked")
+        THEN("destructor is invoked")
         {
           REQUIRE(destroyed == 1);
         }
@@ -450,7 +450,7 @@ SCENARIO("function: set/reset")
         destroyed = 0;
         func.set([]{});
 
-        AND_THEN("destructor is invoked on previous callable")
+        THEN("destructor is invoked on previous callable")
         {
           REQUIRE(destroyed == 1);
         }
@@ -581,15 +581,31 @@ SCENARIO("function: Conversion")
   auto func = threadable::function<func_size>{};
   GIVEN("callable is set")
   {
-    int called = 0;
+    thread_local int called = 0;
+    thread_local int destroyed = 0;
+    struct type
+    {
+      type() = default;
+      type(const type&) = default;
+      type(type&&) = default;
+      ~type()
+      {
+        ++destroyed;
+      }
+      void operator()()
+      {
+        ++called;
+      }
+    };
 
-    func.set([&called]() mutable { ++called; });
+    func.set(type{});
     WHEN("function is converted to std::function")
     {
       std::function<void()> stdFunc = func;
 
       WHEN("it is invoked")
       {
+        called = 0;
         stdFunc();
         THEN("callable is invoked")
         {
@@ -607,11 +623,57 @@ SCENARIO("function: Conversion")
 
       WHEN("it is invoked")
       {
+        called = 0;
         funcDyn();
         THEN("callable is invoked")
         {
           REQUIRE(called == 1);
         }
+      }
+    }
+  }
+}
+
+SCENARIO("function_dyn")
+{
+  static constexpr auto func_size = 64;
+  GIVEN("callable is set")
+  {
+    thread_local int called = 0;
+    thread_local int destroyed = 0;
+    struct type
+    {
+      type() = default;
+      type(const type&) = default;
+      type(type&&) = default;
+      ~type()
+      {
+        ++destroyed;
+      }
+      void operator()()
+      {
+        ++called;
+      }
+    };
+
+    auto funcDyn = threadable::function_dyn(type{});
+
+    WHEN("it is invoked")
+    {
+      funcDyn();
+      THEN("callable is invoked")
+      {
+        REQUIRE(called == 1);
+      }
+    }
+    WHEN("function is reset")
+    {
+      destroyed = 0;
+      funcDyn.reset();
+
+      THEN("destructor is invoked")
+      {
+        REQUIRE(destroyed == 1);
       }
     }
   }

@@ -388,6 +388,10 @@ namespace threadable
 
     inline void reset() noexcept
     {
+      if(buffer_)
+      {
+        details::invoke_special_func(buffer_, details::method::dtor);
+      }
       delete[] buffer_;
       buffer_ = nullptr;
     }
