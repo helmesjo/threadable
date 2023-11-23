@@ -582,16 +582,11 @@ SCENARIO("function: Conversion")
   GIVEN("callable is set")
   {
     thread_local int called = 0;
-    thread_local int destroyed = 0;
     struct type
     {
       type() = default;
       type(const type&) = default;
       type(type&&) = default;
-      ~type()
-      {
-        ++destroyed;
-      }
       void operator()()
       {
         ++called;
@@ -636,7 +631,6 @@ SCENARIO("function: Conversion")
 
 SCENARIO("function_dyn")
 {
-  static constexpr auto func_size = 64;
   GIVEN("callable is set")
   {
     thread_local int called = 0;
