@@ -193,6 +193,16 @@ namespace threadable
   {
     details::pool().wait();
   }
+
+  inline details::queue_t& create(execution_policy policy = execution_policy::parallel) noexcept
+  {
+    return details::pool().create(policy);
+  }
+
+  inline bool remove(details::queue_t&& queue) noexcept
+  {
+    return details::pool().remove(std::move(queue));
+  }
 }
 
 #undef FWD
