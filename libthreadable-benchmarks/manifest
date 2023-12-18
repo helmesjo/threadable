@@ -1,6 +1,6 @@
 : 1
 name: libthreadable-benchmarks
-version: 0.1.2
+version: 0.1.3-a.0.z
 project: threadable
 summary: threadable-benchmarks C++ executable
 license: MIT ; MIT License.
