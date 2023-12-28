@@ -59,7 +59,7 @@ SCENARIO("queue: push & claim")
         THEN("it resets & destroys pushed jobs")
         {
           REQUIRE(called == 0);
-          REQUIRE(destroyed == 1); // some temporaries might also be destroyed
+          REQUIRE(destroyed == 1);
         }
       }
       AND_WHEN("iterate without executing jobs")

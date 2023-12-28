@@ -57,10 +57,9 @@ namespace threadable
             details::atomic_wait(readyCount_, std::size_t{0}, std::memory_order_acquire);
           }
 
-          // aquire a copy of queues, and run all jobs available in each
-          const auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
-          const auto begin = std::begin(*queues);
-          const auto end = std::end(*queues);
+          auto _ = std::scoped_lock{queueMutex_};
+          const auto begin = std::begin(queues_);
+          const auto end = std::end(queues_);
 #ifdef __cpp_lib_execution
           std::for_each(std::execution::par, begin, end, [this](const auto& q){
             auto executed = q->execute();
@@ -93,11 +92,10 @@ namespace threadable
     bool add(std::shared_ptr<queue_t> q)
     {
       auto _ = std::scoped_lock{queueMutex_};
-      if(std::find_if(std::begin(*queues_), std::end(*queues_), [&q](const auto& q2){
+      if(std::find_if(std::begin(queues_), std::end(queues_), [&q](const auto& q2){
         return q2.get() == q.get();
-      }) != std::end(*queues_))
+      }) != std::end(queues_))
       {
-        // queue already exists
         return false;
       }
 
@@ -105,28 +103,19 @@ namespace threadable
         notify_jobs(1);
       });
 
-      // create copy of queues & append queue, then atomically swap
-      const auto jobs = q->size();
-      auto newQueues = copy_queues();
-      newQueues->emplace_back(std::move(q));
-      std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
-      readyCount_.fetch_add(jobs, std::memory_order_release);
-      details::atomic_notify_all(readyCount_);
+      readyCount_.fetch_add(q->size(), std::memory_order_release);
+      queues_.emplace_back(std::move(q));
+      details::atomic_notify_one(readyCount_);
       return true;
     }
 
     bool remove(queue_t&& q) noexcept
     {
       auto _ = std::scoped_lock{queueMutex_};
-      // create copy of queues & remove queue, then atomically swap
-      auto newQueues = copy_queues();
-      if(std::erase_if(*newQueues, [&q](const auto& q2){ return q2.get() == &q; }) > 0)
+      if(std::erase_if(queues_, [&q](const auto& q2){ return q2.get() == &q; }) > 0)
       {
         q.set_notify(nullptr);
-        const auto jobs = q.size();
-        auto old = readyCount_.load(std::memory_order_acquire);
-        std::atomic_store_explicit(&queues_, newQueues, std::memory_order_release);
-        while(!readyCount_.compare_exchange_weak(old, old - std::min(old, jobs)));
+        readyCount_.fetch_sub(q.size(), std::memory_order_release);
         return true;
       }
       else
@@ -158,19 +147,10 @@ namespace threadable
       details::atomic_notify_one(readyCount_);
     }
 
-    auto copy_queues() noexcept
-    {
-      // make a new list of queues, copy from old list
-      auto oldQueues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
-      auto newQueues = std::make_shared<queues_t>();
-      std::copy(std::cbegin(*oldQueues), std::cend(*oldQueues), std::back_inserter(*newQueues));
-      return newQueues;
-    }
-
     std::mutex queueMutex_;
     alignas(details::cache_line_size) details::atomic_flag quit_;
     alignas(details::cache_line_size) std::atomic_size_t readyCount_{0};
-    alignas(details::cache_line_size) std::shared_ptr<queues_t> queues_ = std::make_shared<queues_t>();
+    alignas(details::cache_line_size) queues_t queues_;
     std::thread thread_;
   };
 
