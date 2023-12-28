@@ -84,29 +84,23 @@ namespace threadable
 
     queue_t& create(execution_policy policy = execution_policy::parallel) noexcept
     {
-      auto q = std::make_shared<queue_t>(policy);
-      add(q);
-      return *q;
+      return add(std::make_unique<queue_t>(policy));
     }
 
-    bool add(std::shared_ptr<queue_t> q)
+    [[nodiscard]]
+    queue_t& add(std::unique_ptr<queue_t> q)
     {
-      auto _ = std::scoped_lock{queueMutex_};
-      if(std::find_if(std::begin(queues_), std::end(queues_), [&q](const auto& q2){
-        return q2.get() == q.get();
-      }) != std::end(queues_))
+      queue_t* queue = nullptr;
       {
-        return false;
+        auto _ = std::scoped_lock{queueMutex_};
+        queue = queues_.emplace_back(std::move(q)).get();
+        queue->set_notify([this](...){
+          notify_jobs(1);
+        });
       }
 
-      q->set_notify([this](...){
-        notify_jobs(1);
-      });
-
-      readyCount_.fetch_add(q->size(), std::memory_order_release);
-      queues_.emplace_back(std::move(q));
-      details::atomic_notify_one(readyCount_);
-      return true;
+      notify_jobs(queue->size());
+      return *queue;
     }
 
     bool remove(queue_t&& q) noexcept

@@ -29,41 +29,30 @@ SCENARIO("pool: create/remove queues")
   }
   GIVEN("queue is pre-created")
   {
-    auto queue = std::make_shared<decltype(pool)::queue_t>();
+    auto queue = std::make_unique<decltype(pool)::queue_t>();
     WHEN("added (without jobs) to pool")
     {
-      REQUIRE(pool.add(queue));
+      auto& q = pool.add(std::move(queue));
       AND_WHEN("job is pushed")
       {
         int called = 0;
-        auto token2 = queue->push([&called]{ ++called; });
+        auto token2 = q.push([&called]{ ++called; });
         THEN("it gets executed")
         {
           token2.wait();
           REQUIRE(called == 1);
         }
       }
-      AND_WHEN("added to pool again")
-      {
-        THEN("it's not added")
-        {
-          REQUIRE_FALSE(pool.add(queue));
-        }
-      }
       AND_WHEN("removed from pool")
       {
-        REQUIRE(pool.remove(std::move(*queue)));
-        THEN("it can be readded")
-        {
-          REQUIRE(pool.add(queue));
-        }
+        REQUIRE(pool.remove(std::move(q)));
       }
     }
     WHEN("added (with jobs) to pool")
     {
       int called = 0;
       auto token = queue->push([&called]{ ++called; });
-      REQUIRE(pool.add(queue));
+      (void)pool.add(std::move(queue));
       THEN("existing jobs are executed")
       {
         token.wait();
