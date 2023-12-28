@@ -29,7 +29,7 @@ switch $cxx.id: regex.match
       cxx.poptions += -I/opt/homebrew/include
       cxx.loptions += -L/opt/homebrew/lib
     }
-    else
+    elif($build.host.class != 'windows')
     {
       cxx.poptions += -I/usr/include
       cxx.loptions += -L/usr/lib
