@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <utility>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
