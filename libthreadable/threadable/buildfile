@@ -1,24 +1,48 @@
 intf_libs = # Interface dependencies.
 impl_libs = # Implementation dependencies.
 
-sys_libs =
-switch $cxx.stdlib, $cxx.id: regex.match
+lib{threadable}: libul{threadable}: {hxx ixx txx cxx}{** -version} hxx{version} $impl_libs $intf_libs
+
+switch $cxx.stdlib: path.match, $cxx.id: path.match, $cxx.target.class: regex.match
 {
-  case 'libstdc++', 'gcc' | 'clang'
+  case 'libc++', 'clang*', 'macos'
   {
-    sys_libs += -ltbb
-  }
-  case 'libc++'
-  {
-    if($cxx.target.class == 'macos')
+    import intf_libs += libpstld%lib{pstld}
+    libul{threadable}: $intf_libs
+
+    lib{threadable}:
     {
-      import intf_libs += libpstld%lib{pstld}
-      cxx.poptions += -DPSTLD_HACK_INTO_STD
+      cxx.poptions += -I/opt/homebrew/include -DPSTLD_HACK_INTO_STD
+      cxx.loptions += -L/opt/homebrew/lib
+      cxx.export.poptions =+ -I/opt/homebrew/include -DPSTLD_HACK_INTO_STD
+      cxx.export.loptions =+ -L/opt/homebrew/lib
+    }
+  }
+  case '*', '*', 'macos'
+  {
+    lib{threadable}:
+    {
+      cxx.libs += -ltbb
+      cxx.poptions += -I/opt/homebrew/include
+      cxx.loptions += -L/opt/homebrew/lib
+      cxx.export.libs += -ltbb
+      cxx.export.poptions =+ -I/opt/homebrew/include
+      cxx.export.loptions =+ -L/opt/homebrew/lib
+    }
+  }
+  case '*', '*', '^(?!windows$).*'
+  {
+    lib{threadable}:
+    {
+      cxx.libs += -ltbb
+      cxx.poptions += -I/usr/include
+      cxx.loptions += -L/usr/lib
+      cxx.export.libs += -ltbb
+      cxx.export.poptions =+ -I/usr/include
+      cxx.export.loptions =+ -L/usr/lib
     }
   }
 }
-
-lib{threadable}: libul{threadable}: {hxx ixx txx cxx}{** -version} hxx{version} $impl_libs $intf_libs
 
 # Include the generated version header into the distribution (so that we don't
 # pick up an installed one) and don't remove it when cleaning in src (so that
@@ -32,7 +56,6 @@ hxx{version}: in{version} $src_root/manifest
 
 # Build options.
 #
-cxx.libs += $sys_libs
 cxx.poptions =+ "-I$out_root" "-I$src_root"
 
 # Export options.
@@ -44,8 +67,8 @@ if ($cxx.target.system == 'mingw32')
 
 lib{threadable}:
 {
-  cxx.export.poptions += "-I$out_root" "-I$src_root" -DPSTLD_HACK_INTO_STD
-  cxx.export.libs += $intf_libs $sys_libs
+  cxx.export.poptions += "-I$out_root" "-I$src_root"
+  cxx.export.libs += $intf_libs
 }
 
 # For pre-releases use the complete version to make sure they cannot be used
