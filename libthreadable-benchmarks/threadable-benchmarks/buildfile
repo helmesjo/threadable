@@ -4,20 +4,10 @@ import libs += \
   doctest%lib{doctest} \
   libnanobench%lib{nanobench}
 
-switch $cxx.class: regex.match
-{
-  case 'gcc' | 'clang.*'
-    import libs += libtbb%lib{tbb}
-}
-
-exe{*}:
+exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
 {
   test = true
   install = false
-}
-
-exe{threadable-benchmarks}: {hxx cxx}{**} $libs
-{
   test.arguments = --quiet=true
 }
 
