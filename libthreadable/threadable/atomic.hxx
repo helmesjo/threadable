@@ -129,7 +129,7 @@ namespace threadable::details
 }
 #endif
 
-#if __cpp_lib_atomic_wait >= 201907 && (!defined(__APPLE__) || (__clang_major__ > 13 || __clang_major__ == 13 && __clang_minor__ == 1 && __clang_patchlevel__ == 6)) // apple-clang defines it without supplying the functions
+#if __cpp_lib_atomic_wait >= 201907
 namespace threadable::details
 {
   template<typename atomic_t, typename obj_t>
@@ -151,32 +151,7 @@ namespace threadable::details
   }
 }
 #else
-#include <thread>
-
-namespace threadable::details
-{
-  template<typename obj_t>
-  inline void atomic_wait(const atomic_flag& atomic, obj_t old, std::memory_order order = std::memory_order_seq_cst) noexcept
-  {
-    while(atomic_test(atomic, order) == old){ std::this_thread::yield(); }
-  }
-
-  template<typename T, typename obj_t>
-  inline void atomic_wait(const std::atomic<T>& atomic, obj_t old, std::memory_order order = std::memory_order_seq_cst) noexcept
-  {
-    while(atomic.load(order) == old){ std::this_thread::yield(); }
-  }
-
-  template<typename atomic_t>
-  inline void atomic_notify_one(atomic_t&) noexcept
-  {
-  }
-
-  template<typename atomic_t>
-  inline void atomic_notify_all(atomic_t&) noexcept
-  {
-  }
-}
+#error Requires __cpp_lib_atomic_wait >= 201907
 #endif
 
 #undef FWD
