@@ -106,10 +106,13 @@ namespace threadable
     bool remove(queue_t&& q) noexcept
     {
       auto _ = std::scoped_lock{queueMutex_};
-      if(std::erase_if(queues_, [&q](const auto& q2){ return q2.get() == &q; }) > 0)
+      if(auto itr = std::find_if(std::begin(queues_), std::end(queues_), [&q](const auto& q2){
+        return q2.get() == &q;
+      }); itr != std::end(queues_))
       {
         q.set_notify(nullptr);
         readyCount_.fetch_sub(q.size(), std::memory_order_release);
+        queues_.erase(itr);
         return true;
       }
       else
