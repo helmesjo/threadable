@@ -33,7 +33,7 @@ namespace threadable
   {
   public:
     using queue_t = queue<max_nr_of_jobs>;
-    using queues_t = std::vector<std::shared_ptr<queue_t>>;
+    using queues_t = std::vector<std::unique_ptr<queue_t>>;
 
     pool() noexcept
     {
