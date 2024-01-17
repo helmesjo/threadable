@@ -17,7 +17,7 @@
   #include <pstld/pstld.h>
 #endif
 #include <iterator>
-#include <limits>
+#include <type_traits>
 #include <vector>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -66,20 +66,7 @@ public:
     {
       return val & index_mask;
     }
-
   public:
-
-    queue(execution_policy policy = execution_policy::parallel) noexcept
-    : policy_(policy)
-    {
-      set_notify(null_callback);
-    }
-
-    queue(queue&&) = delete;
-    queue(const queue&) = delete;
-    auto operator=(queue&&) = delete;
-    auto operator=(const queue&) = delete;
-
     struct iterator
     {
       using iterator_category = std::random_access_iterator_tag;
@@ -137,15 +124,27 @@ public:
     static_assert(std::random_access_iterator<iterator>);
     static_assert(std::contiguous_iterator<iterator>);
 
+    queue(execution_policy policy = execution_policy::parallel) noexcept
+    : policy_(policy)
+    {
+      set_notify(null_callback);
+    }
+
+    queue(queue&&) = delete;
+    queue(const queue&) = delete;
+    auto operator=(queue&&) = delete;
+    auto operator=(const queue&) = delete;
+
     template<std::invocable<queue&> callable_t>
+      // requires std::copyable<std::remove_reference_t<callable_t>>
     void set_notify(callable_t&& onJobReady) noexcept
     {
-      on_job_ready.set(FWD(onJobReady), std::ref(*this));
+      on_job_ready = std::make_shared<function<details::job_buffer_size>>(FWD(onJobReady), std::ref(*this));
     }
 
     void set_notify(std::nullptr_t) noexcept
     {
-      on_job_ready.set(null_callback, std::ref(*this));
+      set_notify(null_callback);
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>
@@ -194,7 +193,7 @@ public:
       }
       while(!head_.compare_exchange_weak(expected, slot+1, std::memory_order_relaxed));
 
-      on_job_ready();
+      notify();
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>
@@ -303,7 +302,20 @@ public:
       return size() == 0;
     }
 
+    void shutdown() noexcept
+    {
+      set_notify(nullptr);
+    }
+
   private:
+    void notify() noexcept
+    {
+      // aqcuire reference while notifying
+      if(auto receiver = on_job_ready)
+      {
+        (*receiver)();
+      }
+    }
     /*
       Circular job buffer. When tail or head
       reaches the end they will wrap around:
@@ -326,7 +338,7 @@ public:
     alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
 
     execution_policy policy_ = execution_policy::parallel;
-    function<details::job_buffer_size> on_job_ready;
+    std::shared_ptr<function<details::job_buffer_size>> on_job_ready;
     // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
     // causing noity_all() to not wake thread(s). See completion token test "stress-test"
     std::vector<job> jobs_{max_nr_of_jobs};

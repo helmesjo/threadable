@@ -33,7 +33,7 @@ namespace threadable
   {
   public:
     using queue_t = queue<max_nr_of_jobs>;
-    using queues_t = std::vector<std::unique_ptr<queue_t>>;
+    using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
     pool() noexcept
     {
@@ -48,7 +48,7 @@ namespace threadable
           if(details::atomic_test(quit_, std::memory_order_acquire))
           UNLIKELY
           {
-            // thread exit
+            // thread exit.
             break;
           }
           else
@@ -57,18 +57,23 @@ namespace threadable
             details::atomic_wait(readyCount_, std::size_t{0}, std::memory_order_acquire);
           }
 
-          auto _ = std::scoped_lock{queueMutex_};
-          const auto begin = std::begin(queues_);
-          const auto end = std::end(queues_);
+          queues_t queues;
+          {
+            auto _ = std::scoped_lock{queueMutex_};
+            queues = queues_;
+          }
+          const auto begin = std::begin(queues);
+          const auto end = std::end(queues);
+
+          // at this point we know all jobs are getting executed.
+          readyCount_.exchange(0, std::memory_order_relaxed);
 #ifdef __cpp_lib_execution
           std::for_each(std::execution::par, begin, end, [this](const auto& q){
-            auto executed = q->execute();
-            readyCount_.fetch_sub(executed, std::memory_order_release);
+            while(q->execute() > 0);
           });
 #else
           std::for_each(begin, end, [this](const auto& q){
-            auto executed = q->execute();
-            readyCount_.fetch_sub(executed, std::memory_order_release);
+            while(q->execute() > 0);
           });
 #endif
         }
@@ -82,6 +87,7 @@ namespace threadable
       thread_.join();
     }
 
+    [[nodiscard]]
     queue_t& create(execution_policy policy = execution_policy::parallel) noexcept
     {
       return add(std::make_unique<queue_t>(policy));
@@ -105,13 +111,13 @@ namespace threadable
 
     bool remove(queue_t&& q) noexcept
     {
-      auto _ = std::scoped_lock{queueMutex_};
-      if(auto itr = std::find_if(std::begin(queues_), std::end(queues_), [&q](const auto& q2){
+      auto itr = std::find_if(std::begin(queues_), std::end(queues_), [&q](const auto& q2){
         return q2.get() == &q;
-      }); itr != std::end(queues_))
+      });
+      if( itr != std::end(queues_) )
       {
-        q.set_notify(nullptr);
-        readyCount_.fetch_sub(q.size(), std::memory_order_release);
+        q.shutdown();
+        auto _ = std::scoped_lock{queueMutex_};
         queues_.erase(itr);
         return true;
       }
@@ -124,6 +130,11 @@ namespace threadable
     void wait() const noexcept
     {
       while(readyCount_.load(std::memory_order_relaxed) > 0){ std::this_thread::yield(); };
+    }
+
+    std::size_t queues() const noexcept
+    {
+      return queues_.size();
     }
 
     std::size_t size() const noexcept
@@ -144,7 +155,7 @@ namespace threadable
       details::atomic_notify_one(readyCount_);
     }
 
-    std::mutex queueMutex_;
+    std::recursive_mutex queueMutex_;
     alignas(details::cache_line_size) details::atomic_flag quit_;
     alignas(details::cache_line_size) std::atomic_size_t readyCount_{0};
     alignas(details::cache_line_size) queues_t queues_;

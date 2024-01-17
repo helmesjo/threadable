@@ -408,12 +408,21 @@ namespace threadable
     std::uint8_t* buffer_ = nullptr;
   };
 
+  // NOTE: On GCC (13.2.0) doing this inline with 'requires requires'
+  //       triggers ICE (Internal Compiler Error).
+  template<typename buffer_t, typename callable_t, typename... arg_ts>
+  concept settable = requires (buffer_t&& buf, callable_t&& callable, arg_ts&&... args)
+  {
+    buf.set(FWD(callable), FWD(args)...);
+  };
+
   template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
   struct function
   {
   private:
     using buffer_t = function_buffer<buffer_size>;
     buffer_t buffer_;
+
   public:
 
     function() = default;
@@ -423,15 +432,17 @@ namespace threadable
     {
     }
 
-    function(function&& func):
+    function(function&& func) noexcept:
       buffer_(std::move(func.buffer_))
     {
     }
 
-    explicit function(std::invocable auto&& func)
-      requires (!is_function_v<decltype(func)>)
+    template<typename... arg_ts>
+    explicit function(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
+      requires (!is_function_v<decltype(callable)>)
+            && settable<buffer_t, decltype(callable), decltype(args)...>
     {
-      set(FWD(func));
+      set(FWD(callable), FWD(args)...);
     }
 
     function& operator=(const function& func) noexcept
@@ -481,7 +492,7 @@ namespace threadable
 
     template<typename... arg_ts>
     void set(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
-      requires requires{ this->buffer_.set(FWD(callable), FWD(args)...); }
+      requires settable<buffer_t, decltype(callable), decltype(args)...>
     {
       buffer_.set(FWD(callable), FWD(args)...);
     }
