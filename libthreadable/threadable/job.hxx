@@ -3,6 +3,8 @@
 #include <threadable/atomic.hxx>
 #include <threadable/function.hxx>
 
+#include <algorithm>
+
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
 #if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely)
@@ -186,6 +188,41 @@ namespace threadable
   };
   static_assert(std::move_constructible<job_token>);
   static_assert(std::is_move_assignable_v<job_token>);
+
+  struct token_group
+  {
+    token_group& operator+=(job_token&& token) noexcept
+    {
+      tokens_.emplace_back(std::move(token));
+      return *this;
+    }
+
+    bool done() const noexcept
+    {
+      return std::ranges::all_of(tokens_, [](const auto& token){
+        return token.done();
+      });
+    }
+
+    void cancel() noexcept
+    {
+      for(auto& token : tokens_)
+      {
+        token.cancel();
+      }
+    }
+
+    void wait() const noexcept
+    {
+      for(const auto& token : tokens_)
+      {
+        token.wait();
+      }
+    }
+
+  private:
+    std::vector<job_token> tokens_;
+  };
 }
 
 #undef FWD
