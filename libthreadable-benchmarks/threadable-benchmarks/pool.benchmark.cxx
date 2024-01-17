@@ -50,11 +50,12 @@ TEST_CASE("pool: job execution")
   {
     auto& queue = pool.create(threadable::execution_policy::parallel);
     b.run("threadable::pool", [&] {
+      threadable::token_group group;
       for(std::size_t i = 0; i < queue.max_size(); ++i)
       {
-        queue.push(job_t{});
+        group += queue.push(job_t{});
       }
-      pool.wait();
+      group.wait();
     });
   }
 }

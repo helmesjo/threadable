@@ -53,7 +53,7 @@ namespace threadable
           else
           LIKELY
           {
-            details::atomic_wait(readyCount_, std::size_t{0}, std::memory_order_acquire);
+            details::atomic_wait(ready_, false, std::memory_order_acquire);
           }
 
           queues_t queues;
@@ -65,7 +65,7 @@ namespace threadable
           const auto end = std::end(queues);
 
           // at this point we know all jobs are getting executed.
-          readyCount_.exchange(0, std::memory_order_relaxed);
+          ready_.store(false, std::memory_order_relaxed);
 #ifdef __cpp_lib_execution
           std::for_each(std::execution::par, begin, end, [this](const auto& q){
             while(q->execute() > 0);
@@ -82,7 +82,7 @@ namespace threadable
     ~pool()
     {
       details::atomic_set(quit_, std::memory_order_release);
-      notify_jobs(1);
+      notify();
       thread_.join();
     }
 
@@ -100,11 +100,14 @@ namespace threadable
         auto _ = std::scoped_lock{queueMutex_};
         queue = queues_.emplace_back(std::move(q)).get();
         queue->set_notify([this](...){
-          notify_jobs(1);
+          notify();
         });
       }
 
-      notify_jobs(queue->size());
+      if(!queue->empty())
+      {
+        notify();
+      }
       return *queue;
     }
 
@@ -126,11 +129,6 @@ namespace threadable
       }
     }
 
-    void wait() const noexcept
-    {
-      while(readyCount_.load(std::memory_order_relaxed) > 0){ std::this_thread::yield(); };
-    }
-
     std::size_t queues() const noexcept
     {
       return queues_.size();
@@ -138,7 +136,9 @@ namespace threadable
 
     std::size_t size() const noexcept
     {
-      return readyCount_.load(std::memory_order_acquire);
+      return std::ranges::count(queues_, [](const auto& queue){
+        return queue->size();
+      });
     }
 
     static constexpr std::size_t max_size() noexcept
@@ -147,16 +147,16 @@ namespace threadable
     }
 
   private:
-    inline void notify_jobs(std::size_t jobs)
+    inline void notify()
     {
       // whenever a new job is pushed, release a thread (increment counter)
-      readyCount_.fetch_add(jobs, std::memory_order_release);
-      details::atomic_notify_one(readyCount_);
+      ready_.store(true, std::memory_order_release);
+      details::atomic_notify_one(ready_);
     }
 
     std::recursive_mutex queueMutex_;
     alignas(details::cache_line_size) details::atomic_flag quit_;
-    alignas(details::cache_line_size) std::atomic_size_t readyCount_{0};
+    alignas(details::cache_line_size) std::atomic_bool ready_{false};
     alignas(details::cache_line_size) queues_t queues_;
     std::thread thread_;
   };
@@ -174,11 +174,6 @@ namespace threadable
   {
     static auto& queue = details::pool().create(policy);
     return queue.push(FWD(func), FWD(args)...);
-  }
-
-  inline void wait() noexcept
-  {
-    details::pool().wait();
   }
 
   inline details::queue_t& create(execution_policy policy = execution_policy::parallel) noexcept
