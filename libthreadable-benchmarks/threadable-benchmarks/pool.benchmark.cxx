@@ -14,7 +14,7 @@ namespace bench = ankerl::nanobench;
 namespace
 {
   constexpr std::size_t jobs_per_iteration = 1 << 12;
-  int val = 1;
+  int val = 1; //NOLINT
 }
 
 TEST_CASE("pool: job execution")
@@ -37,7 +37,7 @@ TEST_CASE("pool: job execution")
     b.run("std::queue", [&] {
       for(std::size_t i = 0; i < jobs_per_iteration; ++i)
       {
-        queue.push(job_t{});
+        queue.emplace();
       }
       while(!queue.empty())
       {

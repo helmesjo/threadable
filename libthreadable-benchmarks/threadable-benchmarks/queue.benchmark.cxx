@@ -43,7 +43,7 @@ TEST_CASE("queue: push")
       queue.clear();
       for(std::size_t i = 0; i < jobs_per_iteration; ++i)
       {
-        queue.push_back(job_t{});
+        queue.emplace_back();
       }
     });
   }
