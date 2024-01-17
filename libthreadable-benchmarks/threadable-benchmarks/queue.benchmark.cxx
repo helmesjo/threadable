@@ -5,11 +5,10 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
-#if __has_include(<execution>)
+#if __cpp_lib_execution
   #include <execution>
 #endif
 #if __has_include (<pstld/pstld.h>)
-  #include <atomic> // missing include
   #include <pstld/pstld.h>
 #endif
 #include <functional>

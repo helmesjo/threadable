@@ -5,19 +5,14 @@
 #include <atomic>
 #include <algorithm>
 #include <cassert>
-#include <cmath>
-#include <compare>
-#include <concepts>
 #include <cstddef>
-#if __has_include(<execution>)
+#if __cpp_lib_execution
   #include <execution>
 #endif
 #if __has_include (<pstld/pstld.h>)
-  #include <atomic> // missing include
   #include <pstld/pstld.h>
 #endif
 #include <iterator>
-#include <type_traits>
 #include <vector>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)

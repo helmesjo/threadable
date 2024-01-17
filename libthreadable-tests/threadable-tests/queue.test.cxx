@@ -3,19 +3,15 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
-#include <cmath>
 #include <cstddef>
-#if __has_include(<execution>)
+#if __cpp_lib_execution
   #include <execution>
 #endif
 #if __has_include (<pstld/pstld.h>)
-  #include <atomic> // missing include
   #include <pstld/pstld.h>
 #endif
 #include <functional>
 #include <mutex>
-#include <type_traits>
 #include <thread>
 
 SCENARIO("queue: push & claim")
