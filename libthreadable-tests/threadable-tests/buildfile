@@ -3,6 +3,25 @@ import libs += \
   libthreadable%lib{threadable} \
   doctest%lib{doctest}
 
+switch $cxx.stdlib: path.match, $cxx.id: path.match, $cxx.target.class: regex.match
+{
+  case 'libc++', 'clang*', 'macos'
+  {
+    cxx.poptions += -I/opt/homebrew/include
+    cxx.loptions += -L/opt/homebrew/lib
+  }
+  case '*', '*', 'macos'
+  {
+    cxx.poptions += -I/opt/homebrew/include
+    cxx.loptions += -L/opt/homebrew/lib
+  }
+  case '*', '*', '^(?!windows$).*'
+  {
+    cxx.poptions += -I/usr/include
+    cxx.loptions += -L/usr/lib
+  }
+}
+
 exe{threadable-tests}: {hxx ixx txx cxx}{**} $libs
 {
   test = true
