@@ -1,40 +1,47 @@
 #pragma once
 
-#include <doctest/doctest.h>
 #include <array>
 #include <iostream> // Fix libc++ link error with doctest
 #include <sstream>
 #include <vector>
 
+#include <doctest/doctest.h>
+
 namespace doctest
 {
-    template <typename T, auto N>
-    struct StringMaker<std::array<T, N> >
+  template<typename T, auto N>
+  struct StringMaker<std::array<T, N>>
+  {
+    static String convert(const std::array<T, N>& in)
     {
-        static String convert(const std::array<T, N>& in) {
-            std::ostringstream oss;
+      std::ostringstream oss;
 
-            oss << "[";
-            for(typename std::array<T, N>::const_iterator it = in.begin(); it != in.end(); ++it)
-                oss << *it << ", ";
-            oss << "]";
+      oss << "[";
+      for (typename std::array<T, N>::const_iterator it = in.begin(); it != in.end(); ++it)
+      {
+        oss << *it << ", ";
+      }
+      oss << "]";
 
-            return oss.str().c_str();
-        }
-    };
+      return oss.str().c_str();
+    }
+  };
 
-    template <typename T>
-    struct StringMaker<std::vector<T> >
+  template<typename T>
+  struct StringMaker<std::vector<T>>
+  {
+    static String convert(const std::vector<T>& in)
     {
-        static String convert(const std::vector<T>& in) {
-            std::ostringstream oss;
+      std::ostringstream oss;
 
-            oss << "[";
-            for(typename std::vector<T>::const_iterator it = in.begin(); it != in.end(); ++it)
-                oss << *it << ", ";
-            oss << "]";
+      oss << "[";
+      for (typename std::vector<T>::const_iterator it = in.begin(); it != in.end(); ++it)
+      {
+        oss << *it << ", ";
+      }
+      oss << "]";
 
-            return oss.str().c_str();
-        }
-    };
+      return oss.str().c_str();
+    }
+  };
 }

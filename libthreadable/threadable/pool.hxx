@@ -11,7 +11,7 @@
 #if __cpp_lib_execution
   #include <execution>
 #endif
-#if __has_include (<pstld/pstld.h>)
+#if __has_include(<pstld/pstld.h>)
   #include <pstld/pstld.h>
 #endif
 
@@ -23,52 +23,58 @@ namespace threadable
   class pool
   {
   public:
-    using queue_t = queue<max_nr_of_jobs>;
+    using queue_t  = queue<max_nr_of_jobs>;
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
     pool() noexcept
     {
       details::atomic_clear(quit_);
 
-      thread_ = std::thread([this]{
-        while(true)
+      thread_ = std::thread(
+        [this]
         {
-          // 1. Check if quit = true.
-          // 2. Wait for jobs to executed.
-          // 3. Execute all jobs.
-          if(details::atomic_test(quit_, std::memory_order_acquire))
-          [[unlikely]]
+          while (true)
           {
-            // thread exit.
-            break;
-          }
-          else
-          [[likely]]
-          {
-            details::atomic_wait(ready_, false, std::memory_order_acquire);
-          }
+            // 1. Check if quit = true.
+            // 2. Wait for jobs to executed.
+            // 3. Execute all jobs.
+            if (details::atomic_test(quit_, std::memory_order_acquire)) [[unlikely]]
+            {
+              // thread exit.
+              break;
+            }
+            else [[likely]]
+            {
+              details::atomic_wait(ready_, false, std::memory_order_acquire);
+            }
 
-          queues_t queues;
-          {
-            auto _ = std::scoped_lock{queueMutex_};
-            queues = queues_;
-          }
-          const auto begin = std::begin(queues);
-          const auto end = std::end(queues);
+            queues_t queues;
+            {
+              auto _ = std::scoped_lock{queueMutex_};
+              queues = queues_;
+            }
+            const auto begin = std::begin(queues);
+            const auto end   = std::end(queues);
 
-          // at this point we know all jobs are getting executed.
-          ready_.store(false, std::memory_order_relaxed);
+            // at this point we know all jobs are getting executed.
+            ready_.store(false, std::memory_order_relaxed);
 #ifdef __cpp_lib_execution
-          std::for_each(std::execution::par, begin, end, [this](const auto& q){
-            while(q->execute() > 0);
-          });
+            std::for_each(std::execution::par, begin, end,
+                          [this](const auto& q)
+                          {
+                            while (q->execute() > 0)
+                              ;
+                          });
 #else
-          std::for_each(begin, end, [this](const auto& q){
-            while(q->execute() > 0);
-          });
+            std::for_each(begin, end,
+                          [this](const auto& q)
+                          {
+                            while (q->execute() > 0)
+                              ;
+                          });
 #endif
-        }
-      });
+          }
+        });
     }
 
     ~pool()
@@ -90,13 +96,15 @@ namespace threadable
       queue_t* queue = nullptr;
       {
         auto _ = std::scoped_lock{queueMutex_};
-        queue = queues_.emplace_back(std::move(q)).get();
-        queue->set_notify([this](...){
-          notify();
-        });
+        queue  = queues_.emplace_back(std::move(q)).get();
+        queue->set_notify(
+          [this](...)
+          {
+            notify();
+          });
       }
 
-      if(!queue->empty())
+      if (!queue->empty())
       {
         notify();
       }
@@ -105,10 +113,12 @@ namespace threadable
 
     bool remove(queue_t&& q) noexcept
     {
-      auto itr = std::find_if(std::begin(queues_), std::end(queues_), [&q](const auto& q2){
-        return q2.get() == &q;
-      });
-      if( itr != std::end(queues_) )
+      auto itr = std::find_if(std::begin(queues_), std::end(queues_),
+                              [&q](const auto& q2)
+                              {
+                                return q2.get() == &q;
+                              });
+      if (itr != std::end(queues_))
       {
         q.shutdown();
         auto _ = std::scoped_lock{queueMutex_};
@@ -128,9 +138,11 @@ namespace threadable
 
     std::size_t size() const noexcept
     {
-      return std::ranges::count(queues_, [](const auto& queue){
-        return queue->size();
-      });
+      return std::ranges::count(queues_,
+                                [](const auto& queue)
+                                {
+                                  return queue->size();
+                                });
     }
 
     static constexpr std::size_t max_size() noexcept
@@ -160,9 +172,10 @@ namespace threadable
     using queue_t = pool_t::queue_t;
   }
 
-  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t, typename... arg_ts>
+  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t,
+           typename... arg_ts>
   inline auto push(callable_t&& func, arg_ts&&... args) noexcept
-    requires requires(details::queue_t q){ q.push(FWD(func), FWD(args)...); }
+    requires requires(details::queue_t q) { q.push(FWD(func), FWD(args)...); }
   {
     static auto& queue = details::pool().create(policy);
     return queue.push(FWD(func), FWD(args)...);

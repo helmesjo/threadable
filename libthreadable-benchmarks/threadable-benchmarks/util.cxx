@@ -9,15 +9,15 @@ namespace
 
   int non_trivial_work(int& val)
   {
-    int total = val;
+    int total  = val;
     int lbound = 1;
     int ubound = 100;
     while (lbound <= ubound)
     {
       bool found = false;
-      for(int i = 2; i <= lbound/2; i++)
+      for (int i = 2; i <= lbound / 2; i++)
       {
-        if(lbound % i == 0)
+        if (lbound % i == 0)
         {
           found = true;
           break;

@@ -1,6 +1,7 @@
 #include "threadable/atomic.hxx"
-#include <threadable/queue.hxx>
+
 #include <threadable-tests/doctest_include.hxx>
+#include <threadable/queue.hxx>
 
 #include <bitset>
 
@@ -27,10 +28,10 @@ SCENARIO("atomic_bitfield")
       THEN("new value is assigned and old is returned")
       {
         REQUIRE(threadable::details::test_and_set<2, false>(field));
-        REQUIRE(std::bitset<8>(field).to_string() == std::bitset<8>(static_cast<unsigned int>(~(1 << 2))).to_string());
+        REQUIRE(std::bitset<8>(field).to_string() ==
+                std::bitset<8>(static_cast<unsigned int>(~(1 << 2))).to_string());
         threadable::details::wait<2, true>(field);
       }
     }
   }
 }
-

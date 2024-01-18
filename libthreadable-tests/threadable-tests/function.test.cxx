@@ -1,9 +1,9 @@
-#include <concepts>
-#include <threadable/function.hxx>
 #include <threadable-tests/doctest_include.hxx>
+#include <threadable/function.hxx>
 
-#include <type_traits>
+#include <concepts>
 #include <memory>
+#include <type_traits>
 
 namespace
 {
@@ -22,22 +22,20 @@ SCENARIO("function: type traits")
   static_assert(!is_function_v<function_dyn>);
   static_assert(!is_function_dyn_v<const function<>&>);
   static_assert(is_function_dyn_v<function_dyn>);
-  static_assert(!is_function_v<decltype([]{})>);
+  static_assert(!is_function_v<decltype([] {})>);
   static_assert(required_buffer_size_v<function<56>> == 56);
-  constexpr auto lambda = []{};
-  static_assert(
-    required_buffer_size_v<decltype(lambda)> == details::function_buffer_meta_size + sizeof(lambda)
-  );
-  static_assert(
-    required_buffer_size_v<decltype(lambda), int, int> == details::function_buffer_meta_size + sizeof(lambda) + sizeof(int) + sizeof(int)
-  );
+  constexpr auto lambda = [] {};
+  static_assert(required_buffer_size_v<decltype(lambda)> ==
+                details::function_buffer_meta_size + sizeof(lambda));
+  static_assert(required_buffer_size_v<decltype(lambda), int, int> ==
+                details::function_buffer_meta_size + sizeof(lambda) + sizeof(int) + sizeof(int));
 }
 
 SCENARIO("function_buffer")
 {
   WHEN("constructed with function pointer")
   {
-    int called = 0;
+    int  called = 0;
     auto buffer = threadable::function_buffer<64>(free_func, std::ref(called));
     THEN("it can be invoked")
     {
@@ -55,7 +53,7 @@ SCENARIO("function_buffer")
       }
     };
 
-    int called = 0;
+    int  called = 0;
     auto buffer = threadable::function_buffer<64>(&type::func, type{}, std::ref(called));
     THEN("it can be invoked")
     {
@@ -65,8 +63,12 @@ SCENARIO("function_buffer")
   }
   WHEN("constructed with callable")
   {
-    int called = 0;
-    auto buffer = threadable::function_buffer([&called]{ ++called; });
+    int  called = 0;
+    auto buffer = threadable::function_buffer(
+      [&called]
+      {
+        ++called;
+      });
     THEN("it can be invoked")
     {
       threadable::details::invoke(buffer.data());
@@ -75,12 +77,15 @@ SCENARIO("function_buffer")
   }
   WHEN("constructed with callable + arguments")
   {
-    int passedArg1 = 0;
+    int   passedArg1 = 0;
     float passedArg2 = 0;
-    auto buffer = threadable::function_buffer<64>([&](int arg1, float&& arg2){
-      passedArg1 = arg1;
-      passedArg2 = arg2;
-    }, 1, 3.4f);
+    auto  buffer     = threadable::function_buffer<64>(
+      [&](int arg1, float&& arg2)
+      {
+        passedArg1 = arg1;
+        passedArg2 = arg2;
+      },
+      1, 3.4f);
 
     THEN("it can be invoked & arguments are forwarded")
     {
@@ -92,25 +97,30 @@ SCENARIO("function_buffer")
   WHEN("constructed with copy")
   {
     thread_local int const_copied = 0;
-    thread_local int move_copied = 0;
+    thread_local int move_copied  = 0;
+
     struct type
     {
       type() = default;
+
       type(const type&)
       {
         ++const_copied;
       }
+
       type(type&&)
       {
         ++move_copied;
       }
-      void operator()(){}
+
+      void operator()() {}
     };
+
     static_assert(std::copy_constructible<type>);
 
-    auto buffer = threadable::function_buffer(type{});
+    auto buffer  = threadable::function_buffer(type{});
     const_copied = 0;
-    move_copied = 0;
+    move_copied  = 0;
     THEN("the callables' copy-ctor is invoked")
     {
       auto copy = buffer;
@@ -126,9 +136,14 @@ SCENARIO("function_buffer")
   }
   WHEN("nested in lambda capture (by value)")
   {
-    int called = 0;
-    auto buffer = threadable::function_buffer([&called]{ ++called; });
-    auto lambda = [buffer = buffer]() mutable {
+    int  called = 0;
+    auto buffer = threadable::function_buffer(
+      [&called]
+      {
+        ++called;
+      });
+    auto lambda = [buffer = buffer]() mutable
+    {
       threadable::details::invoke(buffer.data());
     };
     THEN("it can be invoked")
@@ -139,9 +154,14 @@ SCENARIO("function_buffer")
   }
   WHEN("nested in lambda capture (by r-value)")
   {
-    int called = 0;
-    auto buffer = threadable::function_buffer([&called]{ ++called; });
-    auto lambda = [buffer = std::move(buffer)]() mutable {
+    int  called = 0;
+    auto buffer = threadable::function_buffer(
+      [&called]
+      {
+        ++called;
+      });
+    auto lambda = [buffer = std::move(buffer)]() mutable
+    {
       threadable::details::invoke(buffer.data());
     };
     THEN("it can be invoked")
@@ -152,8 +172,11 @@ SCENARIO("function_buffer")
   }
   WHEN("set with callable")
   {
-    int called = 0;
-    auto lambda = [&called]{ ++called; };
+    int  called = 0;
+    auto lambda = [&called]
+    {
+      ++called;
+    };
     auto buffer = threadable::function_buffer(lambda);
     buffer.reset();
     buffer.set(lambda);
@@ -165,8 +188,12 @@ SCENARIO("function_buffer")
   }
   WHEN("constructed with threadable::function")
   {
-    int called = 0;
-    auto func = threadable::function([&called]{ ++called; });
+    int  called = 0;
+    auto func   = threadable::function(
+      [&called]
+      {
+        ++called;
+      });
     AND_WHEN("by value")
     {
       auto buffer = threadable::function_buffer(func);
@@ -188,8 +215,12 @@ SCENARIO("function_buffer")
   }
   WHEN("set with threadable::function")
   {
-    int called = 0;
-    auto func = threadable::function([&called]{ ++called; });
+    int  called = 0;
+    auto func   = threadable::function(
+      [&called]
+      {
+        ++called;
+      });
     auto buffer = threadable::function_buffer(func);
     buffer.reset();
     AND_WHEN("by value")
@@ -217,8 +248,12 @@ SCENARIO("function_dyn")
 {
   WHEN("constructed with callable")
   {
-    int called = 0;
-    auto func = threadable::function_dyn([&called]{ ++called; });
+    int  called = 0;
+    auto func   = threadable::function_dyn(
+      [&called]
+      {
+        ++called;
+      });
     REQUIRE(func);
     THEN("it can be invoked")
     {
@@ -228,8 +263,12 @@ SCENARIO("function_dyn")
   }
   WHEN("constructed with function_buffer")
   {
-    int called = 0;
-    auto func = threadable::function_dyn(threadable::function_buffer([&called]{ ++called; }));
+    int  called = 0;
+    auto func   = threadable::function_dyn(threadable::function_buffer(
+      [&called]
+      {
+        ++called;
+      }));
     REQUIRE(func);
     THEN("it can be invoked")
     {
@@ -239,8 +278,12 @@ SCENARIO("function_dyn")
   }
   WHEN("constructed with function")
   {
-    int called = 0;
-    auto func = threadable::function_dyn(threadable::function([&called]{ ++called; }));
+    int  called = 0;
+    auto func   = threadable::function_dyn(threadable::function(
+      [&called]
+      {
+        ++called;
+      }));
     REQUIRE(func);
     THEN("it can be invoked")
     {
@@ -250,8 +293,12 @@ SCENARIO("function_dyn")
   }
   WHEN("copy-constructed")
   {
-    int called = 0;
-    auto func1 = threadable::function_dyn([&called]{ ++called; });
+    int  called = 0;
+    auto func1  = threadable::function_dyn(
+      [&called]
+      {
+        ++called;
+      });
     auto func2 = threadable::function_dyn(func1);
     REQUIRE(func1);
     REQUIRE(func2);
@@ -268,8 +315,12 @@ SCENARIO("function_dyn")
   }
   WHEN("move-constructed")
   {
-    int called = 0;
-    auto func1 = threadable::function_dyn([&called]{ ++called; });
+    int  called = 0;
+    auto func1  = threadable::function_dyn(
+      [&called]
+      {
+        ++called;
+      });
     auto func2 = threadable::function_dyn(std::move(func1));
     REQUIRE(func2);
     THEN("it can be invoked")
@@ -284,13 +335,15 @@ SCENARIO("function_dyn")
     {
       type(int v)
       {
-        val = new int{};
+        val  = new int{};
         *val = v;
       }
+
       type(const type& that)
       {
         val = new int(*that.val);
       }
+
       ~type()
       {
         // make sure we modify the memory address
@@ -299,6 +352,7 @@ SCENARIO("function_dyn")
         delete val;
         val = nullptr;
       }
+
       int* val = nullptr;
     };
 
@@ -306,13 +360,17 @@ SCENARIO("function_dyn")
     // important to trigger the obscure case,
     // so leave as-is.
     auto func = threadable::function();
-    func.set([obj = type{5}]{
-      REQUIRE(*obj.val == 5);
-    });
+    func.set(
+      [obj = type{5}]
+      {
+        REQUIRE(*obj.val == 5);
+      });
     auto funcDyn = threadable::function_dyn(func);
-    func.set([func = funcDyn]() mutable {
-      func();
-    });
+    func.set(
+      [func = funcDyn]() mutable
+      {
+        func();
+      });
     THEN("it's invocable after source object has been destroyed")
     {
       funcDyn.reset();
@@ -321,9 +379,17 @@ SCENARIO("function_dyn")
   }
   WHEN("constructed with callable capturing function_dyn")
   {
-    int called = 0;
-    auto func1 = threadable::function_dyn([&called]{ ++called; });
-    auto func2 = threadable::function([func1]() mutable { func1(); });
+    int  called = 0;
+    auto func1  = threadable::function_dyn(
+      [&called]
+      {
+        ++called;
+      });
+    auto func2 = threadable::function(
+      [func1]() mutable
+      {
+        func1();
+      });
     THEN("it can be invoked")
     {
       func2();
@@ -339,7 +405,7 @@ SCENARIO("function_dyn")
       }
       THEN("both can be cleared")
       {
-        func2 = {};
+        func2     = {};
         func2Copy = {};
       }
     }
@@ -359,7 +425,7 @@ SCENARIO("function: set/reset")
     {
       AND_WHEN("using set()")
       {
-        func.set([]{});
+        func.set([] {});
         REQUIRE(func);
 
         AND_WHEN("function is reset")
@@ -381,7 +447,7 @@ SCENARIO("function: set/reset")
       }
       AND_WHEN("using assign operator")
       {
-        func = []{};
+        func = [] {};
         REQUIRE(func);
 
         AND_WHEN("function is reset")
@@ -397,9 +463,12 @@ SCENARIO("function: set/reset")
     WHEN("callable with argument is set")
     {
       int argReceived = 0;
-      func.set([&argReceived](int arg){
-        argReceived = arg;
-      }, 5);
+      func.set(
+        [&argReceived](int arg)
+        {
+          argReceived = arg;
+        },
+        5);
       THEN("it can be invoked")
       {
         func();
@@ -408,8 +477,9 @@ SCENARIO("function: set/reset")
     }
     WHEN("recursive callable is set")
     {
-      int val = 0;
-      auto callable = [&val](auto self) -> void {
+      int  val      = 0;
+      auto callable = [&val](auto self) -> void
+      {
         (void)val;
         static_assert(sizeof(self) == 8);
       };
@@ -419,17 +489,21 @@ SCENARIO("function: set/reset")
     WHEN("non-trivially-copyable callable is set")
     {
       thread_local int destroyed = 0;
+
       struct type
       {
-        type() = default;
+        type()            = default;
         type(const type&) = default;
-        type(type&&) = default;
+        type(type&&)      = default;
+
         ~type()
         {
           ++destroyed;
         }
-        void operator()(){}
+
+        void operator()() {}
       };
+
       static_assert(!std::is_trivially_copyable_v<type>);
       static_assert(std::copy_constructible<type>);
       static_assert(std::is_destructible_v<type>);
@@ -448,7 +522,7 @@ SCENARIO("function: set/reset")
       AND_WHEN("a new callable is set")
       {
         destroyed = 0;
-        func.set([]{});
+        func.set([] {});
 
         THEN("destructor is invoked on previous callable")
         {
@@ -472,6 +546,7 @@ SCENARIO("function: execution")
         {
           ++val;
         }
+
         int val = 0;
       } callable;
 
@@ -488,12 +563,14 @@ SCENARIO("function: execution")
     WHEN("callable with reference member")
     {
       int val = 0;
+
       struct callable_type
       {
         void operator()()
         {
           ++val;
         }
+
         int& val;
       } callable{val};
 
@@ -510,19 +587,22 @@ SCENARIO("function: execution")
     WHEN("callable is const")
     {
       int nonconstVal = 0;
-      int constVal = 0;
+      int constVal    = 0;
+
       struct callable_type
       {
         void operator()()
         {
           ++nonconstVal;
         }
+
         void operator()() const
         {
           ++constVal;
         }
-      int& nonconstVal;
-      int& constVal;
+
+        int& nonconstVal;
+        int& constVal;
       } const callable{nonconstVal, constVal};
 
       func.set(callable);
@@ -539,7 +619,11 @@ SCENARIO("function: execution")
     int called = 0;
     WHEN("lambda")
     {
-      func.set([&called]{ ++called; });
+      func.set(
+        [&called]
+        {
+          ++called;
+        });
       THEN("it's invoked")
       {
         func();
@@ -578,15 +662,17 @@ SCENARIO("function: execution")
 SCENARIO("function: Conversion")
 {
   static constexpr auto func_size = 64;
-  auto func = threadable::function<func_size>{};
+  auto                  func      = threadable::function<func_size>{};
   GIVEN("callable is set")
   {
     thread_local int called = 0;
+
     struct type
     {
-      type() = default;
+      type()            = default;
       type(const type&) = default;
-      type(type&&) = default;
+      type(type&&)      = default;
+
       void operator()()
       {
         ++called;
@@ -633,17 +719,20 @@ SCENARIO("function_dyn")
 {
   GIVEN("callable is set")
   {
-    thread_local int called = 0;
+    thread_local int called    = 0;
     thread_local int destroyed = 0;
+
     struct type
     {
-      type() = default;
+      type()            = default;
       type(const type&) = default;
-      type(type&&) = default;
+      type(type&&)      = default;
+
       ~type()
       {
         ++destroyed;
       }
+
       void operator()()
       {
         ++called;

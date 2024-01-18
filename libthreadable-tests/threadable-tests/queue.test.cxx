@@ -1,5 +1,5 @@
-#include <threadable/queue.hxx>
 #include <threadable-tests/doctest_include.hxx>
+#include <threadable/queue.hxx>
 
 #include <algorithm>
 #include <atomic>
@@ -7,7 +7,7 @@
 #if __cpp_lib_execution
   #include <execution>
 #endif
-#if __has_include (<pstld/pstld.h>)
+#if __has_include(<pstld/pstld.h>)
   #include <pstld/pstld.h>
 #endif
 #include <functional>
@@ -23,33 +23,37 @@ SCENARIO("queue: push & claim")
 
     WHEN("push 1")
     {
-      thread_local int called = 0;
+      thread_local int called    = 0;
       thread_local int destroyed = 0;
+
       struct type
       {
-        type() = default;
+        type()            = default;
         type(const type&) = default;
-        type(type&&) = default;
+        type(type&&)      = default;
+
         ~type()
         {
           ++destroyed;
         }
+
         void operator()()
         {
           ++called;
         }
       };
+
       queue.push(type{});
       REQUIRE(queue.size() == 1);
 
-      called = 0;
+      called    = 0;
       destroyed = 0;
       AND_WHEN("queue is destroyed")
       {
         {
           auto queue2 = threadable::queue<2>{};
           queue2.push(type{});
-          called = 0;
+          called    = 0;
           destroyed = 0;
         }
         THEN("it resets & destroys pushed jobs")
@@ -61,7 +65,7 @@ SCENARIO("queue: push & claim")
       AND_WHEN("iterate without executing jobs")
       {
         auto nrJobs = 0;
-        for(auto& job : queue)
+        for (auto& job : queue)
         {
           REQUIRE(job);
           ++nrJobs;
@@ -74,7 +78,7 @@ SCENARIO("queue: push & claim")
           AND_WHEN("iterate without executing jobs")
           {
             nrJobs = 0;
-            for(auto& job : queue)
+            for (auto& job : queue)
             {
               (void)job;
               ++nrJobs;
@@ -89,7 +93,7 @@ SCENARIO("queue: push & claim")
       AND_WHEN("iterate and execute jobs")
       {
         auto nrJobs = 0;
-        for(auto& job : queue)
+        for (auto& job : queue)
         {
           job();
           ++nrJobs;
@@ -101,7 +105,7 @@ SCENARIO("queue: push & claim")
           AND_WHEN("iterate")
           {
             nrJobs = 0;
-            for(auto& job : queue)
+            for (auto& job : queue)
             {
               (void)job;
               ++nrJobs;
@@ -116,11 +120,14 @@ SCENARIO("queue: push & claim")
     }
     WHEN("push callable with 'job_token&' as first parameter")
     {
-      bool wasCancelled = false;
+      bool                  wasCancelled = false;
       threadable::job_token token;
-      token = queue.push([&wasCancelled](threadable::job_token& token){
-        wasCancelled = token.cancelled();
-      }, std::ref(token));
+      token = queue.push(
+        [&wasCancelled](threadable::job_token& token)
+        {
+          wasCancelled = token.cancelled();
+        },
+        std::ref(token));
       REQUIRE(queue.size() == 1);
       THEN("the token will be passed when the job is executed")
       {
@@ -133,13 +140,17 @@ SCENARIO("queue: push & claim")
     {
       THEN("a callable that is larger than buffer size can be pushed")
       {
-        int called = 0;
+        int                   called  = 0;
         static constexpr auto too_big = threadable::details::job_buffer_size * 2;
         // both capturing big data & passing as argument
-        queue.push([&called, bigData = std::make_shared<std::uint8_t[]>(too_big)](int arg, const std::shared_ptr<std::uint8_t[]>& data){
-          called = arg;
-          (void)data;
-        }, 16, std::make_shared<std::uint8_t[]>(too_big));
+        queue.push(
+          [&called, bigData = std::make_shared<std::uint8_t[]>(
+                      too_big)](int arg, const std::shared_ptr<std::uint8_t[]>& data)
+          {
+            called = arg;
+            (void)data;
+          },
+          16, std::make_shared<std::uint8_t[]>(too_big));
 
         REQUIRE(queue.size() == 1);
         REQUIRE(queue.execute() == 1);
@@ -150,23 +161,25 @@ SCENARIO("queue: push & claim")
   GIVEN("queue with capacity 128")
   {
     static constexpr auto queue_capacity = 128;
-    auto queue = threadable::queue<queue_capacity>{};
+    auto                  queue          = threadable::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
     std::vector<std::size_t> jobs_executed;
     WHEN("push all")
     {
-      for(std::size_t i = 0; i < queue.max_size(); ++i)
+      for (std::size_t i = 0; i < queue.max_size(); ++i)
       {
-        queue.push([i, &jobs_executed]{
-          jobs_executed.push_back(i);
-        });
+        queue.push(
+          [i, &jobs_executed]
+          {
+            jobs_executed.push_back(i);
+          });
       }
       REQUIRE(queue.size() == queue.max_size());
 
       AND_WHEN("iterate and execute jobs")
       {
-        for(auto& job : queue)
+        for (auto& job : queue)
         {
           REQUIRE(job);
           job();
@@ -174,7 +187,7 @@ SCENARIO("queue: push & claim")
         THEN("128 jobs were executed")
         {
           REQUIRE(jobs_executed.size() == queue.max_size());
-          for(std::size_t i = 0; i < queue.max_size(); ++i)
+          for (std::size_t i = 0; i < queue.max_size(); ++i)
           {
             REQUIRE(jobs_executed[i] == i);
           }
@@ -187,7 +200,7 @@ SCENARIO("queue: push & claim")
           AND_WHEN("iterate without executing jobs")
           {
             jobs_executed.clear();
-            for(auto& job : queue)
+            for (auto& job : queue)
             {
               (void)job;
               jobs_executed.push_back(0);
@@ -205,19 +218,20 @@ SCENARIO("queue: push & claim")
 
 SCENARIO("queue: execution order")
 {
-
   GIVEN("a sequential queue")
   {
     auto queue = threadable::queue<32>(threadable::execution_policy::sequential);
 
     auto order = std::vector<std::size_t>{};
-    auto m = std::mutex{};
-    for(std::size_t i = 0; i < queue.max_size(); ++i)
+    auto m     = std::mutex{};
+    for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
-      queue.push([&order, &m, i]{
-        auto _ = std::scoped_lock{m};
-        order.push_back(i);
-      });
+      queue.push(
+        [&order, &m, i]
+        {
+          auto _ = std::scoped_lock{m};
+          order.push_back(i);
+        });
     }
     WHEN("queue & execute jobs")
     {
@@ -225,7 +239,7 @@ SCENARIO("queue: execution order")
       THEN("jobs are executed FIFO")
       {
         REQUIRE(order.size() == queue.max_size());
-        for(std::size_t i = 0; i < queue.max_size(); ++i)
+        for (std::size_t i = 0; i < queue.max_size(); ++i)
         {
           REQUIRE(order[i] == i);
         }
@@ -239,10 +253,13 @@ SCENARIO("queue: completion token")
   auto queue = threadable::queue{};
   GIVEN("push job & store token")
   {
-    auto token = queue.push([]{});
+    auto token = queue.push([] {});
     THEN("token is NOT done when job is discarded")
     {
-      for(auto& job : queue){ (void)job; /* discard job */}
+      for (auto& job : queue)
+      {
+        (void)job; /* discard job */
+      }
       REQUIRE_FALSE(token.done());
     }
     THEN("token is NOT done before job is invoked")
@@ -275,16 +292,20 @@ SCENARIO("queue: stress-test")
   GIVEN("produce & consume enough for wrap-around")
   {
     static constexpr std::size_t queue_capacity = 1 << 8;
-    std::atomic_size_t notify_counter = 0;
-    auto queue = threadable::queue<queue_capacity>();
-    queue.set_notify([&notify_counter](...){ ++notify_counter; });
+    std::atomic_size_t           notify_counter = 0;
+    auto                         queue          = threadable::queue<queue_capacity>();
+    queue.set_notify(
+      [&notify_counter](...)
+      {
+        ++notify_counter;
+      });
 
-    static constexpr auto nr_of_jobs = queue.max_size() * 2;
-    std::size_t jobs_executed = 0;
+    static constexpr auto nr_of_jobs    = queue.max_size() * 2;
+    std::size_t           jobs_executed = 0;
 
-    for(std::size_t i = 0; i < nr_of_jobs; ++i)
+    for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
-      auto token = queue.push([]{});
+      auto token = queue.push([] {});
       REQUIRE(queue.execute() == 1);
       ++jobs_executed;
       REQUIRE(token.done());
@@ -298,28 +319,40 @@ SCENARIO("queue: stress-test")
   GIVEN("1 producer & 1 consumer")
   {
     static constexpr std::size_t queue_capacity = 1 << 8;
-    std::atomic_size_t notify_counter = 0;
-    auto queue = threadable::queue<queue_capacity>();
-    queue.set_notify([&notify_counter](...){ ++notify_counter; });
+    std::atomic_size_t           notify_counter = 0;
+    auto                         queue          = threadable::queue<queue_capacity>();
+    queue.set_notify(
+      [&notify_counter](...)
+      {
+        ++notify_counter;
+      });
 
     THEN("there are no race conditions")
     {
       std::atomic_size_t jobs_executed{0};
       {
         // start producer
-        std::thread producer([&queue, &jobs_executed]{
-          for(std::size_t i = 0; i < queue.max_size(); ++i)
+        std::thread producer(
+          [&queue, &jobs_executed]
           {
-            queue.push([&jobs_executed]{ ++jobs_executed; });
-          }
-        });
+            for (std::size_t i = 0; i < queue.max_size(); ++i)
+            {
+              queue.push(
+                [&jobs_executed]
+                {
+                  ++jobs_executed;
+                });
+            }
+          });
         // start consumer
-        std::thread consumer([&queue, &producer]{
-          while(producer.joinable() || !queue.empty())
+        std::thread consumer(
+          [&queue, &producer]
           {
-            queue.execute();
-          }
-        });
+            while (producer.joinable() || !queue.empty())
+            {
+              queue.execute();
+            }
+          });
 
         producer.join();
         consumer.join();
@@ -331,10 +364,14 @@ SCENARIO("queue: stress-test")
   GIVEN("8 producers & 1 consumer")
   {
     static constexpr std::size_t queue_capacity = 1 << 20;
-    static constexpr std::size_t nr_producers = 5;
-    std::atomic_size_t notify_counter = 0;
-    auto queue = threadable::queue<queue_capacity>();
-    queue.set_notify([&notify_counter](...){ ++notify_counter; });
+    static constexpr std::size_t nr_producers   = 5;
+    std::atomic_size_t           notify_counter = 0;
+    auto                         queue          = threadable::queue<queue_capacity>();
+    queue.set_notify(
+      [&notify_counter](...)
+      {
+        ++notify_counter;
+      });
 
     THEN("there are no race conditions")
     {
@@ -342,25 +379,39 @@ SCENARIO("queue: stress-test")
       {
         // start producers
         std::vector<std::thread> producers;
-        for(std::size_t i = 0; i < nr_producers; ++i)
+        for (std::size_t i = 0; i < nr_producers; ++i)
         {
-          producers.emplace_back(std::thread([&queue, &jobs_executed]{
-            static_assert(decltype(queue)::max_size() % nr_producers == 0, "All jobs must be pushed");
-            for(std::size_t i = 0; i < queue.max_size()/nr_producers; ++i)
+          producers.emplace_back(std::thread(
+            [&queue, &jobs_executed]
             {
-              queue.push([&jobs_executed]{ ++jobs_executed; });
-            }
-          }));
+              static_assert(decltype(queue)::max_size() % nr_producers == 0,
+                            "All jobs must be pushed");
+              for (std::size_t i = 0; i < queue.max_size() / nr_producers; ++i)
+              {
+                queue.push(
+                  [&jobs_executed]
+                  {
+                    ++jobs_executed;
+                  });
+              }
+            }));
         }
         // start consumer
-        std::thread consumer([&queue, &producers]{
-          while(std::any_of(std::begin(producers), std::end(producers), [](const auto& p){ return p.joinable(); }) || !queue.empty())
+        std::thread consumer(
+          [&queue, &producers]
           {
-            queue.execute();
-          }
-        });
+            while (std::any_of(std::begin(producers), std::end(producers),
+                               [](const auto& p)
+                               {
+                                 return p.joinable();
+                               }) ||
+                   !queue.empty())
+            {
+              queue.execute();
+            }
+          });
 
-        for(auto& producer : producers)
+        for (auto& producer : producers)
         {
           producer.join();
         }
@@ -377,23 +428,27 @@ SCENARIO("queue: standard algorithms")
   GIVEN("queue with capacity of 1M")
   {
     static constexpr auto queue_capacity = 1 << 20;
-    auto queue = threadable::queue<queue_capacity>{};
+    auto                  queue          = threadable::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
     std::atomic_size_t jobs_executed;
     WHEN("push all")
     {
-      while(queue.size() < queue.max_size())
+      while (queue.size() < queue.max_size())
       {
-        queue.push([&jobs_executed]{
-          ++jobs_executed;
-        });
+        queue.push(
+          [&jobs_executed]
+          {
+            ++jobs_executed;
+          });
       }
       AND_WHEN("std::for_each")
       {
-        std::for_each(queue.begin(), queue.end(), [](auto& job) {
-          job();
-        });
+        std::for_each(queue.begin(), queue.end(),
+                      [](auto& job)
+                      {
+                        job();
+                      });
         THEN("all jobs executed")
         {
           REQUIRE(jobs_executed.load() == queue.max_size());
@@ -403,9 +458,11 @@ SCENARIO("queue: standard algorithms")
 #ifdef __cpp_lib_execution
       AND_WHEN("std::for_each (parallel)")
       {
-        std::for_each(std::execution::par, queue.begin(), queue.end(), [](auto& job) {
-          job();
-        });
+        std::for_each(std::execution::par, queue.begin(), queue.end(),
+                      [](auto& job)
+                      {
+                        job();
+                      });
         THEN("all jobs executed")
         {
           REQUIRE(jobs_executed.load() == queue.max_size());

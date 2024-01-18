@@ -1,0 +1,158 @@
+---
+
+# DisableFormat: true
+
+Language: Cpp
+Standard: Latest
+BasedOnStyle: LLVM
+
+AccessModifierOffset: -2
+AlignAfterOpenBracket: Align
+AlignArrayOfStructures: Left
+AlignConsecutiveAssignments: true
+AlignConsecutiveBitFields: false
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+AlignConsecutiveShortCaseStatements:
+  Enabled: true
+  AcrossEmptyLines: true
+  AcrossComments: true
+  AlignCaseColons: true
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: true
+  AcrossComments: true
+AlignEscapedNewlines: Left
+AlignOperands: true
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 2
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: true
+#AllowShortCompoundRequirementOnASingleLine: true # available since clang 18
+# AllowShortClassOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakAfterReturnType: None
+AlwaysBreakTemplateDeclarations: true
+BinPackArguments: true
+BinPackParameters: true
+BreakAfterAttributes: Always
+BreakBeforeBinaryOperators: None
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: true
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterObjCDeclaration: true
+  AfterStruct: true
+  AfterUnion: true
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeLambdaBody: true
+  BeforeWhile: true
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+BreakBeforeTernaryOperators: false
+BreakConstructorInitializers: BeforeComma
+BreakInheritanceList: AfterColon
+ColumnLimit: 100
+ConstructorInitializerIndentWidth: 2
+ContinuationIndentWidth: 2
+Cpp11BracedListStyle: true
+EmptyLineBeforeAccessModifier: Always
+EmptyLineAfterAccessModifier: Never
+FixNamespaceComments: false
+LambdaBodyIndentation: Signature
+LineEnding: LF
+# These only work for quoted includes, for some unknown reason
+# IncludeIsMainRegex: '$?'
+# IncludeIsMainSourceRegex: '?$'
+IncludeBlocks: Regroup
+IncludeCategories:
+  # NOTE: Hyphen `-` must be last in bracket to work
+
+  # Lowercase-prefixed headers in <> with one /
+  - Regex: '^<[a-z0-9_-]+[\/][a-z0-9_\.-]+hxx>$'
+    Priority: 1
+    SortPriority: 1
+    CaseSensitive: true
+  # Lowercase-prefixed headers in <> with two or more /
+  - Regex: '^<[a-z0-9_-]+[\/][a-z0-9_-]+[\/][a-z0-9_\/\.-]+hxx>$'
+    Priority: 1
+    SortPriority: 2
+    CaseSensitive: true
+  # Standard headers in <>
+  - Regex: '^<[a-z0-9_-]+>$'
+    Priority: 3
+    CaseSensitive: true
+  # Anycase-prefixed headers in <> with one or more /
+  - Regex: '^<[a-z0-9_-]+[\/][a-z0-9_\.-]+>$'
+    Priority: 4
+    SortPriority: 4
+    CaseSensitive: false
+  # Anycase-prefixed headers in <> with two or more /
+  - Regex: '^<[a-z0-9_-]+[\/][a-z0-9_-]+[\/][a-z0-9_\/\.-]+>$'
+    Priority: 4
+    SortPriority: 5
+    CaseSensitive: false
+  # Rest
+  - Regex: '^.*$'
+    Priority: 6
+    CaseSensitive: false
+IndentCaseLabels: true
+IndentPPDirectives: BeforeHash
+IndentWidth: 2
+InsertBraces: true
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+NamespaceIndentation: All
+PackConstructorInitializers: Never
+PenaltyBreakAssignment: 2
+PenaltyBreakBeforeFirstCallParameter: 100
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyBreakTemplateDeclaration: 10
+PenaltyExcessCharacter: 10000
+PenaltyReturnTypeOnItsOwnLine: 1000000000
+PointerAlignment: Left
+PPIndentWidth: -1
+QualifierAlignment: Custom
+QualifierOrder:
+  - friend
+  - inline
+  - static
+  - constexpr
+  - const
+  - volatile
+  - type
+ReferenceAlignment: Pointer
+ReflowComments: true
+SeparateDefinitionBlocks: Always
+SortIncludes: CaseSensitive
+SortUsingDeclarations: true
+SpaceAfterTemplateKeyword: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 1
+SpacesInAngles: false
+TabWidth: 2
+UseTab: Never
+
+...

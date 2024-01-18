@@ -13,25 +13,27 @@ namespace threadable
   {
     struct job_base
     {
-      atomic_bitfield states;
+      atomic_bitfield               states;
       std::atomic<atomic_bitfield*> child_states = nullptr;
     };
-    static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base) - sizeof(function<0>);
+
+    static constexpr auto job_buffer_size =
+      cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
 
-  enum job_state: std::uint8_t
+  enum job_state : std::uint8_t
   {
     active = 0
   };
 
-  struct alignas(details::cache_line_size) job final: details::job_base
+  struct alignas(details::cache_line_size) job final : details::job_base
   {
     using function_t = function<details::job_buffer_size>;
 
-    job() = default;
-    job(job&&) = delete;
-    job(const job&) = delete;
-    auto operator=(job&&) = delete;
+    job()                      = default;
+    job(job&&)                 = delete;
+    job(const job&)            = delete;
+    auto operator=(job&&)      = delete;
     auto operator=(const job&) = delete;
 
     template<typename callable_t, typename... arg_ts>
@@ -82,8 +84,7 @@ namespace threadable
       assert(func_);
       assert(!done());
 
-      if(auto flag = child_states.load(std::memory_order_acquire))
-      [[unlikely]]
+      if (auto flag = child_states.load(std::memory_order_acquire)) [[unlikely]]
       {
         details::wait<job_state::active, true>(*flag, std::memory_order_acquire);
       }
@@ -104,20 +105,20 @@ namespace threadable
   private:
     function_t func_;
   };
+
   static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
 
   struct job_token
   {
     job_token() = default;
 
-    job_token(details::atomic_bitfield& states):
-      states(&states)
-    {
-    }
+    job_token(details::atomic_bitfield& states)
+      : states(&states)
+    {}
 
-    job_token(job_token&& rhs) noexcept:
-      cancelled_(rhs.cancelled_.load(std::memory_order_acquire)),
-      states(rhs.states.load(std::memory_order_acquire))
+    job_token(job_token&& rhs) noexcept
+      : cancelled_(rhs.cancelled_.load(std::memory_order_acquire))
+      , states(rhs.states.load(std::memory_order_acquire))
     {
       rhs.states.store(nullptr, std::memory_order_release);
     }
@@ -156,17 +157,15 @@ namespace threadable
       // take into account that the underlying states-ptr might have
       // been re-assigned while waiting (eg. for a recursive/self-queueing job)
       auto statesPtr = states.load(std::memory_order_acquire);
-      while(statesPtr)
+      while (statesPtr)
       {
         details::wait<job_state::active, true>(*statesPtr, std::memory_order_acquire);
 
-        if(auto next = states.load(std::memory_order_acquire); next == statesPtr)
-        [[likely]]
+        if (auto next = states.load(std::memory_order_acquire); next == statesPtr) [[likely]]
         {
           break;
         }
-        else
-        [[unlikely]]
+        else [[unlikely]]
         {
           statesPtr = next;
         }
@@ -174,10 +173,11 @@ namespace threadable
     }
 
   private:
-    details::atomic_flag cancelled_ = false;
-    std::atomic<details::atomic_bitfield*> states = nullptr;
+    details::atomic_flag                   cancelled_ = false;
+    std::atomic<details::atomic_bitfield*> states     = nullptr;
     inline static details::atomic_bitfield null_flag;
   };
+
   static_assert(std::move_constructible<job_token>);
   static_assert(std::is_move_assignable_v<job_token>);
 
@@ -191,14 +191,16 @@ namespace threadable
 
     bool done() const noexcept
     {
-      return std::ranges::all_of(tokens_, [](const auto& token){
-        return token.done();
-      });
+      return std::ranges::all_of(tokens_,
+                                 [](const auto& token)
+                                 {
+                                   return token.done();
+                                 });
     }
 
     void cancel() noexcept
     {
-      for(auto& token : tokens_)
+      for (auto& token : tokens_)
       {
         token.cancel();
       }
@@ -206,7 +208,7 @@ namespace threadable
 
     void wait() const noexcept
     {
-      for(const auto& token : tokens_)
+      for (const auto& token : tokens_)
       {
         token.wait();
       }
