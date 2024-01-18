@@ -11,7 +11,7 @@ namespace bench = ankerl::nanobench;
 
 namespace
 {
-  int val = 1;
+  auto val = 1; // NOLINT
 }
 
 TEST_CASE("function")

@@ -14,8 +14,8 @@ namespace bench = ankerl::nanobench;
 
 namespace
 {
-  constexpr std::size_t jobs_per_iteration = 1 << 12;
-  int                   val                = 1; // NOLINT
+  constexpr auto jobs_per_iteration = 1 << 20;
+  auto           val                = 1; // NOLINT
 }
 
 TEST_CASE("pool: job execution")

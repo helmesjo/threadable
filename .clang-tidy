@@ -1,6 +1,7 @@
 Checks: >
   bugprone-*,
   cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-do-while,
   -cppcoreguidelines-non-private-member-variables-in-classes,
   modernize-*,
   readability-identifier-naming,
