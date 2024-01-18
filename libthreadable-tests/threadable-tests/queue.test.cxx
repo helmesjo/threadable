@@ -164,15 +164,15 @@ SCENARIO("queue: push & claim")
     auto                  queue          = threadable::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
-    std::vector<std::size_t> jobs_executed;
+    std::vector<std::size_t> jobsExecuted;
     WHEN("push all")
     {
       for (std::size_t i = 0; i < queue.max_size(); ++i)
       {
         queue.push(
-          [i, &jobs_executed]
+          [i, &jobsExecuted]
           {
-            jobs_executed.push_back(i);
+            jobsExecuted.push_back(i);
           });
       }
       REQUIRE(queue.size() == queue.max_size());
@@ -186,10 +186,10 @@ SCENARIO("queue: push & claim")
         }
         THEN("128 jobs were executed")
         {
-          REQUIRE(jobs_executed.size() == queue.max_size());
+          REQUIRE(jobsExecuted.size() == queue.max_size());
           for (std::size_t i = 0; i < queue.max_size(); ++i)
           {
-            REQUIRE(jobs_executed[i] == i);
+            REQUIRE(jobsExecuted[i] == i);
           }
 
           AND_THEN("queue is empty")
@@ -199,15 +199,15 @@ SCENARIO("queue: push & claim")
 
           AND_WHEN("iterate without executing jobs")
           {
-            jobs_executed.clear();
+            jobsExecuted.clear();
             for (auto& job : queue)
             {
               (void)job;
-              jobs_executed.push_back(0);
+              jobsExecuted.push_back(0);
             }
             THEN("0 jobs were executed")
             {
-              REQUIRE(jobs_executed.size() == 0);
+              REQUIRE(jobsExecuted.size() == 0);
             }
           }
         }
@@ -292,55 +292,55 @@ SCENARIO("queue: stress-test")
   GIVEN("produce & consume enough for wrap-around")
   {
     static constexpr std::size_t queue_capacity = 1 << 8;
-    std::atomic_size_t           notify_counter = 0;
+    std::atomic_size_t           notifyCounter  = 0;
     auto                         queue          = threadable::queue<queue_capacity>();
     queue.set_notify(
-      [&notify_counter](...)
+      [&notifyCounter](...)
       {
-        ++notify_counter;
+        ++notifyCounter;
       });
 
-    static constexpr auto nr_of_jobs    = queue.max_size() * 2;
-    std::size_t           jobs_executed = 0;
+    static constexpr auto nr_of_jobs   = queue.max_size() * 2;
+    std::size_t           jobsExecuted = 0;
 
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       auto token = queue.push([] {});
       REQUIRE(queue.execute() == 1);
-      ++jobs_executed;
+      ++jobsExecuted;
       REQUIRE(token.done());
     }
 
     THEN("all jobs are executed")
     {
-      REQUIRE(jobs_executed == nr_of_jobs);
+      REQUIRE(jobsExecuted == nr_of_jobs);
     }
   }
   GIVEN("1 producer & 1 consumer")
   {
     static constexpr std::size_t queue_capacity = 1 << 8;
-    std::atomic_size_t           notify_counter = 0;
+    std::atomic_size_t           notifyCounter  = 0;
     auto                         queue          = threadable::queue<queue_capacity>();
     queue.set_notify(
-      [&notify_counter](...)
+      [&notifyCounter](...)
       {
-        ++notify_counter;
+        ++notifyCounter;
       });
 
     THEN("there are no race conditions")
     {
-      std::atomic_size_t jobs_executed{0};
+      std::atomic_size_t jobsExecuted{0};
       {
         // start producer
         std::thread producer(
-          [&queue, &jobs_executed]
+          [&queue, &jobsExecuted]
           {
             for (std::size_t i = 0; i < queue.max_size(); ++i)
             {
               queue.push(
-                [&jobs_executed]
+                [&jobsExecuted]
                 {
-                  ++jobs_executed;
+                  ++jobsExecuted;
                 });
             }
           });
@@ -357,44 +357,44 @@ SCENARIO("queue: stress-test")
         producer.join();
         consumer.join();
       }
-      REQUIRE(jobs_executed.load() == queue.max_size());
-      REQUIRE(notify_counter.load() == queue.max_size());
+      REQUIRE(jobsExecuted.load() == queue.max_size());
+      REQUIRE(notifyCounter.load() == queue.max_size());
     }
   }
   GIVEN("8 producers & 1 consumer")
   {
     static constexpr std::size_t queue_capacity = 1 << 20;
     static constexpr std::size_t nr_producers   = 5;
-    std::atomic_size_t           notify_counter = 0;
+    std::atomic_size_t           notifyCounter  = 0;
     auto                         queue          = threadable::queue<queue_capacity>();
     queue.set_notify(
-      [&notify_counter](...)
+      [&notifyCounter](...)
       {
-        ++notify_counter;
+        ++notifyCounter;
       });
 
     THEN("there are no race conditions")
     {
-      std::atomic_size_t jobs_executed{0};
+      std::atomic_size_t jobsExecuted{0};
       {
         // start producers
         std::vector<std::thread> producers;
         for (std::size_t i = 0; i < nr_producers; ++i)
         {
-          producers.emplace_back(std::thread(
-            [&queue, &jobs_executed]
+          producers.emplace_back(
+            [&queue, &jobsExecuted]
             {
               static_assert(decltype(queue)::max_size() % nr_producers == 0,
                             "All jobs must be pushed");
               for (std::size_t i = 0; i < queue.max_size() / nr_producers; ++i)
               {
                 queue.push(
-                  [&jobs_executed]
+                  [&jobsExecuted]
                   {
-                    ++jobs_executed;
+                    ++jobsExecuted;
                   });
               }
-            }));
+            });
         }
         // start consumer
         std::thread consumer(
@@ -417,8 +417,8 @@ SCENARIO("queue: stress-test")
         }
         consumer.join();
       }
-      REQUIRE(jobs_executed.load() == queue.max_size());
-      REQUIRE(notify_counter.load() == queue.max_size());
+      REQUIRE(jobsExecuted.load() == queue.max_size());
+      REQUIRE(notifyCounter.load() == queue.max_size());
     }
   }
 }
@@ -431,15 +431,15 @@ SCENARIO("queue: standard algorithms")
     auto                  queue          = threadable::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
-    std::atomic_size_t jobs_executed;
+    std::atomic_size_t jobsExecuted;
     WHEN("push all")
     {
       while (queue.size() < queue.max_size())
       {
         queue.push(
-          [&jobs_executed]
+          [&jobsExecuted]
           {
-            ++jobs_executed;
+            ++jobsExecuted;
           });
       }
       AND_WHEN("std::for_each")
@@ -451,7 +451,7 @@ SCENARIO("queue: standard algorithms")
                       });
         THEN("all jobs executed")
         {
-          REQUIRE(jobs_executed.load() == queue.max_size());
+          REQUIRE(jobsExecuted.load() == queue.max_size());
           REQUIRE(queue.size() == 0);
         }
       }
@@ -465,7 +465,7 @@ SCENARIO("queue: standard algorithms")
                       });
         THEN("all jobs executed")
         {
-          REQUIRE(jobs_executed.load() == queue.max_size());
+          REQUIRE(jobsExecuted.load() == queue.max_size());
           REQUIRE(queue.size() == 0);
         }
       }

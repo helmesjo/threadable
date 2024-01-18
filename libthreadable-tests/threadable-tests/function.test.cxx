@@ -96,8 +96,8 @@ SCENARIO("function_buffer")
   }
   WHEN("constructed with copy")
   {
-    thread_local int const_copied = 0;
-    thread_local int move_copied  = 0;
+    thread_local int constCopied = 0;
+    thread_local int moveCopied  = 0;
 
     struct type
     {
@@ -105,12 +105,12 @@ SCENARIO("function_buffer")
 
       type(const type&)
       {
-        ++const_copied;
+        ++constCopied;
       }
 
-      type(type&&)
+      type(type&&) noexcept
       {
-        ++move_copied;
+        ++moveCopied;
       }
 
       void operator()() {}
@@ -118,19 +118,19 @@ SCENARIO("function_buffer")
 
     static_assert(std::copy_constructible<type>);
 
-    auto buffer  = threadable::function_buffer(type{});
-    const_copied = 0;
-    move_copied  = 0;
+    auto buffer = threadable::function_buffer(type{});
+    constCopied = 0;
+    moveCopied  = 0;
     THEN("the callables' copy-ctor is invoked")
     {
       auto copy = buffer;
-      REQUIRE(const_copied == 1);
+      REQUIRE(constCopied == 1);
       REQUIRE_NOTHROW(threadable::details::invoke(buffer.data()));
     }
     THEN("the callables' move-ctor is invoked")
     {
       auto copy = std::move(buffer);
-      REQUIRE(move_copied == 1);
+      REQUIRE(moveCopied == 1);
       REQUIRE_NOTHROW(threadable::details::invoke(buffer.data()));
     }
   }
@@ -334,15 +334,14 @@ SCENARIO("function_dyn")
     struct type
     {
       type(int v)
+        : val(new int{})
       {
-        val  = new int{};
         *val = v;
       }
 
       type(const type& that)
-      {
-        val = new int(*that.val);
-      }
+        : val(new int(*that.val))
+      {}
 
       ~type()
       {
@@ -593,16 +592,16 @@ SCENARIO("function: execution")
       {
         void operator()()
         {
-          ++nonconstVal;
+          ++nonconst_val;
         }
 
         void operator()() const
         {
-          ++constVal;
+          ++const_val;
         }
 
-        int& nonconstVal;
-        int& constVal;
+        int& nonconst_val;
+        int& const_val;
       } const callable{nonconstVal, constVal};
 
       func.set(callable);
@@ -611,8 +610,8 @@ SCENARIO("function: execution")
         func();
         THEN("const overload is invoked")
         {
-          REQUIRE(callable.nonconstVal == 0);
-          REQUIRE(callable.constVal == 1);
+          REQUIRE(callable.nonconst_val == 0);
+          REQUIRE(callable.const_val == 1);
         }
       }
     }

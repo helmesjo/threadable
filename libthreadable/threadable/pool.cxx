@@ -2,9 +2,9 @@
 
 namespace threadable::details
 {
-  pool_t& pool()
+  auto pool() -> pool_t&
   {
-    static pool_t pool_ = {};
-    return pool_;
+    static pool_t pool = {};
+    return pool;
   }
 }
