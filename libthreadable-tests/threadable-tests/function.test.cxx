@@ -18,9 +18,9 @@ SCENARIO("function: type traits")
   using namespace threadable;
 
   static_assert(is_function_v<function<>>);
-  static_assert(is_function_v<const function<>&>);
+  static_assert(is_function_v<function<> const&>);
   static_assert(!is_function_v<function_dyn>);
-  static_assert(!is_function_dyn_v<const function<>&>);
+  static_assert(!is_function_dyn_v<function<> const&>);
   static_assert(is_function_dyn_v<function_dyn>);
   static_assert(!is_function_v<decltype([] {})>);
   static_assert(required_buffer_size_v<function<56>> == 56);
@@ -103,7 +103,7 @@ SCENARIO("function_buffer")
     {
       type() = default;
 
-      type(const type&)
+      type(type const&)
       {
         ++constCopied;
       }
@@ -339,7 +339,7 @@ SCENARIO("function_dyn")
         *val = v;
       }
 
-      type(const type& that)
+      type(type const& that)
         : val(new int(*that.val))
       {}
 
@@ -492,7 +492,7 @@ SCENARIO("function: set/reset")
       struct type
       {
         type()            = default;
-        type(const type&) = default;
+        type(type const&) = default;
         type(type&&)      = default;
 
         ~type()
@@ -669,7 +669,7 @@ SCENARIO("function: Conversion")
     struct type
     {
       type()            = default;
-      type(const type&) = default;
+      type(type const&) = default;
       type(type&&)      = default;
 
       void operator()()
@@ -724,7 +724,7 @@ SCENARIO("function_dyn")
     struct type
     {
       type()            = default;
-      type(const type&) = default;
+      type(type const&) = default;
       type(type&&)      = default;
 
       ~type()

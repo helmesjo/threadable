@@ -29,7 +29,7 @@ SCENARIO("queue: push & claim")
       struct type
       {
         type()            = default;
-        type(const type&) = default;
+        type(type const&) = default;
         type(type&&)      = default;
 
         ~type()
@@ -145,7 +145,7 @@ SCENARIO("queue: push & claim")
         // both capturing big data & passing as argument
         queue.push(
           [&called, bigData = std::make_shared<std::uint8_t[]>(
-                      too_big)](int arg, const std::shared_ptr<std::uint8_t[]>& data)
+                      too_big)](int arg, std::shared_ptr<std::uint8_t[]> const& data)
           {
             called = arg;
             (void)data;

@@ -114,7 +114,7 @@ namespace threadable
     bool remove(queue_t&& q) noexcept
     {
       auto itr = std::find_if(std::begin(queues_), std::end(queues_),
-                              [&q](const auto& q2)
+                              [&q](auto const& q2)
                               {
                                 return q2.get() == &q;
                               });
@@ -139,7 +139,7 @@ namespace threadable
     std::size_t size() const noexcept
     {
       return std::ranges::count(queues_,
-                                [](const auto& queue)
+                                [](auto const& queue)
                                 {
                                   return queue->size();
                                 });
@@ -175,7 +175,7 @@ namespace threadable
   template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t,
            typename... arg_ts>
   inline auto push(callable_t&& func, arg_ts&&... args) noexcept
-    requires requires(details::queue_t q) { q.push(FWD(func), FWD(args)...); }
+    requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
   {
     static auto& queue = details::pool().create(policy);
     return queue.push(FWD(func), FWD(args)...);

@@ -34,7 +34,6 @@ AllowAllParametersOfDeclarationOnNextLine: false
 AllowShortBlocksOnASingleLine: Empty
 AllowShortCaseLabelsOnASingleLine: true
 #AllowShortCompoundRequirementOnASingleLine: true # available since clang 18
-# AllowShortClassOnASingleLine: Empty
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLambdasOnASingleLine: Empty
@@ -46,6 +45,7 @@ BinPackArguments: true
 BinPackParameters: true
 BreakAfterAttributes: Always
 BreakBeforeBinaryOperators: None
+BreakBeforeConceptDeclarations: Always
 BreakBeforeBraces: Custom
 BraceWrapping:
   AfterCaseLabel: true
@@ -115,6 +115,7 @@ IncludeCategories:
     CaseSensitive: false
 IndentCaseLabels: true
 IndentPPDirectives: BeforeHash
+IndentRequiresClause: True
 IndentWidth: 2
 InsertBraces: true
 KeepEmptyLinesAtTheStartOfBlocks: false
@@ -137,17 +138,23 @@ QualifierOrder:
   - inline
   - static
   - constexpr
+  - type
   - const
   - volatile
-  - type
 ReferenceAlignment: Pointer
 ReflowComments: true
+RequiresClausePosition: OwnLine
+RequiresExpressionIndentation: Keyword
 SeparateDefinitionBlocks: Always
 SortIncludes: CaseSensitive
 SortUsingDeclarations: true
 SpaceAfterTemplateKeyword: false
 SpaceBeforeAssignmentOperators: true
-SpaceBeforeParens: ControlStatements
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterControlStatements: True
+  AfterRequiresInClause: True
+  AfterRequiresInExpression: True
 SpaceBeforeRangeBasedForLoopColon: true
 SpaceInEmptyParentheses: false
 SpacesBeforeTrailingComments: 1

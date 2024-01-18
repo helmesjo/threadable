@@ -89,28 +89,28 @@ namespace threadable
         return jobs_[mask(index_ + rhs)];
       }
 
-      friend inline reference operator*(const iterator& it)
+      friend inline reference operator*(iterator const& it)
       {
         return it.jobs_[mask(it.index_)];
       }
 
-      inline auto operator<=>(const iterator& rhs) const noexcept
+      inline auto operator<=>(iterator const& rhs) const noexcept
       {
         return index_ <=> rhs.index_;
       }
 
-      inline bool operator==(const iterator& other) const noexcept
+      inline bool operator==(iterator const& other) const noexcept
       {
         return index_ == other.index_;
       }
 
       // todo: Add tests and make sure iterator works for wrap-around
-      inline difference_type operator+(const iterator& rhs) const noexcept
+      inline difference_type operator+(iterator const& rhs) const noexcept
       {
         return index_ + rhs.index_;
       }
 
-      inline difference_type operator-(const iterator& rhs) const noexcept
+      inline difference_type operator-(iterator const& rhs) const noexcept
       {
         return index_ - rhs.index_;
       }
@@ -125,12 +125,12 @@ namespace threadable
         return iterator(jobs_, index_ - rhs);
       }
 
-      friend inline iterator operator+(difference_type lhs, const iterator& rhs)
+      friend inline iterator operator+(difference_type lhs, iterator const& rhs)
       {
         return iterator(rhs.jobs_, lhs + rhs.index_);
       }
 
-      friend inline iterator operator-(difference_type lhs, const iterator& rhs)
+      friend inline iterator operator-(difference_type lhs, iterator const& rhs)
       {
         return iterator(rhs.jobs_, lhs - rhs.index_);
       }
@@ -187,9 +187,9 @@ namespace threadable
     }
 
     queue(queue&&)               = delete;
-    queue(const queue&)          = delete;
+    queue(queue const&)          = delete;
     auto operator=(queue&&)      = delete;
-    auto operator=(const queue&) = delete;
+    auto operator=(queue const&) = delete;
 
     template<std::invocable<queue&> callable_t>
     // requires std::copyable<std::remove_reference_t<callable_t>>
@@ -209,7 +209,7 @@ namespace threadable
     void push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept
     {
       // 1. Acquire a slot
-      const index_t slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
+      index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
       assert(mask(slot + 1) != mask(tail_));
 
       auto& job = jobs_[mask(slot)];
@@ -314,9 +314,9 @@ namespace threadable
 
     std::size_t execute()
     {
-      const auto b   = begin();
-      const auto e   = end();
-      const auto dis = e - b;
+      auto const b   = begin();
+      auto const e   = end();
+      auto const dis = e - b;
       if (dis > 0) [[likely]]
       {
         assert(b != e);
@@ -355,7 +355,7 @@ namespace threadable
 
     std::size_t size() const noexcept
     {
-      const auto head = head_.load(std::memory_order_relaxed);
+      auto const head = head_.load(std::memory_order_relaxed);
       return mask(head - tail_);
     }
 

@@ -11,16 +11,16 @@ namespace threadable::details
   using atomic_bitfield = std::atomic<std::uint8_t>;
 
   template<std::uint8_t bit>
-  inline bool test(const atomic_bitfield& field,
+  inline bool test(atomic_bitfield const& field,
                    std::memory_order      order = std::memory_order_seq_cst)
-    requires(bit < sizeof(bit) * 8)
+    requires (bit < sizeof(bit) * 8)
   {
     static constexpr std::uint8_t mask = 1 << bit;
     return mask & field.load(order);
   }
 
   template<std::uint8_t bit, bool value>
-    requires(bit < sizeof(bit) * 8)
+    requires (bit < sizeof(bit) * 8)
   inline bool test_and_set(atomic_bitfield&  field,
                            std::memory_order order = std::memory_order_seq_cst)
   {
@@ -38,7 +38,7 @@ namespace threadable::details
   }
 
   template<std::uint8_t bit, bool value>
-    requires(bit < sizeof(bit) * 8)
+    requires (bit < sizeof(bit) * 8)
   inline void set(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
   {
     (void)test_and_set<bit, value>(field, order);
@@ -50,8 +50,8 @@ namespace threadable::details
   }
 
   template<std::uint8_t bit, bool old>
-    requires(bit < sizeof(bit) * 8)
-  inline void wait(const atomic_bitfield& field,
+    requires (bit < sizeof(bit) * 8)
+  inline void wait(atomic_bitfield const& field,
                    std::memory_order      order = std::memory_order_seq_cst)
   {
     static constexpr std::uint8_t mask    = 1 << bit;
@@ -105,7 +105,7 @@ namespace threadable::details
 {
   using atomic_flag = std::atomic_bool;
 
-  inline auto atomic_test(const atomic_flag& atomic,
+  inline auto atomic_test(atomic_flag const& atomic,
                           std::memory_order  order = std::memory_order_seq_cst) noexcept
   {
     return atomic.load(order);
@@ -142,7 +142,7 @@ namespace threadable::details
 namespace threadable::details
 {
   template<typename atomic_t, typename obj_t>
-  inline void atomic_wait(const atomic_t& atomic, obj_t old,
+  inline void atomic_wait(atomic_t const& atomic, obj_t old,
                           std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     atomic.wait(FWD(old), order);

@@ -32,9 +32,9 @@ namespace threadable
 
     job()                      = default;
     job(job&&)                 = delete;
-    job(const job&)            = delete;
+    job(job const&)            = delete;
     auto operator=(job&&)      = delete;
-    auto operator=(const job&) = delete;
+    auto operator=(job const&) = delete;
 
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
@@ -192,7 +192,7 @@ namespace threadable
     bool done() const noexcept
     {
       return std::ranges::all_of(tokens_,
-                                 [](const auto& token)
+                                 [](auto const& token)
                                  {
                                    return token.done();
                                  });
@@ -208,7 +208,7 @@ namespace threadable
 
     void wait() const noexcept
     {
-      for (const auto& token : tokens_)
+      for (auto const& token : tokens_)
       {
         token.wait();
       }

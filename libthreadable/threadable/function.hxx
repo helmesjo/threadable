@@ -58,7 +58,7 @@ namespace threadable
         {
           static_assert(std::copy_constructible<callable_value_t>);
           std::construct_at(static_cast<callable_value_t*>(self),
-                            *static_cast<const callable_t*>(that));
+                            *static_cast<callable_t const*>(that));
         }
         break;
         case method::move_ctor:
@@ -90,7 +90,7 @@ namespace threadable
       return static_cast<std::uint8_t&>(*buf);
     }
 
-    inline constexpr std::uint8_t size(const std::uint8_t* buf) noexcept
+    inline constexpr std::uint8_t size(std::uint8_t const* buf) noexcept
     {
       return static_cast<std::uint8_t>(*buf);
     }
@@ -214,7 +214,7 @@ namespace threadable
     using buffer_t = std::array<std::uint8_t, buffer_size>;
 
     template<std::size_t size>
-    void set(const function<size>& func) noexcept
+    void set(function<size> const& func) noexcept
     {
       (*this) = func.buffer();
     }
@@ -248,8 +248,8 @@ namespace threadable
     template<std::invocable callable_t,
              typename callable_value_t = std::remove_reference_t<callable_t>>
     void set(callable_t&& callable) noexcept
-      requires(!is_function_v<callable_t>) &&
-              (required_buffer_size_v<decltype(callable)> > buffer_size)
+      requires (!is_function_v<callable_t>) &&
+               (required_buffer_size_v<decltype(callable)> > buffer_size)
     {
       set(
         [func = std::make_shared<std::remove_reference_t<decltype(callable)>>(FWD(callable))]
@@ -261,8 +261,8 @@ namespace threadable
     template<std::invocable callable_t,
              typename callable_value_t = std::remove_reference_t<callable_t>>
     void set(callable_t&& callable) noexcept
-      requires(!is_function_v<callable_t>) &&
-              (required_buffer_size_v<decltype(callable)> <= buffer_size)
+      requires (!is_function_v<callable_t>) &&
+               (required_buffer_size_v<decltype(callable)> <= buffer_size)
     {
       static constexpr std::uint8_t total_size = required_buffer_size_v<decltype(callable)>;
 
@@ -288,7 +288,7 @@ namespace threadable
       details::size(buffer_.data(), 0);
     }
 
-    function_buffer(const function_buffer& buffer)
+    function_buffer(function_buffer const& buffer)
     {
       *this = buffer;
     }
@@ -299,7 +299,7 @@ namespace threadable
     }
 
     template<std::size_t size>
-    explicit function_buffer(const function<size>& func) noexcept
+    explicit function_buffer(function<size> const& func) noexcept
       : function_buffer<size>(func.buffer())
     {}
 
@@ -315,7 +315,7 @@ namespace threadable
       reset();
     }
 
-    auto& operator=(const function_buffer& buffer)
+    auto& operator=(function_buffer const& buffer)
     {
       std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
       details::invoke_special_func(data(), details::method::copy_ctor,
@@ -350,7 +350,7 @@ namespace threadable
       return buffer_.data();
     }
 
-    inline const std::uint8_t* data() const noexcept
+    inline std::uint8_t const* data() const noexcept
     {
       return buffer_.data();
     }
@@ -365,7 +365,7 @@ namespace threadable
 
   struct function_dyn
   {
-    function_dyn(const function_dyn& that)
+    function_dyn(function_dyn const& that)
     {
       copy_buffer({that.buffer_, that.size()});
     }
@@ -377,18 +377,18 @@ namespace threadable
     }
 
     template<std::size_t buffer_size>
-    explicit function_dyn(const function_buffer<buffer_size>& buffer)
+    explicit function_dyn(function_buffer<buffer_size> const& buffer)
     {
       copy_buffer({buffer.data(), buffer.size()});
     }
 
     template<std::size_t size>
-    function_dyn(const function<size>& func) noexcept
+    function_dyn(function<size> const& func) noexcept
       : function_dyn(func.buffer())
     {}
 
     function_dyn(std::invocable auto&& callable) noexcept
-      requires(!is_function_v<decltype(callable)> && !is_function_dyn_v<decltype(callable)>)
+      requires (!is_function_v<decltype(callable)> && !is_function_dyn_v<decltype(callable)>)
       : function_dyn(function_buffer(FWD(callable)))
     {}
 
@@ -423,7 +423,7 @@ namespace threadable
     }
 
   private:
-    void copy_buffer(std::span<const std::uint8_t> src)
+    void copy_buffer(std::span<std::uint8_t const> src)
     {
       assert(src.size() > details::function_buffer_meta_size);
       buffer_ = new std::uint8_t[src.size()];
@@ -438,9 +438,9 @@ namespace threadable
   // NOTE: On GCC (13.2.0) doing this inline with 'requires requires'
   //       triggers ICE (Internal Compiler Error).
   template<typename buffer_t, typename callable_t, typename... arg_ts>
-  concept settable = requires(buffer_t&& buf, callable_t&& callable, arg_ts&&... args) {
-    buf.set(FWD(callable), FWD(args)...);
-  };
+  concept settable = requires (buffer_t&& buf, callable_t&& callable, arg_ts&&... args) {
+                       buf.set(FWD(callable), FWD(args)...);
+                     };
 
   template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
   struct function
@@ -452,7 +452,7 @@ namespace threadable
   public:
     function() = default;
 
-    function(const function& func)
+    function(function const& func)
       : buffer_(func.buffer_)
     {}
 
@@ -462,13 +462,13 @@ namespace threadable
 
     template<typename... arg_ts>
     explicit function(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
-      requires(!is_function_v<decltype(callable)>) &&
-              settable<buffer_t, decltype(callable), decltype(args)...>
+      requires (!is_function_v<decltype(callable)>) &&
+               settable<buffer_t, decltype(callable), decltype(args)...>
     {
       set(FWD(callable), FWD(args)...);
     }
 
-    function& operator=(const function& func) noexcept
+    function& operator=(function const& func) noexcept
     {
       buffer_ = func.buffer_;
       return *this;
@@ -481,7 +481,7 @@ namespace threadable
     }
 
     function& operator=(std::invocable auto&& func) noexcept
-      requires(!std::same_as<function, std::remove_cvref_t<decltype(func)>>)
+      requires (!std::same_as<function, std::remove_cvref_t<decltype(func)>>)
     {
       set(FWD(func));
       return *this;
@@ -503,7 +503,7 @@ namespace threadable
       return buffer_.size() != 0;
     }
 
-    const buffer_t& buffer() const noexcept
+    buffer_t const& buffer() const noexcept
     {
       return buffer_;
     }
