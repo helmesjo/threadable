@@ -17,14 +17,6 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-#if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely)
-#define LIKELY [[likely]]
-#define UNLIKELY [[unlikely]]
-#else
-#define LIKELY
-#define UNLIKELY
-#endif
-
 namespace threadable
 {
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
@@ -45,13 +37,13 @@ namespace threadable
           // 2. Wait for jobs to executed.
           // 3. Execute all jobs.
           if(details::atomic_test(quit_, std::memory_order_acquire))
-          UNLIKELY
+          [[unlikely]]
           {
             // thread exit.
             break;
           }
           else
-          LIKELY
+          [[likely]]
           {
             details::atomic_wait(ready_, false, std::memory_order_acquire);
           }
@@ -188,5 +180,3 @@ namespace threadable
 }
 
 #undef FWD
-#undef LIKELY
-#undef UNLIKELY

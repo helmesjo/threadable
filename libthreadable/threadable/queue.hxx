@@ -17,14 +17,6 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-#if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely)
-#define LIKELY [[likely]]
-#define UNLIKELY [[unlikely]]
-#else
-#define LIKELY
-#define UNLIKELY
-#endif
-
 namespace threadable
 {
 
@@ -167,10 +159,10 @@ public:
       assert(job);
 
       if(policy_ == execution_policy::sequential)
-      UNLIKELY
+      [[unlikely]]
       {
         if(auto& childJob = jobs_[mask(slot-1)])
-        LIKELY
+        [[likely]]
         {
           job.wait_for(childJob.states);
         }
@@ -204,14 +196,14 @@ public:
     {
 #ifdef __cpp_lib_execution
         if(policy_ == execution_policy::parallel)
-        LIKELY
+        [[likely]]
         {
           std::for_each(std::execution::par, begin(), end(), [](job& job){
             job.reset();
           });
         }
         else
-        UNLIKELY
+        [[unlikely]]
         {
           std::for_each(begin(), end(), [](job& job){
             job.reset();
@@ -237,7 +229,7 @@ public:
       if constexpr(consume)
       {
         if(auto& lastJob = jobs_[mask(head-1)])
-        LIKELY
+        [[likely]]
         {
           lastJob.set(function_dyn([this, head, func = function_dyn(lastJob.get())]() mutable {
             func();
@@ -254,19 +246,19 @@ public:
       const auto e = end();
       const auto dis = e - b;
       if(dis > 0)
-      LIKELY
+      [[likely]]
       {
         assert(b != e);
 #ifdef __cpp_lib_execution
         if(policy_ == execution_policy::parallel)
-        LIKELY
+        [[likely]]
         {
           std::for_each(std::execution::par, b, e, [](job& job){
             job();
           });
         }
         else
-        UNLIKELY
+        [[unlikely]]
         {
           std::for_each(b, e, [](job& job){
             job();
@@ -341,5 +333,3 @@ public:
 }
 
 #undef FWD
-#undef LIKELY
-#undef UNLIKELY

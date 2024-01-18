@@ -7,14 +7,6 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-#if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely)
-#define LIKELY [[likely]]
-#define UNLIKELY [[unlikely]]
-#else
-#define LIKELY
-#define UNLIKELY
-#endif
-
 namespace threadable
 {
   namespace details
@@ -91,7 +83,7 @@ namespace threadable
       assert(!done());
 
       if(auto flag = child_states.load(std::memory_order_acquire))
-      UNLIKELY
+      [[unlikely]]
       {
         details::wait<job_state::active, true>(*flag, std::memory_order_acquire);
       }
@@ -169,12 +161,12 @@ namespace threadable
         details::wait<job_state::active, true>(*statesPtr, std::memory_order_acquire);
 
         if(auto next = states.load(std::memory_order_acquire); next == statesPtr)
-        LIKELY
+        [[likely]]
         {
           break;
         }
         else
-        UNLIKELY
+        [[unlikely]]
         {
           statesPtr = next;
         }
@@ -226,5 +218,3 @@ namespace threadable
 }
 
 #undef FWD
-#undef LIKELY
-#undef UNLIKELY
