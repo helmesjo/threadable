@@ -12,7 +12,8 @@ namespace doctest
   template<typename T, auto N>
   struct StringMaker<std::array<T, N>>
   {
-    static String convert(std::array<T, N> const& in)
+    static auto
+    convert(std::array<T, N> const& in) -> String
     {
       std::ostringstream oss;
 
@@ -30,7 +31,8 @@ namespace doctest
   template<typename T>
   struct StringMaker<std::vector<T>>
   {
-    static String convert(std::vector<T> const& in)
+    static auto
+    convert(std::vector<T> const& in) -> String
     {
       std::ostringstream oss;
 

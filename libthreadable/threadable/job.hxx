@@ -39,7 +39,8 @@ namespace threadable
 
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-    auto set(callable_t&& func, arg_ts&&... args) noexcept -> decltype(auto)
+    auto
+    set(callable_t&& func, arg_ts&&... args) noexcept -> decltype(auto)
     {
       func_.set(FWD(func), FWD(args)...);
       details::set<job_state::active, true>(states, std::memory_order_release);
@@ -48,26 +49,30 @@ namespace threadable
       // details::atomic_notify_all(active);
     }
 
-    inline void wait_for(details::atomic_bitfield_t& child)
+    inline void
+    wait_for(details::atomic_bitfield_t& child)
     {
       child_states.store(&child, std::memory_order_release);
     }
 
     template<typename callable_t>
       requires std::invocable<callable_t>
-    auto operator=(callable_t&& func) noexcept -> auto&
+    auto
+    operator=(callable_t&& func) noexcept -> auto&
     {
       set(FWD(func));
       return *this;
     }
 
-    auto operator=(std::nullptr_t) noexcept -> auto&
+    auto
+    operator=(std::nullptr_t) noexcept -> auto&
     {
       reset();
       return *this;
     }
 
-    void reset() noexcept
+    void
+    reset() noexcept
     {
       func_.reset();
       child_states.store(nullptr, std::memory_order_release);
@@ -75,12 +80,14 @@ namespace threadable
       details::atomic_notify_all(states);
     }
 
-    auto done() const noexcept -> bool
+    auto
+    done() const noexcept -> bool
     {
       return !details::test<job_state::active>(states, std::memory_order_acquire);
     }
 
-    void operator()()
+    void
+    operator()()
     {
       assert(func_);
       assert(!done());
@@ -98,7 +105,8 @@ namespace threadable
       return !done();
     }
 
-    auto get() noexcept -> auto&
+    auto
+    get() noexcept -> auto&
     {
       return func_;
     }
@@ -128,7 +136,8 @@ namespace threadable
 
     auto operator=(job_token const&) -> job_token& = delete;
 
-    auto operator=(job_token&& rhs) noexcept -> auto&
+    auto
+    operator=(job_token&& rhs) noexcept -> auto&
     {
       cancelled_.store(rhs.cancelled_, std::memory_order_release);
       states_.store(rhs.states_, std::memory_order_release);
@@ -136,28 +145,33 @@ namespace threadable
       return *this;
     }
 
-    void reassign(details::atomic_bitfield_t& newStates) noexcept
+    void
+    reassign(details::atomic_bitfield_t& newStates) noexcept
     {
       states_.store(&newStates, std::memory_order_release);
     }
 
-    auto done() const noexcept -> bool
+    auto
+    done() const noexcept -> bool
     {
       auto statesPtr = states_.load(std::memory_order_acquire);
       return !statesPtr || !details::test<job_state::active>(*statesPtr, std::memory_order_acquire);
     }
 
-    void cancel() noexcept
+    void
+    cancel() noexcept
     {
       details::atomic_set(cancelled_, std::memory_order_release);
     }
 
-    auto cancelled() const noexcept -> bool
+    auto
+    cancelled() const noexcept -> bool
     {
       return details::atomic_test(cancelled_, std::memory_order_acquire);
     }
 
-    void wait() const noexcept
+    void
+    wait() const noexcept
     {
       // take into account that the underlying states-ptr might have
       // been re-assigned while waiting (eg. for a recursive/self-queueing job)
@@ -187,14 +201,16 @@ namespace threadable
 
   struct token_group
   {
-    auto operator+=(job_token&& token) noexcept -> token_group&
+    auto
+    operator+=(job_token&& token) noexcept -> token_group&
     {
       tokens_.emplace_back(std::move(token));
       return *this;
     }
 
     [[nodiscard]]
-    auto done() const noexcept -> bool
+    auto
+    done() const noexcept -> bool
     {
       return std::ranges::all_of(tokens_,
                                  [](auto const& token)
@@ -203,7 +219,8 @@ namespace threadable
                                  });
     }
 
-    void cancel() noexcept
+    void
+    cancel() noexcept
     {
       for (auto& token : tokens_)
       {
@@ -211,7 +228,8 @@ namespace threadable
       }
     }
 
-    void wait() const noexcept
+    void
+    wait() const noexcept
     {
       for (auto const& token : tokens_)
       {

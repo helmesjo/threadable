@@ -34,7 +34,8 @@ namespace threadable
 #endif
 
     template<typename callable_t>
-    inline constexpr void invoke_func(void* buffer)
+    inline constexpr void
+    invoke_func(void* buffer)
     {
       std::invoke(*static_cast<callable_t*>(buffer));
     }
@@ -47,7 +48,8 @@ namespace threadable
     };
 
     template<typename callable_t>
-    inline constexpr void invoke_special_func(void* self, method m, void* that)
+    inline constexpr void
+    invoke_special_func(void* self, method m, void* that)
     {
       using callable_value_t = std::remove_cvref_t<callable_t>;
       switch (m)
@@ -83,54 +85,63 @@ namespace threadable
     inline constexpr std::size_t  function_buffer_meta_size =
       details::header_size + (details::func_ptr_size * 2);
 
-    inline constexpr auto size(std::uint8_t* buf) noexcept -> std::uint8_t&
+    inline constexpr auto
+    size(std::uint8_t* buf) noexcept -> std::uint8_t&
     {
       return static_cast<std::uint8_t&>(*buf);
     }
 
-    inline constexpr auto size(std::uint8_t const* buf) noexcept -> std::uint8_t
+    inline constexpr auto
+    size(std::uint8_t const* buf) noexcept -> std::uint8_t
     {
       return static_cast<std::uint8_t>(*buf);
     }
 
-    inline constexpr void size(std::uint8_t* buf, std::uint8_t s) noexcept
+    inline constexpr void
+    size(std::uint8_t* buf, std::uint8_t s) noexcept
     {
       size(buf) = s;
     }
 
-    inline constexpr auto invoke_ptr(std::uint8_t* buf) noexcept -> invoke_func_t&
+    inline constexpr auto
+    invoke_ptr(std::uint8_t* buf) noexcept -> invoke_func_t&
     {
       return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size));
     }
 
-    inline constexpr void invoke_ptr(std::uint8_t* buf, invoke_func_t func) noexcept
+    inline constexpr void
+    invoke_ptr(std::uint8_t* buf, invoke_func_t func) noexcept
     {
       invoke_ptr(buf) = func;
     }
 
-    inline constexpr auto special_func_ptr(std::uint8_t* buf) noexcept -> invoke_special_func_t&
+    inline constexpr auto
+    special_func_ptr(std::uint8_t* buf) noexcept -> invoke_special_func_t&
     {
       return *static_cast<invoke_special_func_t*>(
         static_cast<void*>(buf + header_size + func_ptr_size));
     }
 
-    inline constexpr void special_func_ptr(std::uint8_t* buf, invoke_special_func_t func) noexcept
+    inline constexpr void
+    special_func_ptr(std::uint8_t* buf, invoke_special_func_t func) noexcept
     {
       special_func_ptr(buf) = func;
     }
 
-    inline constexpr auto body_ptr(std::uint8_t* buf) noexcept -> std::uint8_t*
+    inline constexpr auto
+    body_ptr(std::uint8_t* buf) noexcept -> std::uint8_t*
     {
       return buf + header_size + func_ptr_size + func_ptr_size;
     }
 
-    inline constexpr void invoke(std::uint8_t* buf) noexcept
+    inline constexpr void
+    invoke(std::uint8_t* buf) noexcept
     {
       invoke_ptr(buf)(body_ptr(buf));
     }
 
-    inline constexpr void invoke_special_func(std::uint8_t* buf, method m,
-                                              std::uint8_t* that = nullptr) noexcept
+    inline constexpr void
+    invoke_special_func(std::uint8_t* buf, method m, std::uint8_t* that = nullptr) noexcept
     {
       special_func_ptr(buf)(body_ptr(buf), m, that ? body_ptr(that) : nullptr);
     }
@@ -145,7 +156,8 @@ namespace threadable
         , args_(FWD(args)...)
       {}
 
-      auto operator()() -> decltype(auto)
+      auto
+      operator()() -> decltype(auto)
         requires std::invocable<base_t, arg_ts...>
       {
         return std::apply(
@@ -213,19 +225,22 @@ namespace threadable
     using buffer_t = std::array<std::uint8_t, buffer_size>;
 
     template<std::size_t size>
-    void set(function<size> const& func) noexcept
+    void
+    set(function<size> const& func) noexcept
     {
       (*this) = func.buffer();
     }
 
     template<std::size_t size>
-    void set(function<size>&& func) noexcept
+    void
+    set(function<size>&& func) noexcept
     {
       (*this) = std::move(std::move(func).buffer());
     }
 
     template<typename func_t, typename... arg_ts>
-    void set(func_t&& func, arg_ts&&... args) noexcept
+    void
+    set(func_t&& func, arg_ts&&... args) noexcept
       requires std::invocable<func_t&&, arg_ts&&...> && (sizeof...(args) > 0)
     {
       using func_value_t = std::remove_reference_t<decltype(func)>;
@@ -246,8 +261,9 @@ namespace threadable
 
     template<std::invocable callable_t,
              typename callable_value_t = std::remove_reference_t<callable_t>>
-    void set(callable_t&& callable) noexcept // NOLINT
-                                             // (bug in clang-tidy doesn't detect FWD incapture)
+    void
+    set(callable_t&& callable) noexcept // NOLINT
+                                        // (bug in clang-tidy doesn't detect FWD incapture)
       requires (!is_function_v<callable_t>) &&
                (required_buffer_size_v<decltype(callable)> > buffer_size)
     {
@@ -260,7 +276,8 @@ namespace threadable
 
     template<std::invocable callable_t,
              typename callable_value_t = std::remove_reference_t<callable_t>>
-    void set(callable_t&& callable) noexcept
+    void
+    set(callable_t&& callable) noexcept
       requires (!is_function_v<callable_t>) &&
                (required_buffer_size_v<decltype(callable)> <= buffer_size)
     {
@@ -315,7 +332,8 @@ namespace threadable
       reset();
     }
 
-    auto operator=(function_buffer const& buffer) -> auto&
+    auto
+    operator=(function_buffer const& buffer) -> auto&
     {
       std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
       details::invoke_special_func(data(), details::method::copy_ctor,
@@ -323,7 +341,8 @@ namespace threadable
       return *this;
     }
 
-    auto operator=(function_buffer&& buffer) noexcept -> auto&
+    auto
+    operator=(function_buffer&& buffer) noexcept -> auto&
     {
       std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
       details::invoke_special_func(data(), details::method::move_ctor, buffer.data());
@@ -331,7 +350,8 @@ namespace threadable
       return *this;
     }
 
-    inline void reset() noexcept
+    inline void
+    reset() noexcept
     {
       if (size() > 0)
       {
@@ -341,18 +361,21 @@ namespace threadable
     }
 
     [[nodiscard]]
-    inline auto size() const noexcept -> std::uint8_t
+    inline auto
+    size() const noexcept -> std::uint8_t
     {
       return details::size(data());
     }
 
-    inline auto data() noexcept -> std::uint8_t*
+    inline auto
+    data() noexcept -> std::uint8_t*
     {
       return buffer_.data();
     }
 
     [[nodiscard]]
-    inline auto data() const noexcept -> std::uint8_t const*
+    inline auto
+    data() const noexcept -> std::uint8_t const*
     {
       return buffer_.data();
     }
@@ -402,23 +425,27 @@ namespace threadable
       reset();
     }
 
-    inline void operator()()
+    inline void
+    operator()()
     {
       details::invoke(buffer_);
     }
 
-    inline operator bool() const noexcept
+    inline
+    operator bool() const noexcept
     {
       return size() != 0;
     }
 
     [[nodiscard]]
-    inline auto size() const noexcept -> std::uint8_t
+    inline auto
+    size() const noexcept -> std::uint8_t
     {
       return buffer_ ? details::size(buffer_) : 0;
     }
 
-    inline void reset() noexcept
+    inline void
+    reset() noexcept
     {
       if (buffer_)
       {
@@ -429,7 +456,8 @@ namespace threadable
     }
 
   private:
-    void copy_buffer(std::span<std::uint8_t const> src)
+    void
+    copy_buffer(std::span<std::uint8_t const> src)
     {
       assert(src.size() > details::function_buffer_meta_size);
       buffer_ = new std::uint8_t[src.size()];                              // NOLINT
@@ -483,65 +511,76 @@ namespace threadable
       reset();
     }
 
-    auto operator=(function const& func) noexcept -> function&
+    auto
+    operator=(function const& func) noexcept -> function&
     {
       buffer_ = func.buffer_;
       return *this;
     }
 
-    auto operator=(function&& func) noexcept -> function&
+    auto
+    operator=(function&& func) noexcept -> function&
     {
       buffer_ = std::move(func.buffer_);
       return *this;
     }
 
-    auto operator=(std::invocable auto&& func) noexcept -> function&
+    auto
+    operator=(std::invocable auto&& func) noexcept -> function&
       requires std::same_as<function, std::remove_cvref_t<decltype(func)>> || true
     {
       set(FWD(func));
       return *this;
     }
 
-    auto operator=(std::nullptr_t) noexcept -> auto&
+    auto
+    operator=(std::nullptr_t) noexcept -> auto&
     {
       reset();
       return *this;
     }
 
-    inline void operator()()
+    inline void
+    operator()()
     {
       details::invoke(buffer_.data());
     }
 
-    inline operator bool() const noexcept
+    inline
+    operator bool() const noexcept
     {
       return buffer_.size() != 0;
     }
 
-    auto buffer() const noexcept -> buffer_t const&
+    auto
+    buffer() const noexcept -> buffer_t const&
     {
       return buffer_;
     }
 
-    auto buffer() noexcept -> buffer_t&
+    auto
+    buffer() noexcept -> buffer_t&
     {
       return buffer_;
     }
 
     template<typename... arg_ts>
-    void set(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
+    void
+    set(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
       requires settable<buffer_t, decltype(callable), decltype(args)...>
     {
       buffer_.set(FWD(callable), FWD(args)...);
     }
 
-    inline void reset() noexcept
+    inline void
+    reset() noexcept
     {
       buffer_.reset();
     }
 
     [[nodiscard]]
-    inline auto size() const noexcept -> std::uint8_t
+    inline auto
+    size() const noexcept -> std::uint8_t
     {
       return buffer_.size();
     }

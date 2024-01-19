@@ -2,12 +2,14 @@
 
 namespace
 {
-  auto trivial_work(int& val) -> int
+  auto
+  trivial_work(int& val) -> int
   {
     return val;
   }
 
-  auto non_trivial_work(int& val) -> int
+  auto
+  non_trivial_work(int& val) -> int
   {
     int total  = val;
     int lbound = 1;
@@ -36,12 +38,14 @@ namespace
 
 namespace threadable::utils
 {
-  auto do_trivial_work(int& val) -> int
+  auto
+  do_trivial_work(int& val) -> int
   {
     return trivial_work(val);
   }
 
-  auto do_non_trivial_work(int& val) -> int
+  auto
+  do_non_trivial_work(int& val) -> int
   {
     return non_trivial_work(val);
   }

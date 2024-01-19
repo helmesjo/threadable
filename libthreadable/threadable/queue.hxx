@@ -51,7 +51,8 @@ namespace threadable
 
   public:
 #endif
-    inline static constexpr auto mask(index_t val) noexcept
+    inline static constexpr auto
+    mask(index_t val) noexcept
     {
       return val & index_mask;
     }
@@ -74,97 +75,115 @@ namespace threadable
         , index_(index)
       {}
 
-      inline auto operator*() noexcept -> reference
+      inline auto
+      operator*() noexcept -> reference
       {
         return jobs_[mask(index_)];
       }
 
-      inline auto operator->() const noexcept -> pointer
+      inline auto
+      operator->() const noexcept -> pointer
       {
         return &jobs_[mask(index_)];
       }
 
-      inline auto operator[](difference_type rhs) const noexcept -> reference
+      inline auto
+      operator[](difference_type rhs) const noexcept -> reference
       {
         return jobs_[mask(index_ + rhs)];
       }
 
-      friend inline auto operator*(iterator const& it) -> reference
+      friend inline auto
+      operator*(iterator const& it) -> reference
       {
         return it.jobs_[mask(it.index_)];
       }
 
-      inline auto operator<=>(iterator const& rhs) const noexcept
+      inline auto
+      operator<=>(iterator const& rhs) const noexcept
       {
         return index_ <=> rhs.index_;
       }
 
-      inline auto operator==(iterator const& other) const noexcept -> bool
+      inline auto
+      operator==(iterator const& other) const noexcept -> bool
       {
         return index_ == other.index_;
       }
 
       // todo: Add tests and make sure iterator works for wrap-around
-      inline auto operator+(iterator const& rhs) const noexcept -> difference_type
+      inline auto
+      operator+(iterator const& rhs) const noexcept -> difference_type
       {
         return index_ + rhs.index_;
       }
 
-      inline auto operator-(iterator const& rhs) const noexcept -> difference_type
+      inline auto
+      operator-(iterator const& rhs) const noexcept -> difference_type
       {
         return index_ - rhs.index_;
       }
 
-      inline auto operator+(difference_type rhs) const noexcept -> iterator
+      inline auto
+      operator+(difference_type rhs) const noexcept -> iterator
       {
         return iterator(jobs_, index_ + rhs);
       }
 
-      inline auto operator-(difference_type rhs) const noexcept -> iterator
+      inline auto
+      operator-(difference_type rhs) const noexcept -> iterator
       {
         return iterator(jobs_, index_ - rhs);
       }
 
-      friend inline auto operator+(difference_type lhs, iterator const& rhs) -> iterator
+      friend inline auto
+      operator+(difference_type lhs, iterator const& rhs) -> iterator
       {
         return iterator(rhs.jobs_, lhs + rhs.index_);
       }
 
-      friend inline auto operator-(difference_type lhs, iterator const& rhs) -> iterator
+      friend inline auto
+      operator-(difference_type lhs, iterator const& rhs) -> iterator
       {
         return iterator(rhs.jobs_, lhs - rhs.index_);
       }
 
-      inline auto operator+=(difference_type rhs) noexcept -> iterator&
+      inline auto
+      operator+=(difference_type rhs) noexcept -> iterator&
       {
         index_ += rhs;
         return *this;
       }
 
-      inline auto operator-=(difference_type rhs) noexcept -> iterator&
+      inline auto
+      operator-=(difference_type rhs) noexcept -> iterator&
       {
         index_ -= rhs;
         return *this;
       }
 
-      inline auto operator++() noexcept -> iterator&
+      inline auto
+      operator++() noexcept -> iterator&
       {
         ++index_;
         return *this;
       }
 
-      inline auto operator--() noexcept -> iterator&
+      inline auto
+      operator--() noexcept -> iterator&
       {
         --index_;
         return *this;
       }
 
-      inline auto operator++(int) noexcept -> iterator
+      inline auto
+      operator++(int) noexcept -> iterator
       {
         return iterator(jobs_, index_++);
       }
 
-      inline auto operator--(int) noexcept -> iterator
+      inline auto
+      operator--(int) noexcept -> iterator
       {
         return iterator(jobs_, index_--);
       }
@@ -186,20 +205,21 @@ namespace threadable
       set_notify(null_callback);
     }
 
-    ~queue() = default;
+    ~queue()                     = default;
     queue(queue&&)               = delete;
     queue(queue const&)          = delete;
     auto operator=(queue&&)      = delete;
     auto operator=(queue const&) = delete;
 
     template<std::invocable<queue&> callable_t>
-    // requires std::copyable<std::remove_reference_t<callable_t>>
-    void set_notify(callable_t&& onJobReady) noexcept
+    void
+    set_notify(callable_t&& callback) noexcept
     {
-      onJobReady_ = std::make_shared<function_t>(FWD(onJobReady), std::ref(*this));
+      onJobReady_ = std::make_shared<function_t>(FWD(callback), std::ref(*this));
     }
 
-    void set_notify(std::nullptr_t) noexcept
+    void
+    set_notify(std::nullptr_t) noexcept
     {
       set_notify(null_callback);
     }
@@ -207,7 +227,8 @@ namespace threadable
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...> ||
                std::invocable<callable_t, job_token&, arg_ts...>
-    void push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept
+    void
+    push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept
     {
       // 1. Acquire a slot
       index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
@@ -253,14 +274,16 @@ namespace threadable
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-    auto push(callable_t&& func, arg_ts&&... args) noexcept -> job_token
+    auto
+    push(callable_t&& func, arg_ts&&... args) noexcept -> job_token
     {
       job_token token;
       push(token, FWD(func), FWD(args)...);
       return token;
     }
 
-    void clear()
+    void
+    clear()
     {
 #ifdef __cpp_lib_execution
       if (policy_ == execution_policy::parallel) [[likely]]
@@ -289,13 +312,15 @@ namespace threadable
       tail_ = head_.load(std::memory_order_acquire);
     }
 
-    auto begin() noexcept
+    auto
+    begin() noexcept
     {
       return iterator(jobs_.data(), tail_);
     }
 
     template<bool consume = true>
-    auto end() noexcept
+    auto
+    end() noexcept
     {
       auto head = head_.load(std::memory_order_acquire);
       if constexpr (consume)
@@ -313,7 +338,8 @@ namespace threadable
       return iterator(nullptr, head);
     }
 
-    auto execute() -> std::size_t
+    auto
+    execute() -> std::size_t
     {
       auto const b   = begin();
       auto const e   = end();
@@ -349,29 +375,34 @@ namespace threadable
       return dis;
     }
 
-    static constexpr auto max_size() noexcept -> std::size_t
+    static constexpr auto
+    max_size() noexcept -> std::size_t
     {
       return max_nr_of_jobs - 1;
     }
 
-    auto size() const noexcept -> std::size_t
+    auto
+    size() const noexcept -> std::size_t
     {
       auto const head = head_.load(std::memory_order_relaxed);
       return mask(head - tail_);
     }
 
-    auto empty() const noexcept -> bool
+    auto
+    empty() const noexcept -> bool
     {
       return size() == 0;
     }
 
-    void shutdown() noexcept
+    void
+    shutdown() noexcept
     {
       set_notify(nullptr);
     }
 
   private:
-    void notify() noexcept
+    void
+    notify() noexcept
     {
       // aqcuire reference while notifying
       if (auto receiver = onJobReady_)

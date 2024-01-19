@@ -91,13 +91,15 @@ namespace threadable
     }
 
     [[nodiscard]]
-    auto create(execution_policy policy = execution_policy::parallel) noexcept -> queue_t&
+    auto
+    create(execution_policy policy = execution_policy::parallel) noexcept -> queue_t&
     {
       return add(std::make_unique<queue_t>(policy));
     }
 
     [[nodiscard]]
-    auto add(std::unique_ptr<queue_t> q) -> queue_t&
+    auto
+    add(std::unique_ptr<queue_t> q) -> queue_t&
     {
       queue_t* queue = nullptr;
       {
@@ -117,7 +119,8 @@ namespace threadable
       return *queue;
     }
 
-    auto remove(queue_t&& q) noexcept -> bool // NOLINT
+    auto
+    remove(queue_t&& q) noexcept -> bool // NOLINT
     {
       auto itr = std::find_if(std::begin(queues_), std::end(queues_),
                               [&q](auto const& q2)
@@ -137,12 +140,14 @@ namespace threadable
       }
     }
 
-    auto queues() const noexcept -> std::size_t
+    auto
+    queues() const noexcept -> std::size_t
     {
       return queues_.size();
     }
 
-    auto size() const noexcept -> std::size_t
+    auto
+    size() const noexcept -> std::size_t
     {
       return std::ranges::count(queues_,
                                 [](auto const& queue)
@@ -151,13 +156,15 @@ namespace threadable
                                 });
     }
 
-    static constexpr auto max_size() noexcept -> std::size_t
+    static constexpr auto
+    max_size() noexcept -> std::size_t
     {
       return max_nr_of_jobs;
     }
 
   private:
-    inline void notify()
+    inline void
+    notify()
     {
       // whenever a new job is pushed, release a thread (increment counter)
       ready_.store(true, std::memory_order_release);
@@ -180,20 +187,22 @@ namespace threadable
 
   template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t,
            typename... arg_ts>
-  inline auto push(callable_t&& func, arg_ts&&... args) noexcept
+  inline auto
+  push(callable_t&& func, arg_ts&&... args) noexcept
     requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
   {
     static auto& queue = details::pool().create(policy); // NOLINT
     return queue.push(FWD(func), FWD(args)...);
   }
 
-  inline auto create(execution_policy policy = execution_policy::parallel) noexcept
-    -> details::queue_t&
+  inline auto
+  create(execution_policy policy = execution_policy::parallel) noexcept -> details::queue_t&
   {
     return details::pool().create(policy);
   }
 
-  inline auto remove(details::queue_t&& queue) noexcept -> bool
+  inline auto
+  remove(details::queue_t&& queue) noexcept -> bool
   {
     return details::pool().remove(std::move(queue));
   }

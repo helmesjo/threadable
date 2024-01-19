@@ -6,7 +6,8 @@
 
 namespace
 {
-  void free_func(int& arg)
+  void
+  free_func(int& arg)
   {
     ++arg;
   }
@@ -46,7 +47,8 @@ SCENARIO("function_buffer")
   {
     struct type
     {
-      void func(int& called)
+      void
+      func(int& called)
       {
         ++called;
       }
@@ -116,7 +118,9 @@ SCENARIO("function_buffer")
       auto operator=(type const&) -> type& = delete;
       auto operator=(type&&) -> type&      = delete;
 
-      void operator()() {}
+      void
+      operator()()
+      {}
     };
 
     static_assert(std::copy_constructible<type>);
@@ -511,7 +515,9 @@ SCENARIO("function: set/reset")
         auto operator=(type const&) -> type& = delete;
         auto operator=(type&&) -> type&      = delete;
 
-        void operator()() {}
+        void
+        operator()()
+        {}
       };
 
       static_assert(!std::is_trivially_copyable_v<type>);
@@ -552,7 +558,8 @@ SCENARIO("function: execution")
     {
       struct callable_type
       {
-        void operator()()
+        void
+        operator()()
         {
           ++val;
         }
@@ -576,7 +583,8 @@ SCENARIO("function: execution")
 
       struct callable_type
       {
-        void operator()()
+        void
+        operator()()
         {
           ++val;
         }
@@ -601,12 +609,14 @@ SCENARIO("function: execution")
 
       struct callable_type
       {
-        void operator()()
+        void
+        operator()()
         {
           ++nonconst_val;
         }
 
-        void operator()() const
+        void
+        operator()() const
         {
           ++const_val;
         }
@@ -653,7 +663,8 @@ SCENARIO("function: execution")
     {
       struct type
       {
-        void func(int& called)
+        void
+        func(int& called)
         {
           ++called;
         }
@@ -687,7 +698,8 @@ SCENARIO("function: Conversion")
       auto operator=(type const&) -> type& = delete;
       auto operator=(type&&) -> type&      = delete;
 
-      void operator()()
+      void
+      operator()()
       {
         ++called;
       }
@@ -750,7 +762,8 @@ SCENARIO("function_dyn")
       auto operator=(type const&) -> type& = delete;
       auto operator=(type&&) -> type&      = delete;
 
-      void operator()()
+      void
+      operator()()
       {
         ++called;
       }

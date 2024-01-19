@@ -11,8 +11,8 @@ namespace threadable::details
   using atomic_bitfield_t = std::atomic<std::uint8_t>;
 
   template<std::uint8_t bit>
-  inline auto test(atomic_bitfield_t const& field,
-                   std::memory_order        order = std::memory_order_seq_cst) -> bool
+  inline auto
+  test(atomic_bitfield_t const& field, std::memory_order order = std::memory_order_seq_cst) -> bool
     requires (bit < sizeof(bit) * 8)
   {
     static constexpr std::uint8_t mask = 1 << bit;
@@ -21,8 +21,9 @@ namespace threadable::details
 
   template<std::uint8_t bit, bool value>
     requires (bit < sizeof(bit) * 8)
-  inline auto test_and_set(atomic_bitfield_t& field,
-                           std::memory_order  order = std::memory_order_seq_cst) -> bool
+  inline auto
+  test_and_set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
+    -> bool
   {
     static constexpr std::uint8_t mask = 1 << bit;
     if constexpr (value)
@@ -39,20 +40,22 @@ namespace threadable::details
 
   template<std::uint8_t bit, bool value>
     requires (bit < sizeof(bit) * 8)
-  inline void set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
+  inline void
+  set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
   {
     (void)test_and_set<bit, value>(field, order);
   }
 
-  inline void clear(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
+  inline void
+  clear(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
   {
     field.exchange(0, order);
   }
 
   template<std::uint8_t bit, bool old>
     requires (bit < sizeof(bit) * 8)
-  inline void wait(atomic_bitfield_t const& field,
-                   std::memory_order        order = std::memory_order_seq_cst)
+  inline void
+  wait(atomic_bitfield_t const& field, std::memory_order order = std::memory_order_seq_cst)
   {
     static constexpr std::uint8_t mask    = 1 << bit;
     auto                          current = field.load(order);
@@ -105,32 +108,35 @@ namespace threadable::details
 {
   using atomic_flag_t = std::atomic_bool;
 
-  inline auto atomic_test(atomic_flag_t const& atomic,
-                          std::memory_order    order = std::memory_order_seq_cst) noexcept
+  inline auto
+  atomic_test(atomic_flag_t const& atomic,
+              std::memory_order    order = std::memory_order_seq_cst) noexcept
   {
     return atomic.load(order);
   }
 
-  inline auto atomic_test_and_set(atomic_flag_t&    atomic,
-                                  std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline auto
+  atomic_test_and_set(atomic_flag_t&    atomic,
+                      std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     return atomic.exchange(true, order);
   }
 
-  inline void atomic_set(atomic_flag_t&    atomic,
-                         std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline void
+  atomic_set(atomic_flag_t& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     atomic.store(true, order);
   }
 
-  inline void atomic_clear(atomic_flag_t&    atomic,
-                           std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline void
+  atomic_clear(atomic_flag_t& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     atomic.exchange(false, order);
   }
 
-  inline auto atomic_test_and_clear(atomic_flag_t&    atomic,
-                                    std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline auto
+  atomic_test_and_clear(atomic_flag_t&    atomic,
+                        std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     bool expected = true;
     return atomic.compare_exchange_weak(expected, false, order);
@@ -142,20 +148,23 @@ namespace threadable::details
 namespace threadable::details
 {
   template<typename atomic_t, typename obj_t>
-  inline void atomic_wait(atomic_t const& atomic, obj_t old,
-                          std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline void
+  atomic_wait(atomic_t const& atomic, obj_t old,
+              std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     atomic.wait(FWD(old), order);
   }
 
   template<typename atomic_t>
-  inline void atomic_notify_one(atomic_t& atomic) noexcept
+  inline void
+  atomic_notify_one(atomic_t& atomic) noexcept
   {
     atomic.notify_one();
   }
 
   template<typename atomic_t>
-  inline void atomic_notify_all(atomic_t& atomic) noexcept
+  inline void
+  atomic_notify_all(atomic_t& atomic) noexcept
   {
     atomic.notify_all();
   }

@@ -40,7 +40,8 @@ SCENARIO("queue: push & claim")
         auto operator=(type const&) -> type& = delete;
         auto operator=(type&&) -> type&      = delete;
 
-        void operator()()
+        void
+        operator()()
         {
           ++called;
         }
@@ -143,17 +144,19 @@ SCENARIO("queue: push & claim")
     {
       THEN("a callable that is larger than buffer size can be pushed")
       {
+        // NOLINTBEGIN
         int                   called  = 0;
         static constexpr auto too_big = threadable::details::job_buffer_size * 2;
         // both capturing big data & passing as argument
         queue.push(
-          [&called, bigData = std::make_shared<std::uint8_t*>(
-                      too_big)](int arg, std::shared_ptr<std::uint8_t*> const& data)
+          [&called, bigData = std::make_shared<std::uint8_t[]>(
+                      too_big)](int arg, std::shared_ptr<std::uint8_t[]> const& data)
           {
             called = arg;
             (void)data;
           },
-          16, std::make_shared<std::uint8_t*>(too_big));
+          16, std::make_shared<std::uint8_t[]>(too_big));
+        // NOLINTEND
 
         REQUIRE(queue.size() == 1);
         REQUIRE(queue.execute() == 1);
