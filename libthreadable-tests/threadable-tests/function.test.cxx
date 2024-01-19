@@ -1,7 +1,6 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/function.hxx>
 
-#include <concepts>
 #include <memory>
 #include <type_traits>
 
@@ -83,7 +82,7 @@ SCENARIO("function_buffer")
       [&](int arg1, float&& arg2)
       {
         passedArg1 = arg1;
-        passedArg2 = arg2;
+        passedArg2 = std::move(arg2);
       },
       1, 3.4f);
 
@@ -101,7 +100,8 @@ SCENARIO("function_buffer")
 
     struct type
     {
-      type() = default;
+      type()  = default;
+      ~type() = default;
 
       type(type const&)
       {
@@ -112,6 +112,9 @@ SCENARIO("function_buffer")
       {
         ++moveCopied;
       }
+
+      auto operator=(type const&) -> type& = delete;
+      auto operator=(type&&) -> type&      = delete;
 
       void operator()() {}
     };
@@ -333,6 +336,8 @@ SCENARIO("function_dyn")
   {
     struct type
     {
+      type(type&&) = delete;
+
       type(int v)
         : val(new int{})
       {
@@ -351,6 +356,9 @@ SCENARIO("function_dyn")
         delete val;
         val = nullptr;
       }
+
+      auto operator=(type const&) -> type& = delete;
+      auto operator=(type&&) -> type&      = delete;
 
       int* val = nullptr;
     };
@@ -500,6 +508,9 @@ SCENARIO("function: set/reset")
           ++destroyed;
         }
 
+        auto operator=(type const&) -> type& = delete;
+        auto operator=(type&&) -> type&      = delete;
+
         void operator()() {}
       };
 
@@ -570,7 +581,7 @@ SCENARIO("function: execution")
           ++val;
         }
 
-        int& val;
+        int& val; // NOLINT
       } callable{val};
 
       func.set(callable);
@@ -600,8 +611,8 @@ SCENARIO("function: execution")
           ++const_val;
         }
 
-        int& nonconst_val;
-        int& const_val;
+        int& nonconst_val; // NOLINT
+        int& const_val;    // NOLINT
       } const callable{nonconstVal, constVal};
 
       func.set(callable);
@@ -671,6 +682,10 @@ SCENARIO("function: Conversion")
       type()            = default;
       type(type const&) = default;
       type(type&&)      = default;
+      ~type()           = default;
+
+      auto operator=(type const&) -> type& = delete;
+      auto operator=(type&&) -> type&      = delete;
 
       void operator()()
       {
@@ -697,7 +712,7 @@ SCENARIO("function: Conversion")
     {
       threadable::function_dyn funcDyn = func;
 
-      static_assert(sizeof(funcDyn) == sizeof(std::unique_ptr<std::uint8_t[]>));
+      static_assert(sizeof(funcDyn) == sizeof(std::unique_ptr<std::uint8_t*>));
       REQUIRE(funcDyn);
       REQUIRE(funcDyn.size() == func.size());
 
@@ -731,6 +746,9 @@ SCENARIO("function_dyn")
       {
         ++destroyed;
       }
+
+      auto operator=(type const&) -> type& = delete;
+      auto operator=(type&&) -> type&      = delete;
 
       void operator()()
       {
