@@ -159,7 +159,7 @@ namespace threadable
     }
 
     std::recursive_mutex queueMutex_;
-    alignas(details::cache_line_size) details::atomic_flag quit_;
+    alignas(details::cache_line_size) details::atomic_flag_t quit_;
     alignas(details::cache_line_size) std::atomic_bool ready_{false};
     alignas(details::cache_line_size) queues_t queues_;
     std::thread thread_;

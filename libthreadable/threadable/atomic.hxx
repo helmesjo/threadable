@@ -8,21 +8,21 @@
 
 namespace threadable::details
 {
-  using atomic_bitfield = std::atomic<std::uint8_t>;
+  using atomic_bitfield_t = std::atomic<std::uint8_t>;
 
   template<std::uint8_t bit>
-  inline bool test(atomic_bitfield const& field,
-                   std::memory_order      order = std::memory_order_seq_cst)
-    requires (bit < sizeof(bit) * 8)
+  inline auto test(atomic_bitfield_t const& field,
+                   std::memory_order        order = std::memory_order_seq_cst) -> bool
+    requires (bit < sizeof(bit) * 8) // NOLINT
   {
     static constexpr std::uint8_t mask = 1 << bit;
     return mask & field.load(order);
   }
 
   template<std::uint8_t bit, bool value>
-    requires (bit < sizeof(bit) * 8)
-  inline bool test_and_set(atomic_bitfield&  field,
-                           std::memory_order order = std::memory_order_seq_cst)
+    requires (bit < sizeof(bit) * 8) // NOLINT
+  inline auto test_and_set(atomic_bitfield_t& field,
+                           std::memory_order  order = std::memory_order_seq_cst) -> bool
   {
     static constexpr std::uint8_t mask = 1 << bit;
     if constexpr (value)
@@ -38,21 +38,21 @@ namespace threadable::details
   }
 
   template<std::uint8_t bit, bool value>
-    requires (bit < sizeof(bit) * 8)
-  inline void set(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+    requires (bit < sizeof(bit) * 8) // NOLINT
+  inline void set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
   {
     (void)test_and_set<bit, value>(field, order);
   }
 
-  inline void clear(atomic_bitfield& field, std::memory_order order = std::memory_order_seq_cst)
+  inline void clear(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
   {
     field.exchange(0, order);
   }
 
   template<std::uint8_t bit, bool old>
-    requires (bit < sizeof(bit) * 8)
-  inline void wait(atomic_bitfield const& field,
-                   std::memory_order      order = std::memory_order_seq_cst)
+    requires (bit < sizeof(bit) * 8) // NOLINT
+  inline void wait(atomic_bitfield_t const& field,
+                   std::memory_order        order = std::memory_order_seq_cst)
   {
     static constexpr std::uint8_t mask    = 1 << bit;
     auto                          current = field.load(order);
@@ -71,29 +71,29 @@ namespace threadable::details
       // it.
 namespace threadable::details
 {
-  using atomic_flag = std::atomic_flag;
+  using atomic_flag_t = std::atomic_flag;
 
-  inline auto atomic_test(const atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline auto atomic_test(const atomic_flag_t& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     return atomic.test(order);
   }
 
-  inline auto atomic_test_and_set(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline auto atomic_test_and_set(atomic_flag_t& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     return atomic.test_and_set(order);
   }
 
-  inline void atomic_set(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline void atomic_set(atomic_flag_t& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     (void)atomic_test_and_set(atomic, order);
   }
 
-  inline void atomic_clear(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline void atomic_clear(atomic_flag_t& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     atomic.clear(order);
   }
 
-  inline auto atomic_test_and_clear(atomic_flag& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
+  inline auto atomic_test_and_clear(atomic_flag_t& atomic, std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     auto wasTrue = atomic.test(order);
     atomic.clear(order);
@@ -103,33 +103,33 @@ namespace threadable::details
 #else
 namespace threadable::details
 {
-  using atomic_flag = std::atomic_bool;
+  using atomic_flag_t = std::atomic_bool;
 
-  inline auto atomic_test(atomic_flag const& atomic,
-                          std::memory_order  order = std::memory_order_seq_cst) noexcept
+  inline auto atomic_test(atomic_flag_t const& atomic,
+                          std::memory_order    order = std::memory_order_seq_cst) noexcept
   {
     return atomic.load(order);
   }
 
-  inline auto atomic_test_and_set(atomic_flag&      atomic,
+  inline auto atomic_test_and_set(atomic_flag_t&    atomic,
                                   std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     return atomic.exchange(true, order);
   }
 
-  inline void atomic_set(atomic_flag&      atomic,
+  inline void atomic_set(atomic_flag_t&    atomic,
                          std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     atomic.store(true, order);
   }
 
-  inline void atomic_clear(atomic_flag&      atomic,
+  inline void atomic_clear(atomic_flag_t&    atomic,
                            std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     atomic.exchange(false, order);
   }
 
-  inline auto atomic_test_and_clear(atomic_flag&      atomic,
+  inline auto atomic_test_and_clear(atomic_flag_t&    atomic,
                                     std::memory_order order = std::memory_order_seq_cst) noexcept
   {
     bool expected = true;

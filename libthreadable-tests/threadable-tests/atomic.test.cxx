@@ -9,7 +9,7 @@ SCENARIO("atomic_bitfield")
 {
   GIVEN("a bitfield set to 0")
   {
-    threadable::details::atomic_bitfield field{0};
+    threadable::details::atomic_bitfield_t field{0};
     WHEN("test_and_set bit 6 to true")
     {
       THEN("new value is assigned and old is returned")
@@ -22,7 +22,7 @@ SCENARIO("atomic_bitfield")
   }
   GIVEN("a bitfield set to all 1")
   {
-    threadable::details::atomic_bitfield field{static_cast<std::uint8_t>(-1)};
+    threadable::details::atomic_bitfield_t field{static_cast<std::uint8_t>(-1)};
     WHEN("test_and_set bit 3 to false")
     {
       THEN("new value is assigned and old is returned")
