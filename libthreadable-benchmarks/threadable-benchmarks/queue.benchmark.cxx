@@ -20,7 +20,7 @@ namespace bench = ankerl::nanobench;
 namespace
 {
   constexpr auto jobs_per_iteration = 1 << 20;
-  auto           val                = 1;
+  auto           val                = 1; //NOLINT
 }
 
 TEST_CASE("queue: push")
