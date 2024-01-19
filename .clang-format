@@ -147,7 +147,7 @@ RequiresClausePosition: OwnLine
 RequiresExpressionIndentation: Keyword
 SeparateDefinitionBlocks: Always
 SortIncludes: CaseSensitive
-SortUsingDeclarations: true
+SortUsingDeclarations: Lexicographic
 SpaceAfterTemplateKeyword: false
 SpaceBeforeAssignmentOperators: true
 SpaceBeforeParens: Custom
