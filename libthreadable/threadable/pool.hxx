@@ -60,14 +60,14 @@ namespace threadable
             ready_.store(false, std::memory_order_relaxed);
 #ifdef __cpp_lib_execution
             std::for_each(std::execution::par, begin, end,
-                          [this](const auto& q)
+                          [](const auto& q)
                           {
                             while (q->execute() > 0)
                               ;
                           });
 #else
             std::for_each(begin, end,
-                          [this](const auto& q)
+                          [](const auto& q)
                           {
                             while (q->execute() > 0)
                               ;
