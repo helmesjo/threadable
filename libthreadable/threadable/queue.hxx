@@ -187,7 +187,6 @@ namespace threadable
     }
 
     ~queue() = default;
-
     queue(queue&&)               = delete;
     queue(queue const&)          = delete;
     auto operator=(queue&&)      = delete;

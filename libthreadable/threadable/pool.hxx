@@ -77,6 +77,12 @@ namespace threadable
         });
     }
 
+    pool(pool const&) = delete;
+    pool(pool&&)      = delete;
+
+    auto operator=(pool const&) -> pool& = delete;
+    auto operator=(pool&&) -> pool&      = delete;
+
     ~pool()
     {
       details::atomic_set(quit_, std::memory_order_release);
@@ -85,13 +91,13 @@ namespace threadable
     }
 
     [[nodiscard]]
-    queue_t& create(execution_policy policy = execution_policy::parallel) noexcept
+    auto create(execution_policy policy = execution_policy::parallel) noexcept -> queue_t&
     {
       return add(std::make_unique<queue_t>(policy));
     }
 
     [[nodiscard]]
-    queue_t& add(std::unique_ptr<queue_t> q)
+    auto add(std::unique_ptr<queue_t> q) -> queue_t&
     {
       queue_t* queue = nullptr;
       {
@@ -111,7 +117,7 @@ namespace threadable
       return *queue;
     }
 
-    bool remove(queue_t&& q) noexcept
+    auto remove(queue_t&& q) noexcept -> bool // NOLINT
     {
       auto itr = std::find_if(std::begin(queues_), std::end(queues_),
                               [&q](auto const& q2)
@@ -131,12 +137,12 @@ namespace threadable
       }
     }
 
-    std::size_t queues() const noexcept
+    auto queues() const noexcept -> std::size_t
     {
       return queues_.size();
     }
 
-    std::size_t size() const noexcept
+    auto size() const noexcept -> std::size_t
     {
       return std::ranges::count(queues_,
                                 [](auto const& queue)
@@ -145,7 +151,7 @@ namespace threadable
                                 });
     }
 
-    static constexpr std::size_t max_size() noexcept
+    static constexpr auto max_size() noexcept -> std::size_t
     {
       return max_nr_of_jobs;
     }
@@ -167,8 +173,8 @@ namespace threadable
 
   namespace details
   {
-    using pool_t = threadable::pool<(1 << 16)>;
-    extern pool_t& pool();
+    using pool_t = threadable::pool<details::default_max_nr_of_jobs>;
+    extern auto pool() -> pool_t&;
     using queue_t = pool_t::queue_t;
   }
 
@@ -177,16 +183,17 @@ namespace threadable
   inline auto push(callable_t&& func, arg_ts&&... args) noexcept
     requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
   {
-    static auto& queue = details::pool().create(policy);
+    static auto& queue = details::pool().create(policy); // NOLINT
     return queue.push(FWD(func), FWD(args)...);
   }
 
-  inline details::queue_t& create(execution_policy policy = execution_policy::parallel) noexcept
+  inline auto create(execution_policy policy = execution_policy::parallel) noexcept
+    -> details::queue_t&
   {
     return details::pool().create(policy);
   }
 
-  inline bool remove(details::queue_t&& queue) noexcept
+  inline auto remove(details::queue_t&& queue) noexcept -> bool
   {
     return details::pool().remove(std::move(queue));
   }
