@@ -3,6 +3,7 @@ Checks: >
   cppcoreguidelines-*,
   -cppcoreguidelines-avoid-do-while,
   -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   modernize-*,
   readability-identifier-naming,
   readability-redundant-member-init,
