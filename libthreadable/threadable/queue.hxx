@@ -74,22 +74,22 @@ namespace threadable
         , index_(index)
       {}
 
-      inline reference operator*() noexcept
+      inline auto operator*() noexcept -> reference
       {
         return jobs_[mask(index_)];
       }
 
-      inline pointer operator->() const noexcept
+      inline auto operator->() const noexcept -> pointer
       {
         return &jobs_[mask(index_)];
       }
 
-      inline reference operator[](difference_type rhs) const noexcept
+      inline auto operator[](difference_type rhs) const noexcept -> reference
       {
         return jobs_[mask(index_ + rhs)];
       }
 
-      friend inline reference operator*(iterator const& it)
+      friend inline auto operator*(iterator const& it) -> reference
       {
         return it.jobs_[mask(it.index_)];
       }
@@ -99,72 +99,72 @@ namespace threadable
         return index_ <=> rhs.index_;
       }
 
-      inline bool operator==(iterator const& other) const noexcept
+      inline auto operator==(iterator const& other) const noexcept -> bool
       {
         return index_ == other.index_;
       }
 
       // todo: Add tests and make sure iterator works for wrap-around
-      inline difference_type operator+(iterator const& rhs) const noexcept
+      inline auto operator+(iterator const& rhs) const noexcept -> difference_type
       {
         return index_ + rhs.index_;
       }
 
-      inline difference_type operator-(iterator const& rhs) const noexcept
+      inline auto operator-(iterator const& rhs) const noexcept -> difference_type
       {
         return index_ - rhs.index_;
       }
 
-      inline iterator operator+(difference_type rhs) const noexcept
+      inline auto operator+(difference_type rhs) const noexcept -> iterator
       {
         return iterator(jobs_, index_ + rhs);
       }
 
-      inline iterator operator-(difference_type rhs) const noexcept
+      inline auto operator-(difference_type rhs) const noexcept -> iterator
       {
         return iterator(jobs_, index_ - rhs);
       }
 
-      friend inline iterator operator+(difference_type lhs, iterator const& rhs)
+      friend inline auto operator+(difference_type lhs, iterator const& rhs) -> iterator
       {
         return iterator(rhs.jobs_, lhs + rhs.index_);
       }
 
-      friend inline iterator operator-(difference_type lhs, iterator const& rhs)
+      friend inline auto operator-(difference_type lhs, iterator const& rhs) -> iterator
       {
         return iterator(rhs.jobs_, lhs - rhs.index_);
       }
 
-      inline iterator& operator+=(difference_type rhs) noexcept
+      inline auto operator+=(difference_type rhs) noexcept -> iterator&
       {
         index_ += rhs;
         return *this;
       }
 
-      inline iterator& operator-=(difference_type rhs) noexcept
+      inline auto operator-=(difference_type rhs) noexcept -> iterator&
       {
         index_ -= rhs;
         return *this;
       }
 
-      inline iterator& operator++() noexcept
+      inline auto operator++() noexcept -> iterator&
       {
         ++index_;
         return *this;
       }
 
-      inline iterator& operator--() noexcept
+      inline auto operator--() noexcept -> iterator&
       {
         --index_;
         return *this;
       }
 
-      inline iterator operator++(int) noexcept
+      inline auto operator++(int) noexcept -> iterator
       {
         return iterator(jobs_, index_++);
       }
 
-      inline iterator operator--(int) noexcept
+      inline auto operator--(int) noexcept -> iterator
       {
         return iterator(jobs_, index_--);
       }
@@ -186,6 +186,8 @@ namespace threadable
       set_notify(null_callback);
     }
 
+    ~queue() = default;
+
     queue(queue&&)               = delete;
     queue(queue const&)          = delete;
     auto operator=(queue&&)      = delete;
@@ -195,7 +197,7 @@ namespace threadable
     // requires std::copyable<std::remove_reference_t<callable_t>>
     void set_notify(callable_t&& onJobReady) noexcept
     {
-      on_job_ready = std::make_shared<function_t>(FWD(onJobReady), std::ref(*this));
+      onJobReady_ = std::make_shared<function_t>(FWD(onJobReady), std::ref(*this));
     }
 
     void set_notify(std::nullptr_t) noexcept
@@ -240,7 +242,7 @@ namespace threadable
       std::atomic_thread_fence(std::memory_order_release);
 
       // 3. Commit slot
-      index_t expected;
+      index_t expected = 0;
       do
       {
         expected = slot;
@@ -252,7 +254,7 @@ namespace threadable
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
-    job_token push(callable_t&& func, arg_ts&&... args) noexcept
+    auto push(callable_t&& func, arg_ts&&... args) noexcept -> job_token
     {
       job_token token;
       push(token, FWD(func), FWD(args)...);
@@ -312,7 +314,7 @@ namespace threadable
       return iterator(nullptr, head);
     }
 
-    std::size_t execute()
+    auto execute() -> std::size_t
     {
       auto const b   = begin();
       auto const e   = end();
@@ -348,18 +350,18 @@ namespace threadable
       return dis;
     }
 
-    static constexpr std::size_t max_size() noexcept
+    static constexpr auto max_size() noexcept -> std::size_t
     {
       return max_nr_of_jobs - 1;
     }
 
-    std::size_t size() const noexcept
+    auto size() const noexcept -> std::size_t
     {
       auto const head = head_.load(std::memory_order_relaxed);
       return mask(head - tail_);
     }
 
-    bool empty() const noexcept
+    auto empty() const noexcept -> bool
     {
       return size() == 0;
     }
@@ -373,7 +375,7 @@ namespace threadable
     void notify() noexcept
     {
       // aqcuire reference while notifying
-      if (auto receiver = on_job_ready)
+      if (auto receiver = onJobReady_)
       {
         (*receiver)();
       }
@@ -401,7 +403,7 @@ namespace threadable
     alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
 
     execution_policy            policy_ = execution_policy::parallel;
-    std::shared_ptr<function_t> on_job_ready;
+    std::shared_ptr<function_t> onJobReady_;
     // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
     // causing noity_all() to not wake thread(s). See completion token test "stress-test"
     std::vector<job> jobs_{max_nr_of_jobs};
