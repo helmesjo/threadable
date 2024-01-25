@@ -62,15 +62,13 @@ namespace threadable
             std::for_each(std::execution::par, begin, end,
                           [](const auto& q)
                           {
-                            while (q->execute() > 0)
-                              ;
+                            (void)q->execute();
                           });
 #else
             std::for_each(begin, end,
                           [](const auto& q)
                           {
-                            while (q->execute() > 0)
-                              ;
+                            (void)q->execute();
                           });
 #endif
           }
