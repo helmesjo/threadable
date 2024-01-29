@@ -208,8 +208,7 @@ namespace threadable
       return *this;
     }
 
-    [[nodiscard]]
-    auto
+    [[nodiscard]] auto
     done() const noexcept -> bool
     {
       return std::ranges::all_of(tokens_,

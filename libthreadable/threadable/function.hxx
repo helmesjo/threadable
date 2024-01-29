@@ -360,8 +360,7 @@ namespace threadable
       }
     }
 
-    [[nodiscard]]
-    inline auto
+    [[nodiscard]] inline auto
     size() const noexcept -> std::uint8_t
     {
       return details::size(data());
@@ -373,8 +372,7 @@ namespace threadable
       return buffer_.data();
     }
 
-    [[nodiscard]]
-    inline auto
+    [[nodiscard]] inline auto
     data() const noexcept -> std::uint8_t const*
     {
       return buffer_.data();
@@ -437,8 +435,7 @@ namespace threadable
       return size() != 0;
     }
 
-    [[nodiscard]]
-    inline auto
+    [[nodiscard]] inline auto
     size() const noexcept -> std::uint8_t
     {
       return buffer_ ? details::size(buffer_) : 0;
@@ -578,8 +575,7 @@ namespace threadable
       buffer_.reset();
     }
 
-    [[nodiscard]]
-    inline auto
+    [[nodiscard]] inline auto
     size() const noexcept -> std::uint8_t
     {
       return buffer_.size();

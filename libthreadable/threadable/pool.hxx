@@ -88,15 +88,13 @@ namespace threadable
       thread_.join();
     }
 
-    [[nodiscard]]
-    auto
+    [[nodiscard]] auto
     create(execution_policy policy = execution_policy::parallel) noexcept -> queue_t&
     {
       return add(std::make_unique<queue_t>(policy));
     }
 
-    [[nodiscard]]
-    auto
+    [[nodiscard]] auto
     add(std::unique_ptr<queue_t> q) -> queue_t&
     {
       queue_t* queue = nullptr;
