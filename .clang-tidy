@@ -17,6 +17,8 @@ CheckOptions:
     value:           lower_case
   - key:             readability-identifier-naming.EnumCase
     value:           lower_case
+  - key:             readability-identifier-naming.EnumConstantCase
+    value:           lower_case
   - key:             readability-identifier-naming.FunctionCase
     value:           lower_case
   - key:             readability-identifier-naming.GlobalVariableCase
@@ -33,10 +35,12 @@ CheckOptions:
     value:           camelBack
   - key:             readability-identifier-naming.TemplateParameterCase
     value:           lower_case
-  - key:             readability-identifier-naming.TemplateParameterSuffixTemplateParameterIgnoredRegexp
-    value:           _t
+  - key:             readability-identifier-naming.TemplateParameterSuffix
+    value:           "_t"
   - key:             readability-identifier-naming.TemplateParameterIgnoredRegexp
-    value:           "[A-Z]"
+    value:           "([A-Z]|[a-z]+_ts|expr-type)"
+  - key:             readability-identifier-naming.TemplateTemplateParameterCase
+    value:           lower_case
   - key:             readability-identifier-naming.TypeAliasCase
     value:           lower_case
   - key:             readability-identifier-naming.TypeAliasSuffix

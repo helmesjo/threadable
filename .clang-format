@@ -15,11 +15,11 @@ AlignConsecutiveDeclarations:
   Enabled: true
   AcrossEmptyLines: false
   AcrossComments: false
-AlignConsecutiveShortCaseStatements:
-  Enabled: true
-  AcrossEmptyLines: true
-  AcrossComments: true
-  AlignCaseColons: true
+# AlignConsecutiveShortCaseStatements: # available since clang 18
+#   Enabled: true
+#   AcrossEmptyLines: true
+#   AcrossComments: true
+#   AlignCaseColons: true
 AlignConsecutiveMacros:
   Enabled: true
   AcrossEmptyLines: true
@@ -32,13 +32,13 @@ AlignTrailingComments:
 AllowAllArgumentsOnNextLine: false
 AllowAllParametersOfDeclarationOnNextLine: false
 AllowShortBlocksOnASingleLine: Empty
-AllowShortCaseLabelsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: false
 #AllowShortCompoundRequirementOnASingleLine: true # available since clang 18
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLambdasOnASingleLine: Empty
 AllowShortLoopsOnASingleLine: false
-AlwaysBreakAfterDefinitionReturnType: All
+AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 AlwaysBreakTemplateDeclarations: true
 BinPackArguments: true
