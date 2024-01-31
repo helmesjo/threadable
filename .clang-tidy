@@ -38,7 +38,7 @@ CheckOptions:
   - key:             readability-identifier-naming.TemplateParameterSuffix
     value:           "_t"
   - key:             readability-identifier-naming.TemplateParameterIgnoredRegexp
-    value:           "([A-Z]|[a-z]+_ts|expr-type)"
+    value:           "([A-Z]|[a-z_]+|expr-type)"
   - key:             readability-identifier-naming.TemplateTemplateParameterCase
     value:           lower_case
   - key:             readability-identifier-naming.TypeAliasCase
