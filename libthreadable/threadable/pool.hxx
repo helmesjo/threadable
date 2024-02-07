@@ -1,10 +1,12 @@
 #pragma once
 
+#include <threadable/function.hxx>
 #include <threadable/queue.hxx>
 #include <threadable/std_concepts.hxx>
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <mutex>
 #include <thread>
@@ -23,8 +25,17 @@ namespace threadable
   class pool
   {
   public:
-    using queue_t  = queue<max_nr_of_jobs>;
-    using queues_t = std::vector<std::shared_ptr<queue_t>>;
+    using queue_t = queue<max_nr_of_jobs>;
+    using clock_t = std::chrono::high_resolution_clock;
+
+    struct alignas(details::cache_line_size) entry
+    {
+      std::shared_ptr<queue_t> queue;
+      std::size_t              last_executed = 1;
+      clock_t::duration        exec_time{1};
+    };
+
+    using queues_t = std::vector<entry>;
 
     pool() noexcept
     {
@@ -33,6 +44,9 @@ namespace threadable
       thread_ = std::thread(
         [this]
         {
+          using namespace std::chrono;
+          queues_t                               queues;
+          alignas(details::cache_line_size) auto max_exec = clock_t::duration::max();
           while (true)
           {
             // 1. Check if quit = true.
@@ -48,29 +62,52 @@ namespace threadable
               details::atomic_wait(ready_, false, std::memory_order_acquire);
             }
 
-            queues_t queues;
             {
               auto _ = std::scoped_lock{queueMutex_};
               queues = queues_;
+              if (queues.empty())
+              {
+                continue;
+              }
             }
             const auto begin = std::begin(queues);
             const auto end   = std::end(queues);
 
             // at this point we know all jobs are getting executed.
             ready_.store(false, std::memory_order_relaxed);
-#ifdef __cpp_lib_execution
+            // #ifdef __cpp_lib_execution
             std::for_each(std::execution::par, begin, end,
-                          [](const auto& q)
+                          [max_exec](auto& q)
                           {
-                            (void)q->execute();
+                            const auto max_jobs =
+                              std::max(1llu, (max_exec / q.exec_time) * q.last_executed);
+                            auto start = clock_t::now();
+                            if (q.last_executed = q.queue->execute(); q.last_executed > 0)
+                            {
+                              auto res = (clock_t::now() - start) / q.last_executed;
+                              q.exec_time = res;
+                            }
+                            else
+                            {
+                              q.exec_time = clock_t::duration::max();
+                            }
                           });
-#else
-            std::for_each(begin, end,
-                          [](const auto& q)
-                          {
-                            (void)q->execute();
-                          });
-#endif
+            // #else
+            //             std::for_each(begin, end,
+            //                           [](auto const& q)
+            //                           {
+            //                             (void)q->execute();
+            //                           });
+            // #endif
+            if (const auto itr = std::min_element(std::begin(queues), std::end(queues),
+                                                  [](auto const& lhs, auto const& rhs)
+                                                  {
+                                                    return lhs.exec_time < rhs.exec_time;
+                                                  });
+                itr != queues.end())
+            {
+              max_exec = itr->exec_time * itr->last_executed;
+            }
           }
         });
     }
@@ -100,7 +137,7 @@ namespace threadable
       queue_t* queue = nullptr;
       {
         auto _ = std::scoped_lock{queueMutex_};
-        queue  = queues_.emplace_back(std::move(q)).get();
+        queue  = queues_.emplace_back(std::move(q)).queue.get();
         queue->set_notify(
           [this](...)
           {
@@ -121,7 +158,7 @@ namespace threadable
       auto itr = std::find_if(std::begin(queues_), std::end(queues_),
                               [&q](auto const& q2)
                               {
-                                return q2.get() == &q;
+                                return q2.queue.get() == &q;
                               });
       if (itr != std::end(queues_))
       {
@@ -162,7 +199,7 @@ namespace threadable
     inline void
     notify()
     {
-      // whenever a new job is pushed, release a thread (increment counter)
+      // whenever a new job is pushed, release executing thread
       ready_.store(true, std::memory_order_release);
       details::atomic_notify_one(ready_);
     }

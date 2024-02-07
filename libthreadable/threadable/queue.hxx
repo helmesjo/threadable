@@ -320,9 +320,10 @@ namespace threadable
 
     template<bool consume = true>
     auto
-    end() noexcept
+    end(std::size_t max = max_nr_of_jobs) noexcept
     {
       auto head = head_.load(std::memory_order_acquire);
+      head      = std::min(tail_ + max, head);
       if constexpr (consume)
       {
         if (auto& lastJob = jobs_[mask(head - 1)]) [[likely]]
@@ -339,13 +340,15 @@ namespace threadable
     }
 
     auto
-    execute() -> std::size_t
+    execute(std::size_t max = max_nr_of_jobs) -> std::size_t
     {
+      assert(max > 0);
       auto const b   = begin();
-      auto const e   = end();
+      auto       e   = end(max);
       auto const dis = e - b;
       if (dis > 0) [[likely]]
       {
+        e = b + dis;
         assert(b != e);
 #ifdef __cpp_lib_execution
         if (policy_ == execution_policy::parallel) [[likely]]
