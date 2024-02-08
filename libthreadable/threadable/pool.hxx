@@ -75,14 +75,14 @@ namespace threadable
 
             // at this point we know all jobs are getting executed.
             ready_.store(false, std::memory_order_relaxed);
-            // #ifdef __cpp_lib_execution
+            #ifdef __cpp_lib_execution
             std::for_each(std::execution::par, begin, end,
                           [max_exec](auto& q)
                           {
                             const auto max_jobs =
-                              std::max(1llu, (max_exec / q.exec_time) * q.last_executed);
+                              std::max(1llu, max_exec.count() / q.last_executed);
                             auto start = clock_t::now();
-                            if (q.last_executed = q.queue->execute(); q.last_executed > 0)
+                            if (q.last_executed = q.queue->execute(max_jobs); q.last_executed > 0)
                             {
                               auto res = (clock_t::now() - start) / q.last_executed;
                               q.exec_time = res;
@@ -92,13 +92,13 @@ namespace threadable
                               q.exec_time = clock_t::duration::max();
                             }
                           });
-            // #else
-            //             std::for_each(begin, end,
-            //                           [](auto const& q)
-            //                           {
-            //                             (void)q->execute();
-            //                           });
-            // #endif
+            #else
+                        std::for_each(begin, end,
+                                      [](auto const& q)
+                                      {
+                                        (void)q->execute();
+                                      });
+            #endif
             if (const auto itr = std::min_element(std::begin(queues), std::end(queues),
                                                   [](auto const& lhs, auto const& rhs)
                                                   {
