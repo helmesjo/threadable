@@ -115,15 +115,14 @@ namespace threadable
     auto
     remove(queue_t&& q) noexcept -> bool // NOLINT
     {
-      auto itr = std::find_if(std::begin(queues_), std::end(queues_),
+      auto _ = std::scoped_lock{queueMutex_};
+      if (auto itr = std::find_if(std::begin(queues_), std::end(queues_),
                               [&q](auto const& q2)
                               {
                                 return q2.queue.get() == &q;
-                              });
-      if (itr != std::end(queues_))
+                              }); itr != std::end(queues_))
       {
         q.shutdown();
-        auto _ = std::scoped_lock{queueMutex_};
         queues_.erase(itr);
         return true;
       }
