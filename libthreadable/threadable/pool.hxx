@@ -31,15 +31,15 @@ namespace threadable
 
     struct alignas(details::cache_line_size) entry
     {
-      std::shared_ptr<queue_t> queue;
-      std::size_t              last_executed = 0;
-      std::size_t              jobs_ready    = 0;
-      clk_t::duration          avg_dur{1};
+      queue_t         queue;
+      std::size_t     last_executed = 0;
+      std::size_t     jobs_ready    = 0;
+      clk_t::duration avg_dur{1};
     };
 
     static constexpr auto derp = sizeof(entry);
 
-    using queues_t = std::vector<entry>;
+    using queues_t = std::vector<std::shared_ptr<entry>>;
 
     pool(bool run = true) noexcept
     {
@@ -61,7 +61,7 @@ namespace threadable
               }
               else [[likely]]
               {
-                details::atomic_wait(ready_, false, std::memory_order_acquire);
+                // details::atomic_wait(ready_, false, std::memory_order_acquire);
               }
               execute();
             }
@@ -88,16 +88,16 @@ namespace threadable
     [[nodiscard]] auto
     create(execution_policy policy = execution_policy::parallel) noexcept -> queue_t&
     {
-      return add(std::make_unique<queue_t>(policy));
+      return add(queue_t(policy));
     }
 
     [[nodiscard]] auto
-    add(std::unique_ptr<queue_t> q) -> queue_t&
+    add(queue_t&& q) -> queue_t&
     {
       queue_t* queue = nullptr;
       {
         auto _ = std::scoped_lock{queueMutex_};
-        queue  = queues_.emplace_back(std::move(q)).queue.get();
+        queue  = &queues_.emplace_back(std::make_unique<entry>(std::move(q)))->queue;
         queue->set_notify(
           [this](...)
           {
@@ -112,17 +112,18 @@ namespace threadable
       return *queue;
     }
 
-    auto
-    remove(queue_t&& q) noexcept -> bool // NOLINT
+    [[nodiscard]] auto
+    remove(queue_t&& queue) noexcept -> bool // NOLINT
     {
       auto _ = std::scoped_lock{queueMutex_};
       if (auto itr = std::find_if(std::begin(queues_), std::end(queues_),
-                              [&q](auto const& q2)
-                              {
-                                return q2.queue.get() == &q;
-                              }); itr != std::end(queues_))
+                                  [&queue](auto const& entry)
+                                  {
+                                    return &entry->queue == &queue;
+                                  });
+          itr != std::end(queues_))
       {
-        q.shutdown();
+        queue.shutdown();
         queues_.erase(itr);
         return true;
       }
@@ -132,19 +133,21 @@ namespace threadable
       }
     }
 
-    auto
+    [[nodiscard]] auto
     queues() const noexcept -> std::size_t
     {
+      auto _ = std::scoped_lock{queueMutex_};
       return queues_.size();
     }
 
-    auto
+    [[nodiscard]] auto
     size() const noexcept -> std::size_t
     {
+      auto _ = std::scoped_lock{queueMutex_};
       return std::ranges::count(queues_,
                                 [](auto const& queue)
                                 {
-                                  return queue->size();
+                                  return queue.size();
                                 });
     }
 
@@ -171,47 +174,44 @@ namespace threadable
       auto const end   = std::end(queues);
 
       std::for_each(begin, end,
-                    [](auto& q)
+                    [](auto& entry)
                     {
-                      q.jobs_ready = q.queue->size();
+                      entry->jobs_ready = entry->queue.size();
                     });
 
       // calculate the max allowed executation duration for each queue
-      if (auto const fastest = std::min_element(begin, end,
-                                                [](auto const& lhs, auto const& rhs)
-                                                {
-                                                  return lhs.avg_dur * lhs.jobs_ready <
-                                                         rhs.avg_dur * rhs.jobs_ready;
-                                                });
-          fastest != queues.end())
-      {
-        auto const slowest = std::max_element(begin, end,
-                                              [](auto const& lhs, auto const& rhs)
-                                              {
-                                                return lhs.avg_dur < rhs.avg_dur;
-                                              });
+      auto const fastest = *std::min_element(begin, end,
+                                             [](auto const& lhs, auto const& rhs)
+                                             {
+                                               return lhs->avg_dur * lhs->jobs_ready //
+                                                      < rhs->avg_dur * rhs->jobs_ready;
+                                             });
+      auto const slowest = *std::max_element(begin, end,
+                                             [](auto const& lhs, auto const& rhs)
+                                             {
+                                               return lhs->avg_dur < rhs->avg_dur;
+                                             });
 
-        auto const a = clk_t::duration{slowest->avg_dur};
-        auto const b = clk_t::duration{fastest->avg_dur * fastest->jobs_ready};
-        maxDuration_ = a > b ? a : b;
-      }
+      auto const a = clk_t::duration{slowest->avg_dur};
+      auto const b = clk_t::duration{fastest->avg_dur * fastest->jobs_ready};
+      maxDuration_ = a > b ? a : b;
 
       auto const exec = [this](auto& entry)
       {
         // given the max allowed duration, calculate how many jobs can be executed
-        const auto maxJobs = std::max(clk_t::rep{1}, maxDuration_.count() / entry.avg_dur.count());
+        const auto maxJobs = std::max(clk_t::rep{1}, maxDuration_.count() / entry->avg_dur.count());
         const auto start   = clk_t::now();
-        if (entry.last_executed = entry.queue->execute(maxJobs); entry.last_executed > 0)
+        if (entry->last_executed = entry->queue.execute(maxJobs); entry->last_executed > 0)
         {
-          entry.avg_dur = (clk_t::now() - start) / entry.last_executed;
+          entry->avg_dur = (clk_t::now() - start) / entry->last_executed;
         }
         else
         {
-          entry.avg_dur = clk_t::duration::max();
+          entry->avg_dur = clk_t::duration::max();
         }
       };
 
-      ready_.store(false, std::memory_order_relaxed);
+      // ready_.store(false, std::memory_order_relaxed);
 #ifdef __cpp_lib_execution
       // for (auto const& q : queues)
       // {
@@ -236,31 +236,6 @@ namespace threadable
 #else
       std::for_each(begin, end, exec);
 #endif
-      // update entries for each queue
-      {
-        auto _ = std::scoped_lock{queueMutex_};
-        for (auto const& entr : queues)
-        {
-          if (auto itr = std::find_if(std::begin(queues_), std::end(queues_),
-                                      [lhs = entr](auto& rhs)
-                                      {
-                                        return lhs.queue == rhs.queue;
-                                      });
-              itr != std::end(queues_))
-          {
-            *itr = entr;
-          }
-          if (auto const size = entr.queue->size(); size > 0)
-          {
-            ready_.store(true, std::memory_order_relaxed);
-          }
-        }
-        queues = queues_;
-        if (queues.empty())
-        {
-          return;
-        }
-      }
     }
 
   private:
@@ -272,7 +247,7 @@ namespace threadable
       details::atomic_notify_one(ready_);
     }
 
-    alignas(details::cache_line_size) std::mutex queueMutex_;
+    alignas(details::cache_line_size) mutable std::mutex queueMutex_;
     alignas(details::cache_line_size) clk_t::duration maxDuration_ = clk_t::duration::max();
     alignas(details::cache_line_size) details::atomic_flag_t quit_;
     alignas(details::cache_line_size) std::atomic_bool ready_{false};
@@ -289,7 +264,7 @@ namespace threadable
 
   template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t,
            typename... arg_ts>
-  inline auto
+  [[nodiscard]] inline auto
   push(callable_t&& func, arg_ts&&... args) noexcept
     requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
   {
@@ -297,7 +272,7 @@ namespace threadable
     return queue.push(FWD(func), FWD(args)...);
   }
 
-  inline auto
+  [[nodiscard]] inline auto
   create(execution_policy policy = execution_policy::parallel) noexcept -> details::queue_t&
   {
     return details::pool().create(policy);

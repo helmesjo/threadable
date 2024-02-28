@@ -38,7 +38,7 @@ SCENARIO("pool: create/remove queues")
       auto token = queue.push(
         [&pool, &queue]
         {
-          pool.remove(std::move(queue));
+          REQUIRE(pool.remove(std::move(queue)));
         });
       THEN("it gets removed")
       {
@@ -49,7 +49,7 @@ SCENARIO("pool: create/remove queues")
   }
   GIVEN("queue is pre-created")
   {
-    auto queue = std::make_unique<decltype(pool)::queue_t>();
+    auto queue = decltype(pool)::queue_t();
     WHEN("added (without jobs) to pool")
     {
       auto& q = pool.add(std::move(queue));
@@ -75,7 +75,7 @@ SCENARIO("pool: create/remove queues")
     WHEN("added (with jobs) to pool")
     {
       int  called = 0;
-      auto token  = queue->push(
+      auto token  = queue.push(
         [&called]
         {
           ++called;
@@ -222,7 +222,7 @@ SCENARIO("pool: stress-test")
                 ++counter;
               });
           }
-          pool.remove(std::move(queue));
+          REQUIRE(pool.remove(std::move(queue)));
         });
     }
 

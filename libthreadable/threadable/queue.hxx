@@ -52,9 +52,9 @@ namespace threadable
   public:
 #endif
     inline static constexpr auto
-    mask(index_t val) noexcept
+    mask(index_t index) noexcept
     {
-      return val & index_mask;
+      return index & index_mask;
     }
 
   public:
@@ -205,8 +205,16 @@ namespace threadable
       set_notify(null_callback);
     }
 
+    queue(queue&& rhs) noexcept
+      : tail_(std::move(rhs.tail_))
+      , head_(rhs.head_.load(std::memory_order::relaxed))
+      , nextSlot_(rhs.nextSlot_.load(std::memory_order::relaxed))
+      , policy_(std::move(rhs.policy_))
+      , onJobReady_(std::move(rhs.onJobReady_))
+      , jobs_(std::move(rhs.jobs_))
+    {}
+
     ~queue()                     = default;
-    queue(queue&&)               = delete;
     queue(queue const&)          = delete;
     auto operator=(queue&&)      = delete;
     auto operator=(queue const&) = delete;
@@ -435,11 +443,11 @@ namespace threadable
     alignas(details::cache_line_size) atomic_index_t head_{0};
     alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
 
-    execution_policy            policy_ = execution_policy::parallel;
-    std::shared_ptr<function_t> onJobReady_;
+    alignas(details::cache_line_size) execution_policy policy_ = execution_policy::parallel;
+    alignas(details::cache_line_size) std::shared_ptr<function_t> onJobReady_;
     // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
     // causing noity_all() to not wake thread(s). See completion token test "stress-test"
-    std::vector<job> jobs_{max_nr_of_jobs};
+    alignas(details::cache_line_size) std::vector<job> jobs_{max_nr_of_jobs};
   };
 }
 
