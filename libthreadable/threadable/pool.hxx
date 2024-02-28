@@ -200,7 +200,7 @@ namespace threadable
       auto const exec = [this](auto& entry)
       {
         // given the max allowed duration, calculate how many jobs can be executed
-        const auto maxJobs = std::max(1ll, maxDuration_.count() / entry.avg_dur.count());
+        const auto maxJobs = std::max(clk_t::rep{1}, maxDuration_.count() / entry.avg_dur.count());
         const auto start   = clk_t::now();
         if (entry.last_executed = entry.queue->execute(maxJobs); entry.last_executed > 0)
         {
