@@ -24,92 +24,49 @@ namespace threadable
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class pool
   {
+    using clk_t = std::chrono::high_resolution_clock;
+
   public:
     using queue_t = queue<max_nr_of_jobs>;
-    using clock_t = std::chrono::high_resolution_clock;
 
     struct alignas(details::cache_line_size) entry
     {
       std::shared_ptr<queue_t> queue;
-      std::size_t              last_executed = 1;
-      clock_t::duration        exec_time{1};
+      std::size_t              last_executed = 0;
+      std::size_t              jobs_ready    = 0;
+      clk_t::duration          avg_dur{1};
     };
+
+    static constexpr auto derp = sizeof(entry);
 
     using queues_t = std::vector<entry>;
 
-    pool() noexcept
+    pool(bool run = true) noexcept
     {
       details::atomic_clear(quit_);
 
-      thread_ = std::thread(
-        [this]
-        {
-          using namespace std::chrono;
-          queues_t                               queues;
-          alignas(details::cache_line_size) auto max_exec = clock_t::duration::max();
-          while (true)
+      if (run)
+      {
+        thread_ = std::thread(
+          [this]
           {
-            // 1. Check if quit = true.
-            // 2. Wait for jobs to executed.
-            // 3. Execute all jobs.
-            if (details::atomic_test(quit_, std::memory_order_acquire)) [[unlikely]]
+            while (true)
             {
-              // thread exit.
-              break;
-            }
-            else [[likely]]
-            {
-              details::atomic_wait(ready_, false, std::memory_order_acquire);
-            }
-
-            {
-              auto _ = std::scoped_lock{queueMutex_};
-              queues = queues_;
-              if (queues.empty())
+              // 1. Check if quit = true. If so, bail.
+              // 2. Wait for jobs to queued.
+              // 3. Execute all jobs.
+              if (details::atomic_test(quit_, std::memory_order_acquire)) [[unlikely]]
               {
-                continue;
+                break;
               }
+              else [[likely]]
+              {
+                details::atomic_wait(ready_, false, std::memory_order_acquire);
+              }
+              execute();
             }
-            const auto begin = std::begin(queues);
-            const auto end   = std::end(queues);
-
-            // at this point we know all jobs are getting executed.
-            ready_.store(false, std::memory_order_relaxed);
-            #ifdef __cpp_lib_execution
-            std::for_each(std::execution::par, begin, end,
-                          [max_exec](auto& q)
-                          {
-                            const auto max_jobs =
-                              std::max(1llu, max_exec.count() / q.last_executed);
-                            auto start = clock_t::now();
-                            if (q.last_executed = q.queue->execute(max_jobs); q.last_executed > 0)
-                            {
-                              auto res = (clock_t::now() - start) / q.last_executed;
-                              q.exec_time = res;
-                            }
-                            else
-                            {
-                              q.exec_time = clock_t::duration::max();
-                            }
-                          });
-            #else
-                        std::for_each(begin, end,
-                                      [](auto const& q)
-                                      {
-                                        (void)q->execute();
-                                      });
-            #endif
-            if (const auto itr = std::min_element(std::begin(queues), std::end(queues),
-                                                  [](auto const& lhs, auto const& rhs)
-                                                  {
-                                                    return lhs.exec_time < rhs.exec_time;
-                                                  });
-                itr != queues.end())
-            {
-              max_exec = itr->exec_time * itr->last_executed;
-            }
-          }
-        });
+          });
+      }
     }
 
     pool(pool const&) = delete;
@@ -122,7 +79,10 @@ namespace threadable
     {
       details::atomic_set(quit_, std::memory_order_release);
       notify();
-      thread_.join();
+      if (thread_.joinable())
+      {
+        thread_.join();
+      }
     }
 
     [[nodiscard]] auto
@@ -195,6 +155,115 @@ namespace threadable
       return max_nr_of_jobs;
     }
 
+    auto
+    execute()
+    {
+      using namespace std::chrono;
+      queues_t queues;
+      {
+        auto _ = std::scoped_lock{queueMutex_};
+        queues = queues_;
+        if (queues.empty())
+        {
+          return;
+        }
+      }
+      auto const begin = std::begin(queues);
+      auto const end   = std::end(queues);
+
+      std::for_each(begin, end,
+                    [](auto& q)
+                    {
+                      q.jobs_ready = q.queue->size();
+                    });
+
+      // calculate the max allowed executation duration for each queue
+      if (auto const fastest = std::min_element(begin, end,
+                                                [](auto const& lhs, auto const& rhs)
+                                                {
+                                                  return lhs.avg_dur * lhs.jobs_ready <
+                                                         rhs.avg_dur * rhs.jobs_ready;
+                                                });
+          fastest != queues.end())
+      {
+        auto const slowest = std::max_element(begin, end,
+                                              [](auto const& lhs, auto const& rhs)
+                                              {
+                                                return lhs.avg_dur < rhs.avg_dur;
+                                              });
+
+        auto const a = clk_t::duration{slowest->avg_dur};
+        auto const b = clk_t::duration{fastest->avg_dur * fastest->jobs_ready};
+        maxDuration_ = a > b ? a : b;
+      }
+
+      auto const exec = [this](auto& entry)
+      {
+        // given the max allowed duration, calculate how many jobs can be executed
+        const auto maxJobs = std::max(1ll, maxDuration_.count() / entry.avg_dur.count());
+        const auto start   = clk_t::now();
+        if (entry.last_executed = entry.queue->execute(maxJobs); entry.last_executed > 0)
+        {
+          entry.avg_dur = (clk_t::now() - start) / entry.last_executed;
+        }
+        else
+        {
+          entry.avg_dur = clk_t::duration::max();
+        }
+      };
+
+      ready_.store(false, std::memory_order_relaxed);
+#ifdef __cpp_lib_execution
+      // for (auto const& q : queues)
+      // {
+      //   auto const maxJobs = std::max(1ll, maxDuration_.count() / q.avg_dur.count());
+      //   std::cout << std::format("before: queue: {}\tmax dur: {}\tmax jobs: {}\tavg dur: "
+      //                            "{}\tlast executed: {}\tavailable: {}\n",
+      //                            (void*)q.queue.get(), duration_cast<microseconds>(maxDuration_),
+      //                            maxJobs, duration_cast<microseconds>(q.avg_dur),
+      //                            q.last_executed, q.queue->size());
+      // }
+      std::for_each(std::execution::par, begin, end, exec);
+      // for (auto const& q : queues)
+      // {
+      //   auto const maxJobs = std::max(1ll, maxDuration_.count() / q.avg_dur.count());
+      //   std::cout << std::format("after : queue: {}\tmax dur: {}\tmax jobs: {}\tavg dur: "
+      //                            "{}\tlast executed: {}\tavailable: {}\n",
+      //                            (void*)q.queue.get(), duration_cast<microseconds>(maxDuration_),
+      //                            maxJobs, duration_cast<microseconds>(q.avg_dur),
+      //                            q.last_executed, q.queue->size());
+      // }
+      // std::cout << '\n';
+#else
+      std::for_each(begin, end, exec);
+#endif
+      // update entries for each queue
+      {
+        auto _ = std::scoped_lock{queueMutex_};
+        for (auto const& entr : queues)
+        {
+          if (auto itr = std::find_if(std::begin(queues_), std::end(queues_),
+                                      [lhs = entr](auto& rhs)
+                                      {
+                                        return lhs.queue == rhs.queue;
+                                      });
+              itr != std::end(queues_))
+          {
+            *itr = entr;
+          }
+          if (auto const size = entr.queue->size(); size > 0)
+          {
+            ready_.store(true, std::memory_order_relaxed);
+          }
+        }
+        queues = queues_;
+        if (queues.empty())
+        {
+          return;
+        }
+      }
+    }
+
   private:
     inline void
     notify()
@@ -204,11 +273,12 @@ namespace threadable
       details::atomic_notify_one(ready_);
     }
 
-    std::recursive_mutex queueMutex_;
+    alignas(details::cache_line_size) std::mutex queueMutex_;
+    alignas(details::cache_line_size) clk_t::duration maxDuration_ = clk_t::duration::max();
     alignas(details::cache_line_size) details::atomic_flag_t quit_;
     alignas(details::cache_line_size) std::atomic_bool ready_{false};
     alignas(details::cache_line_size) queues_t queues_;
-    std::thread thread_;
+    alignas(details::cache_line_size) std::thread thread_;
   };
 
   namespace details

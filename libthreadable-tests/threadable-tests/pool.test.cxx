@@ -1,12 +1,13 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/pool.hxx>
 
+#include <chrono>
 #include <cstddef>
 #include <mutex>
 #include <thread>
 #include <vector>
 
-#include "threadable/job.hxx"
+using namespace std::chrono_literals;
 
 SCENARIO("pool: create/remove queues")
 {
@@ -138,98 +139,170 @@ SCENARIO("pool: push jobs to global pool")
 
 SCENARIO("pool: stress-test")
 {
-  static constexpr std::size_t capacity = 1 << 18;
-  GIVEN("pool with multiple threads")
+  constexpr auto capacity = std::size_t{1 << 18};
+  auto           pool     = threadable::pool<capacity>();
+  GIVEN("single producer pushes a large amount of jobs")
   {
-    auto pool = threadable::pool<capacity>();
-    WHEN("single producer pushes a large amount of jobs")
+    auto& queue   = pool.create(threadable::execution_policy::parallel);
+    auto  counter = std::atomic_size_t{0};
+
+    auto group = threadable::token_group{};
+    for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
-      auto&              queue = pool.create(threadable::execution_policy::parallel);
-      std::atomic_size_t counter{0};
-
-      threadable::token_group group;
-      for (std::size_t i = 0; i < queue.max_size(); ++i)
-      {
-        group += queue.push(
-          [&counter]
-          {
-            ++counter;
-          });
-      }
-
-      group.wait();
-
-      THEN("all gets executed")
-      {
-        REQUIRE(counter.load() == queue.max_size());
-      }
+      group += queue.push(
+        [&counter]
+        {
+          ++counter;
+        });
     }
-    WHEN("multiple producers pushes a large amount of jobs")
+
+    group.wait();
+
+    THEN("all gets executed")
     {
-      auto&                    queue        = pool.create(threadable::execution_policy::parallel);
-      static constexpr auto    nr_producers = 3;
-      std::atomic_size_t       counter{0};
-      std::vector<std::thread> producers;
-
-      for (std::size_t i = 0; i < nr_producers; ++i)
-      {
-        producers.emplace_back(
-          [&counter, &queue]
-          {
-            static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
-                          "All jobs must be pushed");
-            threadable::token_group group;
-            for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
-            {
-              group += queue.push(
-                [&counter]
-                {
-                  ++counter;
-                });
-            }
-            group.wait();
-          });
-      }
-
-      for (auto& thread : producers)
-      {
-        thread.join();
-      }
-
-      THEN("all gets executed")
-      {
-        REQUIRE(counter.load() == queue.max_size());
-      }
+      REQUIRE(counter.load() == queue.max_size());
     }
-    WHEN("multiple producers pushes a large amount of jobs to their own queue and then remove it")
-    {
-      static constexpr auto    nr_producers = 3;
-      std::atomic_size_t       counter{0};
-      std::vector<std::thread> producers;
+  }
+  GIVEN("multiple producers pushes a large amount of jobs")
+  {
+    constexpr auto nr_producers = 3;
 
-      for (std::size_t i = 0; i < nr_producers; ++i)
-      {
-        producers.emplace_back(
-          [&counter, &pool, &queue = pool.create(threadable::execution_policy::parallel)]
+    auto& queue     = pool.create(threadable::execution_policy::parallel);
+    auto  counter   = std::atomic_size_t{0};
+    auto  producers = std::vector<std::thread>{};
+
+    for (std::size_t i = 0; i < nr_producers; ++i)
+    {
+      producers.emplace_back(
+        [&counter, &queue]
+        {
+          static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
+                        "All jobs must be pushed");
+          threadable::token_group group;
+          for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
           {
-            static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
-                          "All jobs must be pushed");
-            for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
-            {
-              (void)queue.push(
-                [&counter]
-                {
-                  ++counter;
-                });
-            }
-            pool.remove(std::move(queue));
+            group += queue.push(
+              [&counter]
+              {
+                ++counter;
+              });
+          }
+          group.wait();
+        });
+    }
+
+    for (auto& thread : producers)
+    {
+      thread.join();
+    }
+
+    THEN("all gets executed")
+    {
+      REQUIRE(counter.load() == queue.max_size());
+    }
+  }
+  GIVEN("multiple producers pushes a large amount of jobs to their own queue and then remove it")
+  {
+    static constexpr auto    nr_producers = 3;
+    std::atomic_size_t       counter{0};
+    std::vector<std::thread> producers;
+
+    for (std::size_t i = 0; i < nr_producers; ++i)
+    {
+      producers.emplace_back(
+        [&counter, &pool, &queue = pool.create(threadable::execution_policy::parallel)]
+        {
+          static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
+                        "All jobs must be pushed");
+          for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
+          {
+            (void)queue.push(
+              [&counter]
+              {
+                ++counter;
+              });
+          }
+          pool.remove(std::move(queue));
+        });
+    }
+
+    for (auto& thread : producers)
+    {
+      thread.join();
+    }
+  }
+  GIVEN("multiple queues with varying-length jobs are pushed")
+  {
+    using namespace std::chrono;
+    using clk_t = high_resolution_clock;
+
+    auto  manualPool = threadable::pool<capacity>(false);
+    auto& queue1     = manualPool.create(threadable::execution_policy::sequential);
+    auto& queue2     = manualPool.create(threadable::execution_policy::sequential);
+
+    static constexpr auto spin_wait = [](nanoseconds const& dur)
+    {
+      const auto start = clk_t::now();
+      while (dur > clk_t::now() - start)
+        ;
+    };
+
+    THEN("they are load balanced")
+    {
+      for (std::size_t i = 0; i < 2; ++i)
+      {
+        queue1.push(
+          []
+          {
+            spin_wait(10ms);
+          });
+      }
+      for (std::size_t i = 0; i < 4; ++i)
+      {
+        queue2.push(
+          []
+          {
+            spin_wait(4ms);
           });
       }
 
-      for (auto& thread : producers)
+      manualPool.execute();
+      REQUIRE(queue1.size() == 0);
+      REQUIRE(queue2.size() == 2);
+
+      for (std::size_t i = 0; i < 2; ++i)
       {
-        thread.join();
+        queue1.push(
+          []
+          {
+            spin_wait(10ms);
+          });
       }
+      for (std::size_t i = 0; i < 2; ++i)
+      {
+        queue2.push(
+          []
+          {
+            spin_wait(4ms);
+          });
+      }
+
+      manualPool.execute();
+      REQUIRE(queue1.size() == 1);
+      REQUIRE(queue2.size() == 0);
+
+      for (std::size_t i = 0; i < 1; ++i)
+      {
+        queue1.push(
+          []
+          {
+            spin_wait(10ms);
+          });
+      }
+
+      manualPool.execute();
+      REQUIRE(queue1.size() == 1);
+      REQUIRE(queue2.size() == 0);
     }
   }
 }
