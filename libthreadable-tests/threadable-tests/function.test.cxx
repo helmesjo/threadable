@@ -789,5 +789,7 @@ SCENARIO("function_dyn")
         REQUIRE(destroyed == 1);
       }
     }
+    called = 0;
+    destroyed = 0;
   }
 }
