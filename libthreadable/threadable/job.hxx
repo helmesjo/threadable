@@ -13,8 +13,7 @@ namespace threadable
   {
     struct job_base
     {
-      atomic_bitfield_t               states;
-      std::atomic<atomic_bitfield_t*> child_states = nullptr;
+      atomic_bitfield_t states;
     };
 
     static constexpr auto job_buffer_size =
@@ -30,12 +29,12 @@ namespace threadable
   {
     using function_t = function<details::job_buffer_size>;
 
-    job()                      = default;
-    job(job&&)                 = delete;
-    job(job const&)            = delete;
-    ~job()                     = default;
-    auto operator=(job&&)      = delete;
-    auto operator=(job const&) = delete;
+    job()                               = default;
+    ~job()                              = default;
+    job(job&&)                          = delete;
+    job(job const&)                     = delete;
+    auto operator=(job&&) -> auto&      = delete;
+    auto operator=(job const&) -> auto& = delete;
 
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
@@ -47,12 +46,6 @@ namespace threadable
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on (checking state true -> false)
       // details::atomic_notify_all(active);
-    }
-
-    inline void
-    wait_for(details::atomic_bitfield_t& child)
-    {
-      child_states.store(&child, std::memory_order_release);
     }
 
     template<typename callable_t>
@@ -75,7 +68,6 @@ namespace threadable
     reset() noexcept
     {
       func_.reset();
-      child_states.store(nullptr, std::memory_order_release);
       details::clear(states, std::memory_order_release);
       details::atomic_notify_all(states);
     }
@@ -92,10 +84,6 @@ namespace threadable
       assert(func_);
       assert(!done());
 
-      if (auto flag = child_states.load(std::memory_order_acquire)) [[unlikely]]
-      {
-        details::wait<job_state::active, true>(*flag, std::memory_order_acquire);
-      }
       func_();
       reset();
     }

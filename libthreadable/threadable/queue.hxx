@@ -257,14 +257,6 @@ namespace threadable
 
       assert(job);
 
-      if (policy_ == execution_policy::sequential) [[unlikely]]
-      {
-        if (auto& childJob = jobs_[mask(slot - 1)]) [[likely]]
-        {
-          job.wait_for(childJob.states);
-        }
-      }
-
       token.reassign(job.states);
 
       std::atomic_thread_fence(std::memory_order_release);
@@ -294,22 +286,11 @@ namespace threadable
     clear()
     {
 #ifdef __cpp_lib_execution
-      if (policy_ == execution_policy::parallel) [[likely]]
-      {
-        std::for_each(std::execution::par, begin(), end(),
-                      [](job& job)
-                      {
-                        job.reset();
-                      });
-      }
-      else [[unlikely]]
-      {
-        std::for_each(begin(), end(),
-                      [](job& job)
-                      {
-                        job.reset();
-                      });
-      }
+      std::for_each(std::execution::par, begin(), end(),
+                    [](job& job)
+                    {
+                      job.reset();
+                    });
 #else
       std::for_each(begin(), end(),
                     [](job& job)
