@@ -212,7 +212,11 @@ namespace threadable
       , policy_(std::move(rhs.policy_))
       , onJobReady_(std::move(rhs.onJobReady_))
       , jobs_(std::move(rhs.jobs_))
-    {}
+    {
+      rhs.tail_ = 0;
+      rhs.head_.store(0, std::memory_order::relaxed);
+      rhs.nextSlot_.store(0, std::memory_order::relaxed);
+    }
 
     ~queue()                     = default;
     queue(queue const&)          = delete;
