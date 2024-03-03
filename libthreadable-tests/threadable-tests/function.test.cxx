@@ -520,6 +520,10 @@ SCENARIO("function: set/reset")
         {}
       };
 
+      // add test to verify func.set(std::move(func)) doesn't first reset "self"
+      // dito for func.set(func) which should be no-op.A
+      // dito for function_dyn
+
       static_assert(!std::is_trivially_copyable_v<type>);
       static_assert(std::copy_constructible<type>);
       static_assert(std::is_destructible_v<type>);
@@ -789,7 +793,7 @@ SCENARIO("function_dyn")
         REQUIRE(destroyed == 1);
       }
     }
-    called = 0;
+    called    = 0;
     destroyed = 0;
   }
 }

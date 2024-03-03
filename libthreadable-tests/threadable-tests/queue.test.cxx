@@ -21,6 +21,16 @@ SCENARIO("queue: push & claim")
     auto queue = threadable::queue<2>{};
     REQUIRE(queue.size() == 0);
 
+    WHEN("empty")
+    {
+      THEN("begin() and end() does not throw")
+      {
+        REQUIRE_NOTHROW(queue.begin());
+        REQUIRE_NOTHROW(queue.end<false>());
+        REQUIRE_NOTHROW(queue.end<true>());
+      }
+    }
+
     WHEN("push 1")
     {
       thread_local int called    = 0;
@@ -284,10 +294,19 @@ SCENARIO("queue: completion token")
       {
         REQUIRE(token.cancelled());
       }
-      THEN("job is still executed by queue")
+      THEN("job is not executed by queue")
       {
         // TODO: Fix so it's not executed. See queue::end().
         // REQUIRE(queue.execute() == 1);
+      }
+    }
+    WHEN("related job is destroyed")
+    {
+      queue = threadable::queue{};
+      THEN("it does not throw")
+      {
+        REQUIRE_NOTHROW(token.cancel());
+        REQUIRE_NOTHROW(token.wait());
       }
     }
   }

@@ -220,8 +220,19 @@ namespace threadable
 
     ~queue()                     = default;
     queue(queue const&)          = delete;
-    auto operator=(queue&&)      = delete;
     auto operator=(queue const&) = delete;
+
+    auto
+    operator=(queue&& rhs) noexcept -> queue&
+    {
+      tail_       = std::move(rhs.tail_);
+      head_       = rhs.head_.load(std::memory_order::relaxed);
+      nextSlot_   = rhs.nextSlot_.load(std::memory_order::relaxed);
+      policy_     = std::move(rhs.policy_);
+      onJobReady_ = std::move(rhs.onJobReady_);
+      jobs_       = std::move(rhs.jobs_);
+      return *this;
+    }
 
     template<std::invocable<queue&> callable_t>
     void
