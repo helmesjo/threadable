@@ -23,11 +23,30 @@ SCENARIO("queue: push & claim")
 
     WHEN("empty")
     {
-      THEN("begin() and end() does not throw")
+      THEN("begin() and end() does not throw/crash")
       {
         REQUIRE_NOTHROW(queue.begin());
         REQUIRE_NOTHROW(queue.end<false>());
         REQUIRE_NOTHROW(queue.end<true>());
+      }
+      THEN("clear() does not throw/crash")
+      {
+        REQUIRE_NOTHROW(queue.clear());
+      }
+      AND_WHEN("moved from")
+      {
+        auto _ = std::move(queue);
+        THEN("members do nothing")
+        {
+          REQUIRE_NOTHROW(queue.begin());
+          REQUIRE_NOTHROW(queue.end<false>());
+          REQUIRE_NOTHROW(queue.end<true>());
+          REQUIRE(queue.size() == 0);
+          REQUIRE(queue.empty());
+          REQUIRE(queue.execute() == 0);
+          REQUIRE(queue.execute() == 0);
+          REQUIRE_NOTHROW(queue.clear());
+        }
       }
     }
 

@@ -199,6 +199,9 @@ namespace threadable
 
     using function_t = function<details::job_buffer_size>;
 
+    queue(queue const&) = delete;
+    ~queue() = default;
+
     queue(execution_policy policy = execution_policy::parallel) noexcept
       : policy_(policy)
     {
@@ -217,10 +220,6 @@ namespace threadable
       rhs.head_.store(0, std::memory_order::relaxed);
       rhs.nextSlot_.store(0, std::memory_order::relaxed);
     }
-
-    ~queue()                     = default;
-    queue(queue const&)          = delete;
-    auto operator=(queue const&) = delete;
 
     auto
     operator=(queue&& rhs) noexcept -> queue&
@@ -330,7 +329,8 @@ namespace threadable
       head      = std::min(tail_ + max, head);
       if constexpr (consume)
       {
-        if (auto& lastJob = jobs_[mask(head - 1)]) [[likely]]
+        auto& lastJob = jobs_[mask(head - 1)];
+        if (mask(head - tail_) > 0 && lastJob) [[likely]]
         {
           lastJob.set(function_dyn(
             [this, head, func = function_dyn(lastJob.get())]() mutable
