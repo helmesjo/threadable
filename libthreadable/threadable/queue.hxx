@@ -200,7 +200,7 @@ namespace threadable
     using function_t = function<details::job_buffer_size>;
 
     queue(queue const&) = delete;
-    ~queue() = default;
+    ~queue()            = default;
 
     queue(execution_policy policy = execution_policy::parallel) noexcept
       : policy_(policy)
@@ -271,7 +271,7 @@ namespace threadable
 
       assert(job);
 
-      token.reassign(job.states);
+      token.reassign(job.state);
 
       std::atomic_thread_fence(std::memory_order_release);
 

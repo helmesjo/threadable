@@ -319,14 +319,25 @@ SCENARIO("queue: completion token")
         // REQUIRE(queue.execute() == 1);
       }
     }
-    WHEN("related job is destroyed")
+    WHEN("related job is destroyed while token is being waited on")
     {
-      queue = threadable::queue{};
-      THEN("it does not throw")
+      // Very rudimentary test
+      auto waiting = std::atomic_bool{false};
+      auto thread  = std::thread(
+        [&]
+        {
+          while (!waiting)
+            ;
+          std::this_thread::sleep_for(std::chrono::milliseconds{10});
+          queue = threadable::queue{};
+        });
+
+      THEN("it does not crash")
       {
-        REQUIRE_NOTHROW(token.cancel());
-        REQUIRE_NOTHROW(token.wait());
+        waiting = true;
+        token.wait();
       }
+      thread.join();
     }
   }
 }
