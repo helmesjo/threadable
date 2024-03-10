@@ -30,4 +30,5 @@ exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
   test.arguments = --quiet=true
 }
 
+cxx.coptions =+ -Wno-interference-size
 cxx.poptions =+ "-I$out_root" "-I$src_root"
