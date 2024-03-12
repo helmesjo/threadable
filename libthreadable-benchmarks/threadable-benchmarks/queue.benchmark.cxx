@@ -2,18 +2,12 @@
 #include <threadable/queue.hxx>
 
 #include <algorithm>
+#include <functional>
+#include <vector>
 
 #include <doctest/doctest.h>
 
 #include <nanobench.h>
-#if __cpp_lib_execution
-  #include <execution>
-#endif
-#if __has_include(<pstld/pstld.h>)
-  #include <pstld/pstld.h>
-#endif
-#include <functional>
-#include <vector>
 
 namespace bench = ankerl::nanobench;
 

@@ -6,11 +6,13 @@
 #include <atomic>
 #include <cassert>
 #include <cstddef>
-#if __cpp_lib_execution
-  #include <execution>
-#endif
 #if __has_include(<pstld/pstld.h>)
   #include <pstld/pstld.h>
+#endif
+#ifdef __cpp_lib_execution
+  #include <execution>
+#else
+  #error requires __cpp_lib_execution
 #endif
 #include <iterator>
 #include <vector>
@@ -299,19 +301,11 @@ namespace threadable
     void
     clear()
     {
-#ifdef __cpp_lib_execution
       std::for_each(std::execution::par, begin(), end(),
                     [](job& job)
                     {
                       job.reset();
                     });
-#else
-      std::for_each(begin(), end(),
-                    [](job& job)
-                    {
-                      job.reset();
-                    });
-#endif
       tail_ = head_.load(std::memory_order_acquire);
     }
 
@@ -354,7 +348,6 @@ namespace threadable
       {
         e = b + dis;
         assert(b != e);
-#ifdef __cpp_lib_execution
         if (policy_ == execution_policy::parallel) [[likely]]
         {
           std::for_each(std::execution::par, b, e,
@@ -371,13 +364,6 @@ namespace threadable
                           job();
                         });
         }
-#else
-        std::for_each(b, e,
-                      [](job& job)
-                      {
-                        job();
-                      });
-#endif
       }
       return dis;
     }

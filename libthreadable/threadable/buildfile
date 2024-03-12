@@ -16,9 +16,13 @@ switch $cxx.stdlib: path.match, $cxx.id: path.match, $cxx.target.class: regex.ma
 
     lib{threadable}:
     {
-      cxx.poptions += -I/opt/homebrew/include -DPSTLD_HACK_INTO_STD
+      cxx.poptions += -I/opt/homebrew/include
       cxx.loptions += -L/opt/homebrew/lib
       cxx.export.poptions += -DPSTLD_HACK_INTO_STD
+    }
+    obj{*}:
+    {
+      cxx.coptions += -DPSTLD_HACK_INTO_STD
     }
   }
   case '*', '*', 'macos'

@@ -4,12 +4,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
-#if __cpp_lib_execution
-  #include <execution>
-#endif
-#if __has_include(<pstld/pstld.h>)
-  #include <pstld/pstld.h>
-#endif
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -510,7 +504,6 @@ SCENARIO("queue: standard algorithms")
           REQUIRE(queue.size() == 0);
         }
       }
-#ifdef __cpp_lib_execution
       AND_WHEN("std::for_each (parallel)")
       {
         std::for_each(std::execution::par, queue.begin(), queue.end(),
@@ -524,7 +517,6 @@ SCENARIO("queue: standard algorithms")
           REQUIRE(queue.size() == 0);
         }
       }
-#endif
     }
   }
 }

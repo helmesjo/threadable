@@ -10,11 +10,13 @@
 #include <cstddef>
 #include <mutex>
 #include <thread>
-#if __cpp_lib_execution
-  #include <execution>
-#endif
 #if __has_include(<pstld/pstld.h>)
   #include <pstld/pstld.h>
+#endif
+#ifdef __cpp_lib_execution
+  #include <execution>
+#else
+  #error requires __cpp_lib_execution
 #endif
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -212,7 +214,6 @@ namespace threadable
       };
 
       // ready_.store(false, std::memory_order_relaxed);
-#ifdef __cpp_lib_execution
       // for (auto const& q : queues)
       // {
       //   auto const maxJobs = std::max(1ll, maxDuration_.count() / q.avg_dur.count());
@@ -233,9 +234,6 @@ namespace threadable
       //                            q.last_executed, q.queue->size());
       // }
       // std::cout << '\n';
-#else
-      std::for_each(begin, end, exec);
-#endif
     }
 
   private:
