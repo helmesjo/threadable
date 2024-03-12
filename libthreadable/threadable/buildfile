@@ -3,6 +3,10 @@ impl_libs = # Implementation dependencies.
 
 lib{threadable}: libul{threadable}: {hxx ixx txx cxx}{** -version} hxx{version} $impl_libs $intf_libs
 
+if($cxx.id == 'gcc')
+{
+  cxx.coptions += -Wno-interference-size
+}
 switch $cxx.stdlib: path.match, $cxx.id: path.match, $cxx.target.class: regex.match
 {
   case 'libc++', 'clang*', 'macos'

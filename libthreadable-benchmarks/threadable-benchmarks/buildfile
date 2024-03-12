@@ -4,6 +4,10 @@ import libs += \
   doctest%lib{doctest} \
   libnanobench%lib{nanobench}
 
+if($cxx.id == 'gcc')
+{
+  cxx.coptions += -Wno-interference-size
+}
 switch $cxx.stdlib: path.match, $cxx.id: path.match, $cxx.target.class: regex.match
 {
   case 'libc++', 'clang*', 'macos'
@@ -30,5 +34,4 @@ exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
   test.arguments = --quiet=true
 }
 
-cxx.coptions =+ -Wno-interference-size
 cxx.poptions =+ "-I$out_root" "-I$src_root"
