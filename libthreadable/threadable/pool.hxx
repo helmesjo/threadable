@@ -63,7 +63,7 @@ namespace threadable
               }
               else [[likely]]
               {
-                // details::atomic_wait(ready_, false, std::memory_order_acquire);
+                details::atomic_wait(ready_, false, std::memory_order_acquire);
               }
               execute();
             }
@@ -163,6 +163,8 @@ namespace threadable
     execute()
     {
       using namespace std::chrono;
+
+      ready_.store(false, std::memory_order_relaxed);
       queues_t queues;
       {
         auto _ = std::scoped_lock{queueMutex_};
@@ -213,7 +215,6 @@ namespace threadable
         }
       };
 
-      // ready_.store(false, std::memory_order_relaxed);
       // for (auto const& q : queues)
       // {
       //   auto const maxJobs = std::max(1ll, maxDuration_.count() / q.avg_dur.count());
@@ -234,6 +235,14 @@ namespace threadable
       //                            q.last_executed, q.queue->size());
       // }
       // std::cout << '\n';
+      if (std::any_of(begin, end,
+                      [](auto const& entry)
+                      {
+                        return entry->jobs_ready > entry->last_executed;
+                      }))
+      {
+        ready_.store(true, std::memory_order_relaxed);
+      }
     }
 
   private:
