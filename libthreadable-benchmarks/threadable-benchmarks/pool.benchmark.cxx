@@ -1,14 +1,11 @@
 #include <threadable-benchmarks/util.hxx>
 #include <threadable/pool.hxx>
 
+#include <queue>
+
 #include <doctest/doctest.h>
 
 #include <nanobench.h>
-
-#if __has_include(<pstld/pstld.h>)
-  #include <pstld/pstld.h>
-#endif
-#include <queue>
 
 namespace bench = ankerl::nanobench;
 

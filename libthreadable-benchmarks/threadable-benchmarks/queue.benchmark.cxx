@@ -37,7 +37,7 @@ TEST_CASE("queue: push")
             queue.clear();
             for (std::size_t i = 0; i < jobs_per_iteration; ++i)
             {
-              queue.emplace_back();
+              bench::doNotOptimizeAway(queue.emplace_back(job_t{}));
             }
           });
   }
@@ -51,7 +51,7 @@ TEST_CASE("queue: push")
             queue.clear();
             for (std::size_t i = 0; i < queue.max_size(); ++i)
             {
-              queue.push(job_t{});
+              bench::doNotOptimizeAway(queue.push(job_t{}));
             }
           });
   }
