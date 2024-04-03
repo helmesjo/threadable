@@ -323,15 +323,18 @@ namespace threadable
       head      = std::min(tail_ + max, head);
       if constexpr (consume)
       {
-        auto& lastJob = jobs_[mask(head - 1)];
-        if (mask(head - tail_) > 0 && lastJob) [[likely]]
+        if (head > 0) [[likely]]
         {
-          lastJob.set(function_dyn(
-            [this, head, func = function_dyn(lastJob.get())]() mutable
-            {
-              func();
-              tail_ = head;
-            }));
+          auto& lastJob = jobs_[mask(head - 1)];
+          if (mask(head - tail_) > 0 && lastJob) [[likely]]
+          {
+            lastJob.set(function_dyn(
+              [this, head, func = function_dyn(lastJob.get())]() mutable
+              {
+                func();
+                tail_ = head;
+              }));
+          }
         }
       }
       return iterator(nullptr, head);
@@ -414,13 +417,12 @@ namespace threadable
       |_| │
       |_| │
       |_| │
-      |_| ┘
-      |_|  ← head (next push)   - producer
-      |_|
+      |_| │
+      |_| ┘→ head-1 (last job)  - consumer
+      |_|  ← head (next slot)   - producer
       |_|
     */
 
-    // max() is intentional to easily detect wrap-around issues
     alignas(details::cache_line_size) index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
     alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
