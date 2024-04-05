@@ -190,6 +190,12 @@ namespace threadable
         return iterator(jobs_, index_--);
       }
 
+      inline auto
+      index() const
+      {
+        return index_;
+      }
+
     private:
       job*    jobs_  = nullptr;
       index_t index_ = 0;
@@ -298,6 +304,15 @@ namespace threadable
       return token;
     }
 
+    auto
+    consume(std::size_t max = max_nr_of_jobs) -> std::pair<iterator, iterator>
+    {
+      auto b = begin();
+      auto e = end<false>(max);
+      tail_  = e.index();
+      return {b, e};
+    }
+
     void
     clear()
     {
@@ -341,11 +356,8 @@ namespace threadable
     }
 
     auto
-    execute(std::size_t max = max_nr_of_jobs) -> std::size_t
+    execute(iterator b, iterator e) -> std::size_t
     {
-      assert(max > 0);
-      auto const b   = begin();
-      auto       e   = end(max);
       auto const dis = e - b;
       if (dis > 0) [[likely]]
       {
@@ -361,6 +373,9 @@ namespace threadable
         }
         else [[unlikely]]
         {
+          // make sure previous has been executed
+          auto const& prev = *(b - 1);
+          details::wait<job_state::active, true>(prev.state, std::memory_order_acquire);
           std::for_each(b, e,
                         [](job& job)
                         {
@@ -369,6 +384,15 @@ namespace threadable
         }
       }
       return dis;
+    }
+
+    auto
+    execute(std::size_t max = max_nr_of_jobs) -> std::size_t
+    {
+      assert(max > 0);
+      auto const b = begin();
+      auto       e = end(max);
+      return execute(b, e);
     }
 
     static constexpr auto

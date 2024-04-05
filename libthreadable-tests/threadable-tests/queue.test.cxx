@@ -22,6 +22,7 @@ SCENARIO("queue: push & claim")
         REQUIRE_NOTHROW(queue.begin());
         REQUIRE_NOTHROW(queue.end<false>());
         REQUIRE_NOTHROW(queue.end<true>());
+        REQUIRE_NOTHROW(queue.consume());
       }
       THEN("clear() does not throw/crash")
       {
@@ -35,6 +36,7 @@ SCENARIO("queue: push & claim")
           REQUIRE_NOTHROW(queue.begin());
           REQUIRE_NOTHROW(queue.end<false>());
           REQUIRE_NOTHROW(queue.end<true>());
+          REQUIRE_NOTHROW(queue.consume());
           REQUIRE(queue.size() == 0);
           REQUIRE(queue.empty());
           REQUIRE(queue.execute() == 0);
@@ -113,6 +115,7 @@ SCENARIO("queue: push & claim")
             THEN("1 valid job still existed")
             {
               REQUIRE(nrJobs == 1);
+              REQUIRE(called == 0);
             }
           }
         }
@@ -128,6 +131,7 @@ SCENARIO("queue: push & claim")
         THEN("1 valid job existed")
         {
           REQUIRE(nrJobs == 1);
+          REQUIRE(called == 1);
 
           AND_WHEN("iterate")
           {
@@ -142,6 +146,21 @@ SCENARIO("queue: push & claim")
               REQUIRE(nrJobs == 0);
             }
           }
+        }
+      }
+      AND_WHEN("consume and execute jobs")
+      {
+        auto [begin, end] = queue.consume();
+        REQUIRE(begin != end);
+        REQUIRE(queue.size() == 0);
+        std::for_each(begin, end,
+                      [](auto& job)
+                      {
+                        job();
+                      });
+        THEN("1 valid job executed")
+        {
+          REQUIRE(called == 1);
         }
       }
     }
@@ -450,7 +469,7 @@ SCENARIO("queue: stress-test")
           [&queue, &producers]
           {
             while (std::any_of(std::begin(producers), std::end(producers),
-                               [](const auto& p)
+                               [](auto const& p)
                                {
                                  return p.joinable();
                                }) ||
