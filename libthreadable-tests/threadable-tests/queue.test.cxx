@@ -360,13 +360,7 @@ SCENARIO("queue: stress-test")
   GIVEN("produce & consume enough for wrap-around")
   {
     static constexpr std::size_t queue_capacity = 1 << 8;
-    std::atomic_size_t           notifyCounter  = 0;
     auto                         queue          = threadable::queue<queue_capacity>();
-    queue.set_notify(
-      [&notifyCounter](...)
-      {
-        ++notifyCounter;
-      });
 
     static constexpr auto nr_of_jobs   = queue.max_size() * 2;
     std::size_t           jobsExecuted = 0;
@@ -387,13 +381,7 @@ SCENARIO("queue: stress-test")
   GIVEN("1 producer & 1 consumer")
   {
     static constexpr std::size_t queue_capacity = 1 << 8;
-    std::atomic_size_t           notifyCounter  = 0;
     auto                         queue          = threadable::queue<queue_capacity>();
-    queue.set_notify(
-      [&notifyCounter](...)
-      {
-        ++notifyCounter;
-      });
 
     THEN("there are no race conditions")
     {
@@ -426,20 +414,13 @@ SCENARIO("queue: stress-test")
         consumer.join();
       }
       REQUIRE(jobsExecuted.load() == queue.max_size());
-      REQUIRE(notifyCounter.load() == queue.max_size());
     }
   }
   GIVEN("8 producers & 1 consumer")
   {
     static constexpr std::size_t queue_capacity = 1 << 20;
     static constexpr std::size_t nr_producers   = 5;
-    std::atomic_size_t           notifyCounter  = 0;
     auto                         queue          = threadable::queue<queue_capacity>();
-    queue.set_notify(
-      [&notifyCounter](...)
-      {
-        ++notifyCounter;
-      });
 
     THEN("there are no race conditions")
     {
@@ -486,7 +467,6 @@ SCENARIO("queue: stress-test")
         consumer.join();
       }
       REQUIRE(jobsExecuted.load() == queue.max_size());
-      REQUIRE(notifyCounter.load() == queue.max_size());
     }
   }
 }

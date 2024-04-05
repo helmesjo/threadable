@@ -53,14 +53,6 @@ namespace threadable
         w->thread = std::thread(
           [](std::atomic_bool& quit, queue_t& work)
           {
-            auto ready = std::atomic_bool{false};
-            work.set_notify(
-              [&ready](...)
-              {
-                ready.store(true, std::memory_order_release);
-                ready.notify_one();
-              });
-
             while (true)
             {
               // 1. Check if quit = true. If so, bail.
@@ -71,13 +63,11 @@ namespace threadable
               // 2. Wait for jobs to ready.
               else [[likely]]
               {
-                details::atomic_wait(ready, false, std::memory_order_acquire);
+                work.wait();
               }
               // 3. Execute all jobs.
-              ready.store(false, std::memory_order_release);
               work.execute();
             }
-            work.set_notify(nullptr);
           },
           std::ref(quit_), std::ref(w->work));
         threads_.push_back(std::move(w));
@@ -193,7 +183,6 @@ namespace threadable
                                   });
           itr != std::end(queues_))
       {
-        queue.shutdown();
         queues_.erase(itr);
         return true;
       }

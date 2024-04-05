@@ -212,16 +212,13 @@ namespace threadable
 
     queue(execution_policy policy = execution_policy::parallel) noexcept
       : policy_(policy)
-    {
-      set_notify(null_callback);
-    }
+    {}
 
     queue(queue&& rhs) noexcept
       : tail_(std::move(rhs.tail_))
       , head_(rhs.head_.load(std::memory_order::relaxed))
       , nextSlot_(rhs.nextSlot_.load(std::memory_order::relaxed))
       , policy_(std::move(rhs.policy_))
-      , onJobReady_(std::move(rhs.onJobReady_))
       , jobs_(std::move(rhs.jobs_))
     {
       rhs.tail_ = 0;
@@ -232,26 +229,12 @@ namespace threadable
     auto
     operator=(queue&& rhs) noexcept -> queue&
     {
-      tail_       = std::move(rhs.tail_);
-      head_       = rhs.head_.load(std::memory_order::relaxed);
-      nextSlot_   = rhs.nextSlot_.load(std::memory_order::relaxed);
-      policy_     = std::move(rhs.policy_);
-      onJobReady_ = std::move(rhs.onJobReady_);
-      jobs_       = std::move(rhs.jobs_);
+      tail_     = std::move(rhs.tail_);
+      head_     = rhs.head_.load(std::memory_order::relaxed);
+      nextSlot_ = rhs.nextSlot_.load(std::memory_order::relaxed);
+      policy_   = std::move(rhs.policy_);
+      jobs_     = std::move(rhs.jobs_);
       return *this;
-    }
-
-    template<std::invocable<queue&> callable_t>
-    void
-    set_notify(callable_t&& callback) noexcept
-    {
-      onJobReady_ = std::make_shared<function_t>(FWD(callback), std::ref(*this));
-    }
-
-    void
-    set_notify(std::nullptr_t) noexcept
-    {
-      set_notify(null_callback);
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>
@@ -290,8 +273,7 @@ namespace threadable
         expected = slot;
       }
       while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_relaxed));
-
-      notify();
+      head_.notify_all();
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>
@@ -304,8 +286,18 @@ namespace threadable
       return token;
     }
 
+    void
+    wait() const noexcept
+    {
+      auto const head = nextSlot_.load(std::memory_order_acquire);
+      if (mask(head - tail_) == 0)
+      {
+        head_.wait(head);
+      }
+    }
+
     auto
-    consume(std::size_t max = max_nr_of_jobs) -> std::pair<iterator, iterator>
+    consume(std::size_t max = max_nr_of_jobs) noexcept -> std::pair<iterator, iterator>
     {
       auto b = begin();
       auto e = end<false>(max);
@@ -414,23 +406,7 @@ namespace threadable
       return size() == 0;
     }
 
-    void
-    shutdown() noexcept
-    {
-      set_notify(nullptr);
-    }
-
   private:
-    void
-    notify() noexcept
-    {
-      // aqcuire reference while notifying
-      if (auto receiver = onJobReady_)
-      {
-        (*receiver)();
-      }
-    }
-
     /*
       Circular job buffer. When tail or head
       reaches the end they will wrap around:
@@ -452,7 +428,6 @@ namespace threadable
     alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
 
     alignas(details::cache_line_size) execution_policy policy_ = execution_policy::parallel;
-    alignas(details::cache_line_size) std::shared_ptr<function_t> onJobReady_;
     // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
     // causing noity_all() to not wake thread(s). See completion token test "stress-test"
     alignas(details::cache_line_size) std::vector<job> jobs_{max_nr_of_jobs};
