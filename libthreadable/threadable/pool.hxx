@@ -8,18 +8,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
-#include <cstdint>
 #include <mutex>
 #include <random>
 #include <thread>
-#if __has_include(<pstld/pstld.h>)
-  #include <pstld/pstld.h>
-#endif
-#ifdef __cpp_lib_execution
-  #include <execution>
-#else
-  #error requires __cpp_lib_execution
-#endif
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
@@ -70,17 +61,17 @@ namespace threadable
             }
           },
           std::ref(quit_), std::ref(w->work));
-        threads_.push_back(std::move(w));
+        workers_.push_back(std::move(w));
       }
 
       // start scheduler thread
-      thread_ = std::thread(
+      scheduler_ = std::thread(
         [this]
         {
           thread_local auto rd  = std::random_device{};
           thread_local auto gen = std::mt19937(rd());
           thread_local auto distr =
-            std::uniform_int_distribution<std::size_t>(std::size_t{0}, threads_.size());
+            std::uniform_int_distribution<std::size_t>(std::size_t{0}, workers_.size());
 
           while (true)
           {
@@ -105,9 +96,9 @@ namespace threadable
               {
                 // assign to (random) worker
                 // @TODO: Implement a proper load balancer.
-                if (rand < threads_.size()) [[likely]]
+                if (rand < workers_.size()) [[likely]]
                 {
-                  worker& w = *threads_[rand];
+                  worker& w = *workers_[rand];
                   w.work.push(
                     [queue, pair]
                     {
@@ -142,12 +133,12 @@ namespace threadable
     {
       details::atomic_set(quit_, std::memory_order_release);
       details::atomic_notify_all(quit_);
-      if (thread_.joinable())
+      if (scheduler_.joinable())
       {
-        thread_.join();
+        scheduler_.join();
       }
 
-      for (auto& w : threads_)
+      for (auto& w : workers_)
       {
         w->work.push([] {});
         w->thread.join();
@@ -220,8 +211,8 @@ namespace threadable
     alignas(details::cache_line_size) mutable std::mutex queueMutex_;
     alignas(details::cache_line_size) details::atomic_flag_t quit_;
     alignas(details::cache_line_size) queues_t queues_;
-    alignas(details::cache_line_size) std::thread thread_;
-    alignas(details::cache_line_size) std::vector<std::unique_ptr<worker>> threads_;
+    alignas(details::cache_line_size) std::thread scheduler_;
+    alignas(details::cache_line_size) std::vector<std::unique_ptr<worker>> workers_;
   };
 
   namespace details
