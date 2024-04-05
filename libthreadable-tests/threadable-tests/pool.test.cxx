@@ -1,7 +1,6 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/pool.hxx>
 
-#include <chrono>
 #include <cstddef>
 #include <mutex>
 #include <thread>
@@ -229,80 +228,6 @@ SCENARIO("pool: stress-test")
     for (auto& thread : producers)
     {
       thread.join();
-    }
-  }
-  GIVEN("multiple queues with varying-length jobs are pushed")
-  {
-    using namespace std::chrono;
-    using clk_t = high_resolution_clock;
-
-    auto  manualPool = threadable::pool<capacity>(false);
-    auto& queue1     = manualPool.create(threadable::execution_policy::sequential);
-    auto& queue2     = manualPool.create(threadable::execution_policy::sequential);
-
-    static constexpr auto spin_wait = [](nanoseconds const& dur)
-    {
-      const auto start = clk_t::now();
-      while (dur > clk_t::now() - start)
-        ;
-    };
-
-    THEN("they are load balanced")
-    {
-      for (std::size_t i = 0; i < 2; ++i)
-      {
-        queue1.push(
-          []
-          {
-            spin_wait(10ms);
-          });
-      }
-      for (std::size_t i = 0; i < 4; ++i)
-      {
-        queue2.push(
-          []
-          {
-            spin_wait(4ms);
-          });
-      }
-
-      manualPool.execute();
-      REQUIRE(queue1.size() == 0);
-      REQUIRE(queue2.size() == 2);
-
-      for (std::size_t i = 0; i < 2; ++i)
-      {
-        queue1.push(
-          []
-          {
-            spin_wait(10ms);
-          });
-      }
-      for (std::size_t i = 0; i < 2; ++i)
-      {
-        queue2.push(
-          []
-          {
-            spin_wait(4ms);
-          });
-      }
-
-      manualPool.execute();
-      REQUIRE(queue1.size() == 1);
-      REQUIRE(queue2.size() == 0);
-
-      for (std::size_t i = 0; i < 1; ++i)
-      {
-        queue1.push(
-          []
-          {
-            spin_wait(10ms);
-          });
-      }
-
-      manualPool.execute();
-      REQUIRE(queue1.size() == 1);
-      REQUIRE(queue2.size() == 0);
     }
   }
 }

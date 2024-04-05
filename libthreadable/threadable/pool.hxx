@@ -8,7 +8,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
+#include <random>
 #include <thread>
 #if __has_include(<pstld/pstld.h>)
   #include <pstld/pstld.h>
@@ -31,44 +33,113 @@ namespace threadable
   public:
     using queue_t = queue<max_nr_of_jobs>;
 
-    struct alignas(details::cache_line_size) entry
+    struct alignas(details::cache_line_size) worker
     {
-      queue_t         queue;
-      std::size_t     last_executed = 0;
-      std::size_t     jobs_ready    = 0;
-      clk_t::duration avg_dur{1};
+      std::thread thread;
+      queue_t     work;
     };
 
-    static constexpr auto derp = sizeof(entry);
+    using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
-    using queues_t = std::vector<std::shared_ptr<entry>>;
-
-    pool(bool run = true) noexcept
+    pool(unsigned int workers = std::min(5u, std::thread::hardware_concurrency())) noexcept
     {
+      workers = std::max(2u, workers);
       details::atomic_clear(quit_);
 
-      if (run)
+      // start worker threads
+      for (std::size_t i = 0; i < workers - 1; ++i)
       {
-        thread_ = std::thread(
-          [this]
+        auto w    = std::make_unique<worker>();
+        w->thread = std::thread(
+          [](std::atomic_bool& quit, queue_t& work)
           {
+            auto ready = std::atomic_bool{false};
+            work.set_notify(
+              [&ready](...)
+              {
+                ready.store(true, std::memory_order_release);
+                ready.notify_one();
+              });
+
             while (true)
             {
               // 1. Check if quit = true. If so, bail.
-              // 2. Wait for jobs to queued.
-              // 3. Execute all jobs.
-              if (details::atomic_test(quit_, std::memory_order_acquire)) [[unlikely]]
+              if (details::atomic_test(quit, std::memory_order_acquire)) [[unlikely]]
               {
                 break;
               }
+              // 2. Wait for jobs to ready.
               else [[likely]]
               {
-                details::atomic_wait(ready_, false, std::memory_order_acquire);
+                details::atomic_wait(ready, false, std::memory_order_acquire);
               }
-              execute();
+              // 3. Execute all jobs.
+              ready.store(false, std::memory_order_release);
+              work.execute();
             }
-          });
+            work.set_notify(nullptr);
+          },
+          std::ref(quit_), std::ref(w->work));
+        threads_.push_back(std::move(w));
       }
+
+      // start scheduler thread
+      thread_ = std::thread(
+        [this]
+        {
+          thread_local auto rd  = std::random_device{};
+          thread_local auto gen = std::mt19937(rd());
+          thread_local auto distr =
+            std::uniform_int_distribution<std::size_t>(std::size_t{0}, threads_.size());
+
+          while (true)
+          {
+            // 1. Check if quit = true. If so, bail.
+            // 2. Distribute queues to workers.
+            if (details::atomic_test(quit_, std::memory_order_acquire)) [[unlikely]]
+            {
+              break;
+            }
+
+            queues_t queues;
+            {
+              auto _ = std::scoped_lock{queueMutex_};
+              queues = queues_;
+            }
+
+            auto rand     = distr(gen);
+            bool executed = false;
+            for (auto& queue : queues)
+            {
+              if (auto pair = queue->consume(); pair.first != pair.second)
+              {
+                // assign to (random) worker
+                // @TODO: Implement a proper load balancer.
+                if (rand < threads_.size()) [[likely]]
+                {
+                  worker& w = *threads_[rand];
+                  w.work.push(
+                    [queue, pair]
+                    {
+                      queue->execute(pair.first, pair.second);
+                    });
+                }
+                else [[unlikely]]
+                {
+                  queue->execute(pair.first, pair.second);
+                }
+                auto prev = rand;
+                while ((rand = distr(gen)) != prev)
+                  ;
+                executed = true;
+              }
+            }
+            if (!executed)
+            {
+              std::this_thread::yield();
+            }
+          }
+        });
     }
 
     pool(pool const&) = delete;
@@ -80,10 +151,16 @@ namespace threadable
     ~pool()
     {
       details::atomic_set(quit_, std::memory_order_release);
-      notify();
+      details::atomic_notify_all(quit_);
       if (thread_.joinable())
       {
         thread_.join();
+      }
+
+      for (auto& w : threads_)
+      {
+        w->work.push([] {});
+        w->thread.join();
       }
     }
 
@@ -99,18 +176,9 @@ namespace threadable
       queue_t* queue = nullptr;
       {
         auto _ = std::scoped_lock{queueMutex_};
-        queue  = &queues_.emplace_back(std::make_unique<entry>(std::move(q)))->queue;
-        queue->set_notify(
-          [this](...)
-          {
-            notify();
-          });
+        queue  = queues_.emplace_back(std::make_unique<queue_t>(std::move(q))).get();
       }
 
-      if (!queue->empty())
-      {
-        notify();
-      }
       return *queue;
     }
 
@@ -119,9 +187,9 @@ namespace threadable
     {
       auto _ = std::scoped_lock{queueMutex_};
       if (auto itr = std::find_if(std::begin(queues_), std::end(queues_),
-                                  [&queue](auto const& entry)
+                                  [&queue](auto const& q)
                                   {
-                                    return &entry->queue == &queue;
+                                    return q.get() == &queue;
                                   });
           itr != std::end(queues_))
       {
@@ -159,107 +227,12 @@ namespace threadable
       return max_nr_of_jobs;
     }
 
-    auto
-    execute()
-    {
-      using namespace std::chrono;
-
-      ready_.store(false, std::memory_order_relaxed);
-      queues_t queues;
-      {
-        auto _ = std::scoped_lock{queueMutex_};
-        queues = queues_;
-        if (queues.empty())
-        {
-          return;
-        }
-      }
-      auto const begin = std::begin(queues);
-      auto const end   = std::end(queues);
-
-      std::for_each(begin, end,
-                    [](auto& entry)
-                    {
-                      entry->jobs_ready = entry->queue.size();
-                    });
-
-      // calculate the max allowed executation duration for each queue
-      auto const fastest = *std::min_element(begin, end,
-                                             [](auto const& lhs, auto const& rhs)
-                                             {
-                                               return lhs->avg_dur * lhs->jobs_ready //
-                                                      < rhs->avg_dur * rhs->jobs_ready;
-                                             });
-      auto const slowest = *std::max_element(begin, end,
-                                             [](auto const& lhs, auto const& rhs)
-                                             {
-                                               return lhs->avg_dur < rhs->avg_dur;
-                                             });
-
-      auto const a = clk_t::duration{slowest->avg_dur};
-      auto const b = clk_t::duration{fastest->avg_dur * fastest->jobs_ready};
-      maxDuration_ = a > b ? a : b;
-
-      auto const exec = [this](auto& entry)
-      {
-        // given the max allowed duration, calculate how many jobs can be executed
-        const auto maxJobs = std::max(clk_t::rep{1}, maxDuration_.count() / entry->avg_dur.count());
-        const auto start   = clk_t::now();
-        if (entry->last_executed = entry->queue.execute(maxJobs); entry->last_executed > 0)
-        {
-          entry->avg_dur = (clk_t::now() - start) / entry->last_executed;
-        }
-        else
-        {
-          entry->avg_dur = clk_t::duration::max();
-        }
-      };
-
-      // for (auto const& q : queues)
-      // {
-      //   auto const maxJobs = std::max(1ll, maxDuration_.count() / q.avg_dur.count());
-      //   std::cout << std::format("before: queue: {}\tmax dur: {}\tmax jobs: {}\tavg dur: "
-      //                            "{}\tlast executed: {}\tavailable: {}\n",
-      //                            (void*)q.queue.get(), duration_cast<microseconds>(maxDuration_),
-      //                            maxJobs, duration_cast<microseconds>(q.avg_dur),
-      //                            q.last_executed, q.queue->size());
-      // }
-      std::for_each(std::execution::par, begin, end, exec);
-      // for (auto const& q : queues)
-      // {
-      //   auto const maxJobs = std::max(1ll, maxDuration_.count() / q.avg_dur.count());
-      //   std::cout << std::format("after : queue: {}\tmax dur: {}\tmax jobs: {}\tavg dur: "
-      //                            "{}\tlast executed: {}\tavailable: {}\n",
-      //                            (void*)q.queue.get(), duration_cast<microseconds>(maxDuration_),
-      //                            maxJobs, duration_cast<microseconds>(q.avg_dur),
-      //                            q.last_executed, q.queue->size());
-      // }
-      // std::cout << '\n';
-      if (std::any_of(begin, end,
-                      [](auto const& entry)
-                      {
-                        return entry->jobs_ready > entry->last_executed;
-                      }))
-      {
-        ready_.store(true, std::memory_order_relaxed);
-      }
-    }
-
   private:
-    inline void
-    notify()
-    {
-      // whenever a new job is pushed, release executing thread
-      ready_.store(true, std::memory_order_release);
-      details::atomic_notify_one(ready_);
-    }
-
     alignas(details::cache_line_size) mutable std::mutex queueMutex_;
-    alignas(details::cache_line_size) clk_t::duration maxDuration_ = clk_t::duration::max();
     alignas(details::cache_line_size) details::atomic_flag_t quit_;
-    alignas(details::cache_line_size) std::atomic_bool ready_{false};
     alignas(details::cache_line_size) queues_t queues_;
     alignas(details::cache_line_size) std::thread thread_;
+    alignas(details::cache_line_size) std::vector<std::unique_ptr<worker>> threads_;
   };
 
   namespace details
