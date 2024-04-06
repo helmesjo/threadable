@@ -20,8 +20,7 @@ SCENARIO("queue: push & claim")
       THEN("begin() and end() does not throw/crash")
       {
         REQUIRE_NOTHROW(queue.begin());
-        REQUIRE_NOTHROW(queue.end<false>());
-        REQUIRE_NOTHROW(queue.end<true>());
+        REQUIRE_NOTHROW(queue.end());
         REQUIRE_NOTHROW(queue.consume());
       }
       THEN("clear() does not throw/crash")
@@ -34,8 +33,7 @@ SCENARIO("queue: push & claim")
         THEN("members do nothing")
         {
           REQUIRE_NOTHROW(queue.begin());
-          REQUIRE_NOTHROW(queue.end<false>());
-          REQUIRE_NOTHROW(queue.end<true>());
+          REQUIRE_NOTHROW(queue.end());
           REQUIRE_NOTHROW(queue.consume());
           REQUIRE(queue.size() == 0);
           REQUIRE(queue.empty());
@@ -91,10 +89,10 @@ SCENARIO("queue: push & claim")
           REQUIRE(destroyed == 1);
         }
       }
-      AND_WHEN("iterate without executing jobs")
+      AND_WHEN("iterate jobs")
       {
         auto nrJobs = 0;
-        for (auto& job : queue)
+        for (auto const& job : queue)
         {
           REQUIRE(job);
           ++nrJobs;
@@ -103,49 +101,6 @@ SCENARIO("queue: push & claim")
         {
           REQUIRE(nrJobs == 1);
           REQUIRE(called == 0);
-
-          AND_WHEN("iterate without executing jobs")
-          {
-            nrJobs = 0;
-            for (auto& job : queue)
-            {
-              (void)job;
-              ++nrJobs;
-            }
-            THEN("1 valid job still existed")
-            {
-              REQUIRE(nrJobs == 1);
-              REQUIRE(called == 0);
-            }
-          }
-        }
-      }
-      AND_WHEN("iterate and execute jobs")
-      {
-        auto nrJobs = 0;
-        for (auto& job : queue)
-        {
-          job();
-          ++nrJobs;
-        }
-        THEN("1 valid job existed")
-        {
-          REQUIRE(nrJobs == 1);
-          REQUIRE(called == 1);
-
-          AND_WHEN("iterate")
-          {
-            nrJobs = 0;
-            for (auto& job : queue)
-            {
-              (void)job;
-              ++nrJobs;
-            }
-            THEN("0 valid jobs still existed")
-            {
-              REQUIRE(nrJobs == 0);
-            }
-          }
         }
       }
       AND_WHEN("consume and execute jobs")
@@ -225,9 +180,9 @@ SCENARIO("queue: push & claim")
       }
       REQUIRE(queue.size() == queue.max_size());
 
-      AND_WHEN("iterate and execute jobs")
+      AND_WHEN("consume and execute jobs")
       {
-        for (auto& job : queue)
+        for (auto& job : queue.consume())
         {
           REQUIRE(job);
           job();
@@ -248,7 +203,7 @@ SCENARIO("queue: push & claim")
           AND_WHEN("iterate without executing jobs")
           {
             jobsExecuted.clear();
-            for (auto& job : queue)
+            for (auto const& job : queue)
             {
               (void)job;
               jobsExecuted.push_back(0);
@@ -490,9 +445,10 @@ SCENARIO("queue: standard algorithms")
             ++jobsExecuted;
           });
       }
+      auto [b, e] = queue.consume();
       AND_WHEN("std::for_each")
       {
-        std::for_each(queue.begin(), queue.end(),
+        std::for_each(b, e,
                       [](auto& job)
                       {
                         job();
@@ -505,7 +461,7 @@ SCENARIO("queue: standard algorithms")
       }
       AND_WHEN("std::for_each (parallel)")
       {
-        std::for_each(std::execution::par, queue.begin(), queue.end(),
+        std::for_each(std::execution::par, b, e,
                       [](auto& job)
                       {
                         job();

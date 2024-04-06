@@ -92,7 +92,7 @@ namespace threadable
             bool executed = false;
             for (auto& queue : queues)
             {
-              if (auto pair = queue->consume(); pair.first != pair.second)
+              if (auto range = queue->consume(); !range.empty())
               {
                 // assign to (random) worker
                 // @TODO: Implement a proper load balancer.
@@ -100,14 +100,14 @@ namespace threadable
                 {
                   worker& w = *workers_[rand];
                   w.work.push(
-                    [queue, pair]
+                    [queue, range]
                     {
-                      queue->execute(pair.first, pair.second);
+                      queue->execute(range);
                     });
                 }
                 else [[unlikely]]
                 {
-                  queue->execute(pair.first, pair.second);
+                  queue->execute(range);
                 }
                 auto prev = rand;
                 while ((rand = distr(gen)) != prev)

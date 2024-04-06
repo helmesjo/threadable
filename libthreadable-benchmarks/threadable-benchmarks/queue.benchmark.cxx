@@ -91,7 +91,7 @@ TEST_CASE("queue: iterate (sequential)")
     b.run("threadable::queue",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(queue), queue.template end<false>(),
+            std::for_each(std::execution::seq, std::begin(queue), std::end(queue),
                           [](auto& job)
                           {
                             bench::doNotOptimizeAway(job);
@@ -134,7 +134,7 @@ TEST_CASE("queue: iterate (parallel)")
     b.run("threadable::queue",
           [&]
           {
-            std::for_each(std::execution::par, std::begin(queue), queue.template end<false>(),
+            std::for_each(std::execution::par, std::begin(queue), std::end(queue),
                           [](auto& job)
                           {
                             bench::doNotOptimizeAway(job);
@@ -173,11 +173,12 @@ TEST_CASE("queue: execute (sequential)")
     {
       queue.push(job_t{});
     }
+    auto range = queue.consume();
 
     b.run("threadable::queue",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(queue), queue.template end<false>(),
+            std::for_each(std::execution::seq, std::begin(range), std::end(range),
                           [](auto& job)
                           {
                             job.get()();
@@ -216,11 +217,12 @@ TEST_CASE("queue: execute (parallel)")
     {
       queue.push(job_t{});
     }
+    auto range = queue.consume();
 
     b.run("threadable::queue",
           [&]
           {
-            std::for_each(std::execution::par, std::begin(queue), queue.template end<false>(),
+            std::for_each(std::execution::par, std::begin(range), std::end(range),
                           [](auto& job)
                           {
                             job.get()();

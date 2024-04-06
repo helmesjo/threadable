@@ -15,6 +15,7 @@
   #error requires __cpp_lib_execution
 #endif
 #include <iterator>
+#include <ranges>
 #include <vector>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -60,19 +61,20 @@ namespace threadable
     }
 
   public:
-    struct iterator
+    template<typename elem_t = job>
+    struct circular_iterator
     {
       using iterator_category = std::random_access_iterator_tag;
       using iterator_concept  = std::contiguous_iterator_tag;
       using difference_type   = std::ptrdiff_t;
-      using value_type        = job;
+      using value_type        = elem_t;
       using pointer           = value_type*;
       using reference         = value_type&;
       using element_type      = value_type;
 
-      iterator() = default;
+      circular_iterator() = default;
 
-      explicit iterator(job* jobs, index_t index) noexcept
+      explicit circular_iterator(pointer jobs, index_t index) noexcept
         : jobs_(jobs)
         , index_(index)
       {}
@@ -96,98 +98,98 @@ namespace threadable
       }
 
       friend inline auto
-      operator*(iterator const& it) -> reference
+      operator*(circular_iterator const& it) -> reference
       {
         return it.jobs_[mask(it.index_)];
       }
 
       inline auto
-      operator<=>(iterator const& rhs) const noexcept
+      operator<=>(circular_iterator const& rhs) const noexcept
       {
         return index_ <=> rhs.index_;
       }
 
       inline auto
-      operator==(iterator const& other) const noexcept -> bool
+      operator==(circular_iterator const& other) const noexcept -> bool
       {
         return index_ == other.index_;
       }
 
       // todo: Add tests and make sure iterator works for wrap-around
       inline auto
-      operator+(iterator const& rhs) const noexcept -> difference_type
+      operator+(circular_iterator const& rhs) const noexcept -> difference_type
       {
         return index_ + rhs.index_;
       }
 
       inline auto
-      operator-(iterator const& rhs) const noexcept -> difference_type
+      operator-(circular_iterator const& rhs) const noexcept -> difference_type
       {
         return index_ - rhs.index_;
       }
 
       inline auto
-      operator+(difference_type rhs) const noexcept -> iterator
+      operator+(difference_type rhs) const noexcept -> circular_iterator
       {
-        return iterator(jobs_, index_ + rhs);
+        return circular_iterator(jobs_, index_ + rhs);
       }
 
       inline auto
-      operator-(difference_type rhs) const noexcept -> iterator
+      operator-(difference_type rhs) const noexcept -> circular_iterator
       {
-        return iterator(jobs_, index_ - rhs);
+        return circular_iterator(jobs_, index_ - rhs);
       }
 
       friend inline auto
-      operator+(difference_type lhs, iterator const& rhs) -> iterator
+      operator+(difference_type lhs, circular_iterator const& rhs) -> circular_iterator
       {
-        return iterator(rhs.jobs_, lhs + rhs.index_);
+        return circular_iterator(rhs.jobs_, lhs + rhs.index_);
       }
 
       friend inline auto
-      operator-(difference_type lhs, iterator const& rhs) -> iterator
+      operator-(difference_type lhs, circular_iterator const& rhs) -> circular_iterator
       {
-        return iterator(rhs.jobs_, lhs - rhs.index_);
+        return circular_iterator(rhs.jobs_, lhs - rhs.index_);
       }
 
       inline auto
-      operator+=(difference_type rhs) noexcept -> iterator&
+      operator+=(difference_type rhs) noexcept -> circular_iterator&
       {
         index_ += rhs;
         return *this;
       }
 
       inline auto
-      operator-=(difference_type rhs) noexcept -> iterator&
+      operator-=(difference_type rhs) noexcept -> circular_iterator&
       {
         index_ -= rhs;
         return *this;
       }
 
       inline auto
-      operator++() noexcept -> iterator&
+      operator++() noexcept -> circular_iterator&
       {
         ++index_;
         return *this;
       }
 
       inline auto
-      operator--() noexcept -> iterator&
+      operator--() noexcept -> circular_iterator&
       {
         --index_;
         return *this;
       }
 
       inline auto
-      operator++(int) noexcept -> iterator
+      operator++(int) noexcept -> circular_iterator
       {
-        return iterator(jobs_, index_++);
+        return circular_iterator(jobs_, index_++);
       }
 
       inline auto
-      operator--(int) noexcept -> iterator
+      operator--(int) noexcept -> circular_iterator
       {
-        return iterator(jobs_, index_--);
+        return circular_iterator(jobs_, index_--);
       }
 
       inline auto
@@ -197,9 +199,12 @@ namespace threadable
       }
 
     private:
-      job*    jobs_  = nullptr;
+      pointer jobs_  = nullptr;
       index_t index_ = 0;
     };
+
+    using iterator       = circular_iterator<job>;       // NOLINT
+    using const_iterator = circular_iterator<job const>; // NOLINT
 
     // Make sure iterator is valid for parallelization with the standard algorithms
     static_assert(std::random_access_iterator<iterator>);
@@ -297,18 +302,20 @@ namespace threadable
     }
 
     auto
-    consume(std::size_t max = max_nr_of_jobs) noexcept -> std::pair<iterator, iterator>
+    consume(std::size_t max = max_nr_of_jobs) noexcept
     {
-      auto b = begin();
-      auto e = end<false>(max);
-      tail_  = e.index();
-      return {b, e};
+      auto head = head_.load(std::memory_order_acquire);
+      auto b    = iterator(jobs_.data(), tail_);
+      auto e    = iterator(nullptr, std::min(tail_ + std::min(max, head), head));
+      tail_     = head;
+      return std::ranges::subrange(b, e);
     }
 
     void
     clear()
     {
-      std::for_each(std::execution::par, begin(), end(),
+      auto range = consume();
+      std::for_each(std::execution::par, std::begin(range), std::end(range),
                     [](job& job)
                     {
                       job.reset();
@@ -317,74 +324,50 @@ namespace threadable
     }
 
     auto
-    begin() noexcept
+    begin() const noexcept -> const_iterator
     {
-      return iterator(jobs_.data(), tail_);
+      return const_iterator(jobs_.data(), tail_);
     }
 
-    template<bool consume = true>
     auto
-    end(std::size_t max = max_nr_of_jobs) noexcept
+    end(std::size_t max = max_nr_of_jobs) const noexcept -> const_iterator
     {
       auto head = head_.load(std::memory_order_acquire);
-      head      = std::min(tail_ + max, head);
-      if constexpr (consume)
-      {
-        if (head > 0) [[likely]]
-        {
-          auto& lastJob = jobs_[mask(head - 1)];
-          if (mask(head - tail_) > 0 && lastJob) [[likely]]
-          {
-            lastJob.set(function_dyn(
-              [this, head, func = function_dyn(lastJob.get())]() mutable
-              {
-                func();
-                tail_ = head;
-              }));
-          }
-        }
-      }
-      return iterator(nullptr, head);
+      return const_iterator(nullptr, std::min(tail_ + max, head));
     }
 
     auto
-    execute(iterator b, iterator e) -> std::size_t
+    execute(std::ranges::range auto r) const -> std::size_t
     {
-      auto const dis = e - b;
-      if (dis > 0) [[likely]]
+      assert(r.data() >= jobs_.data() && r.data() <= jobs_.data() + jobs_.size());
+      if (policy_ == execution_policy::parallel) [[likely]]
       {
-        e = b + dis;
-        assert(b != e);
-        if (policy_ == execution_policy::parallel) [[likely]]
-        {
-          std::for_each(std::execution::par, b, e,
-                        [](job& job)
-                        {
-                          job();
-                        });
-        }
-        else [[unlikely]]
-        {
-          // make sure previous has been executed
-          auto const& prev = *(b - 1);
-          details::wait<job_state::active, true>(prev.state, std::memory_order_acquire);
-          std::for_each(b, e,
-                        [](job& job)
-                        {
-                          job();
-                        });
-        }
+        std::for_each(std::execution::par, std::begin(r), std::end(r),
+                      [](job& job)
+                      {
+                        job();
+                      });
       }
-      return dis;
+      else [[unlikely]]
+      {
+        auto b = std::begin(r);
+        // make sure previous has been executed
+        auto const& prev = *(b - 1);
+        details::wait<job_state::active, true>(prev.state, std::memory_order_acquire);
+        std::for_each(b, std::end(r),
+                      [](job& job)
+                      {
+                        job();
+                      });
+      }
+      return r.size();
     }
 
     auto
     execute(std::size_t max = max_nr_of_jobs) -> std::size_t
     {
       assert(max > 0);
-      auto const b = begin();
-      auto       e = end(max);
-      return execute(b, e);
+      return execute(consume(max));
     }
 
     static constexpr auto
@@ -419,7 +402,7 @@ namespace threadable
       |_| │
       |_| │
       |_| ┘→ head-1 (last job)  - consumer
-      |_|  ← head (next slot)   - producer
+      |_|  ← head   (next slot) - producer
       |_|
     */
 
