@@ -109,6 +109,8 @@ namespace threadable
   };
 
   static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
+  static_assert(alignof(job) == details::cache_line_size,
+                "job must be aligned to cache line boundaries");
 
   struct job_token
   {

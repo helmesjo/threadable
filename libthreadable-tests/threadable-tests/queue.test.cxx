@@ -4,9 +4,21 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <thread>
+
+namespace
+{
+  template<typename T>
+  auto
+  is_aligned(T const* ptr, std::size_t alignment) -> bool
+  {
+    auto addr = reinterpret_cast<std::uintptr_t>(ptr); // NOLINT
+    return (addr % alignment) == 0;
+  }
+}
 
 SCENARIO("queue: push & claim")
 {
@@ -214,6 +226,26 @@ SCENARIO("queue: push & claim")
             }
           }
         }
+      }
+    }
+  }
+}
+
+SCENARIO("queue: alignment")
+{
+  static constexpr auto queue_capacity = 128;
+  auto                  queue          = threadable::queue<queue_capacity>{};
+  GIVEN("a queue of 128 items")
+  {
+    for (std::size_t i = 0; i < queue.max_size(); ++i)
+    {
+      queue.push([] {});
+    }
+    THEN("they are alligned to cache line boundaries")
+    {
+      for (auto const& item : queue)
+      {
+        REQUIRE(is_aligned(&item, threadable::details::cache_line_size));
       }
     }
   }

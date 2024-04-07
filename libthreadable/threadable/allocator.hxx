@@ -1,10 +1,13 @@
 #pragma once
 
+#if !defined(_WIN32)
+  #include <cstdlib>
+#endif
 #include <memory>
 
 namespace threadable
 {
-  template<typename T>
+  template<typename T, std::size_t alignment>
   struct aligned_allocator : public std::allocator<T>
   {
     aligned_allocator() = default;
@@ -19,13 +22,18 @@ namespace threadable
     template<typename U>
     struct rebind
     {
-      using other = aligned_allocator<U>;
+      using other = aligned_allocator<U, alignment>;
     };
 
     inline auto
     allocate(size_type n) -> pointer
     {
-      if (auto p = static_cast<pointer>(std::aligned_alloc(sizeof(T), n * sizeof(T)))) // NOLINT
+#if defined(_WIN32)
+      auto p = static_cast<pointer>(_aligned_malloc(n * sizeof(T), alignment));
+#else
+      auto p = static_cast<pointer>(std::aligned_alloc(alignment, n * sizeof(T)));
+#endif
+      if (p) // NOLINT
       {
         return p;
       }
@@ -35,7 +43,11 @@ namespace threadable
     inline void
     deallocate(pointer p, size_type) noexcept
     {
+#if defined(_WIN32)
+      _aligned_free(p); // NOLINT
+#else
       std::free(p); // NOLINT
+#endif
     }
   };
 }
