@@ -46,7 +46,7 @@ CheckOptions:
   - key:             readability-identifier-naming.TypeAliasSuffix
     value:           _t
   - key:             readability-identifier-naming.TypeAliasIgnoredRegexp
-    value:           "[A-Z]|(iterator_category|iterator_concept|difference_type|value_type|pointer|reference|element_type|promise_type)"
+    value:           "[A-Z]|(iterator_category|iterator_concept|difference_type|value_type|pointer|reference|element_type|promise_type|size_type|other)"
   - key:             readability-identifier-naming.UnionCase
     value:           lower_case
   - key:             readability-identifier-naming.VariableCase
