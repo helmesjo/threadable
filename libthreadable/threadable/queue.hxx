@@ -276,12 +276,11 @@ namespace threadable
       std::atomic_thread_fence(std::memory_order_release);
 
       // 3. Commit slot
-      index_t expected = 0;
-      do
+      index_t expected = slot;
+      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_relaxed))
       {
         expected = slot;
       }
-      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_relaxed));
       head_.notify_all();
     }
 
