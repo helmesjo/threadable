@@ -1,11 +1,13 @@
 #pragma once
 
+#include <threadable/allocator.hxx>
 #include <threadable/job.hxx>
 
 #include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cstddef>
+
 #if __has_include(<pstld/pstld.h>)
   #include <pstld/pstld.h>
 #endif
@@ -22,7 +24,6 @@
 
 namespace threadable
 {
-
   namespace details
   {
     constexpr std::size_t default_max_nr_of_jobs = 1 << 16;
@@ -220,10 +221,10 @@ namespace threadable
     {}
 
     queue(queue&& rhs) noexcept
-      : tail_(std::move(rhs.tail_))
+      : policy_(std::move(rhs.policy_))
+      , tail_(std::move(rhs.tail_))
       , head_(rhs.head_.load(std::memory_order::relaxed))
       , nextSlot_(rhs.nextSlot_.load(std::memory_order::relaxed))
-      , policy_(std::move(rhs.policy_))
       , jobs_(std::move(rhs.jobs_))
     {
       rhs.tail_ = 0;
@@ -406,14 +407,13 @@ namespace threadable
       |_|
     */
 
+    alignas(details::cache_line_size) execution_policy policy_ = execution_policy::parallel;
     alignas(details::cache_line_size) index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
     alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
 
-    alignas(details::cache_line_size) execution_policy policy_ = execution_policy::parallel;
-    // potential bug with clang (14.0.6) where use of vector for jobs (with atomic member)
-    // causing noity_all() to not wake thread(s). See completion token test "stress-test"
-    alignas(details::cache_line_size) std::vector<job> jobs_{max_nr_of_jobs};
+    alignas(details::cache_line_size) std::vector<job, aligned_allocator<job>> jobs_{
+      max_nr_of_jobs};
   };
 }
 
