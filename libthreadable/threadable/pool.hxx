@@ -90,29 +90,36 @@ namespace threadable
 
             auto rand     = distr(gen);
             bool executed = false;
-            for (auto& queue : queues)
+            if (queues.size() == 1)
             {
-              if (auto range = queue->consume(); !range.empty())
+              executed = queues[0]->execute() > 0;
+            }
+            else
+            {
+              for (auto& queue : queues)
               {
-                // assign to (random) worker
-                // @TODO: Implement a proper load balancer.
-                if (rand < workers_.size()) [[likely]]
+                if (auto range = queue->consume(); !range.empty())
                 {
-                  worker& w = *workers_[rand];
-                  w.work.push(
-                    [queue, range]
-                    {
-                      queue->execute(range);
-                    });
+                  // assign to (random) worker
+                  // @TODO: Implement a proper load balancer.
+                  if (rand < workers_.size()) [[likely]]
+                  {
+                    worker& w = *workers_[rand];
+                    w.work.push(
+                      [queue, range = std::move(range)]
+                      {
+                        queue->execute(range);
+                      });
+                  }
+                  else [[unlikely]]
+                  {
+                    queue->execute(range);
+                  }
+                  auto prev = rand;
+                  while ((rand = distr(gen)) != prev)
+                    ;
+                  executed = true;
                 }
-                else [[unlikely]]
-                {
-                  queue->execute(range);
-                }
-                auto prev = rand;
-                while ((rand = distr(gen)) != prev)
-                  ;
-                executed = true;
               }
             }
             if (!executed)
