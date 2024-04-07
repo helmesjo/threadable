@@ -291,7 +291,7 @@ SCENARIO("queue: completion token")
     auto token = queue.push([] {});
     THEN("token is NOT done when job is discarded")
     {
-      for (auto& job : queue)
+      for (auto const& job : queue)
       {
         (void)job; /* discard job */
       }

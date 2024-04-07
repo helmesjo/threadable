@@ -75,7 +75,7 @@ TEST_CASE("queue: iterate (sequential)")
           [&]
           {
             std::for_each(std::execution::seq, std::begin(queue), std::end(queue),
-                          [](auto& job)
+                          [](auto const& job)
                           {
                             bench::doNotOptimizeAway(job);
                           });
@@ -92,7 +92,7 @@ TEST_CASE("queue: iterate (sequential)")
           [&]
           {
             std::for_each(std::execution::seq, std::begin(queue), std::end(queue),
-                          [](auto& job)
+                          [](auto const& job)
                           {
                             bench::doNotOptimizeAway(job);
                           });
@@ -118,7 +118,7 @@ TEST_CASE("queue: iterate (parallel)")
           [&]
           {
             std::for_each(std::execution::par, std::begin(queue), std::end(queue),
-                          [](auto& job)
+                          [](auto const& job)
                           {
                             bench::doNotOptimizeAway(job);
                           });
@@ -135,7 +135,7 @@ TEST_CASE("queue: iterate (parallel)")
           [&]
           {
             std::for_each(std::execution::par, std::begin(queue), std::end(queue),
-                          [](auto& job)
+                          [](auto const& job)
                           {
                             bench::doNotOptimizeAway(job);
                           });

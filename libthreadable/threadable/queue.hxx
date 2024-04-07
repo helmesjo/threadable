@@ -206,6 +206,9 @@ namespace threadable
 
     using iterator       = circular_iterator<job>;       // NOLINT
     using const_iterator = circular_iterator<job const>; // NOLINT
+    static_assert(std::is_const_v<typename const_iterator::value_type>);
+    static_assert(std::is_const_v<std::remove_reference_t<typename const_iterator::reference>>);
+    static_assert(std::is_const_v<std::remove_pointer_t<typename const_iterator::pointer>>);
 
     // Make sure iterator is valid for parallelization with the standard algorithms
     static_assert(std::random_access_iterator<iterator>);
