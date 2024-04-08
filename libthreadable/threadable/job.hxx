@@ -23,7 +23,8 @@ namespace threadable
 
   enum job_state : std::uint8_t
   {
-    active = 0
+    active  = 1 << 0,
+    claimed = 1 << 1
   };
 
   // struct alignas(details::cache_line_size) job final : details::job_base
@@ -48,6 +49,13 @@ namespace threadable
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on (checking state true -> false)
       // details::atomic_notify_all(active);
+    }
+
+    auto
+    set(function_t func) noexcept -> decltype(auto)
+    {
+      func_ = std::move(func);
+      details::set<job_state::active, true>(state, std::memory_order_release);
     }
 
     template<typename callable_t>

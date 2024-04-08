@@ -8,8 +8,6 @@
 #include <cassert>
 #include <cstddef>
 
-#include "threadable/function.hxx"
-
 #if __has_include(<pstld/pstld.h>)
   #include <pstld/pstld.h>
 #endif
@@ -265,29 +263,61 @@ namespace threadable
 
       // auto& job = jobs_[mask(slot)];
       // typename job::function_t j;
-      thread_local auto job = threadable::job{};
+      index_t           slot = head_.load(std::memory_order_relaxed);
+      thread_local job* j    = nullptr;
+
+      do
+      {
+        j = &jobs_[mask(slot)];
+        if (!details::test<job_state::claimed>(j->state, std::memory_order_relaxed)) [[likely]]
+        {
+          if (!(job_state::claimed &
+                j->state.fetch_or(job_state::claimed, std::memory_order_relaxed))) [[likely]]
+          {
+            break;
+          }
+        }
+        slot = head_.load(std::memory_order_acquire);
+      }
+      while (true);
 
       // 2. Assign job
       if constexpr (std::invocable<callable_t, job_token&, arg_ts...>)
       {
-        job.set(FWD(func), std::ref(token), FWD(args)...);
+        j->set(FWD(func), std::ref(token), FWD(args)...);
       }
       else
       {
-        job.set(FWD(func), FWD(args)...);
+        j->set(FWD(func), FWD(args)...);
       }
 
-      assert(job);
+      // assert(*j);
 
-      token.reassign(job.state);
+      // token.reassign(j->state);
 
-      std::atomic_thread_fence(std::memory_order_release);
+      // std::atomic_thread_fence(std::memory_order_release);
 
       // 3. Commit slot
-      // index_t expected = slot;
       // auto slot = head_.fetch_add(1, std::memory_order_release);
       // jobs_[mask(slot)].set(job);
-      // while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_relaxed))
+      if (slot >= head_.load(std::memory_order_relaxed))
+      {
+        // @FIX: Below we want to only have the 'thread that added to the latest slot'
+        //       update head, all others should bail.
+        auto scan = slot;
+        if (!jobs_[mask(scan + 1)])
+        {
+          while (!head_.compare_exchange_weak(scan, scan + 1, std::memory_order_release) &&
+                 !jobs_[mask(scan + 1)])
+          {
+            int dummy = 0;
+            // ++scan;
+          }
+        }
+      }
+      // assert(slot < head_.load(std::memory_order_acquire));
+      // index_t expected = slot;
+      // while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release))
       // {
       //   expected = slot;
       // }

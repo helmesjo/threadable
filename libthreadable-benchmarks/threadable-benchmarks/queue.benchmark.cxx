@@ -20,39 +20,40 @@ namespace
 TEST_CASE("queue: push")
 {
   bench::Bench b;
-  b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job").minEpochIterations(10);
+  b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job").minEpochIterations(11);
 
   using job_t = decltype([](){
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
   });
 
   b.title("push");
-  {
-    auto queue = std::vector<std::function<void()>>();
-    queue.reserve(jobs_per_iteration);
+  // {
+  //   auto queue = std::vector<std::function<void()>>();
+  //   queue.reserve(jobs_per_iteration);
 
-    b.run("std::vector",
-          [&]
-          {
-            queue.clear();
-            for (std::size_t i = 0; i < jobs_per_iteration; ++i)
-            {
-              bench::doNotOptimizeAway(queue.emplace_back(job_t{}));
-            }
-          });
-  }
+  //   b.run("std::vector",
+  //         [&]
+  //         {
+  //           queue.clear();
+  //           for (std::size_t i = 0; i < jobs_per_iteration; ++i)
+  //           {
+  //             bench::doNotOptimizeAway(queue.emplace_back(job_t{}));
+  //           }
+  //         });
+  // }
   {
+    // auto queue = threadable::queue<64>();
     auto queue = threadable::queue<jobs_per_iteration>();
 
-    b.run("threadable::queue (seq)",
-          [&]
-          {
-            queue.clear();
-            for (std::size_t i = 0; i < queue.max_size(); ++i)
-            {
-              bench::doNotOptimizeAway(queue.push(job_t{}));
-            }
-          });
+    // b.run("threadable::queue (seq)",
+    //       [&]
+    //       {
+    //         queue.clear();
+    //         for (std::size_t i = 0; i < queue.max_size(); ++i)
+    //         {
+    //           bench::doNotOptimizeAway(queue.push(job_t{}));
+    //         }
+    //       });
 
     auto iters = std::vector<int>{};
     iters.resize(queue.max_size());
@@ -61,7 +62,7 @@ TEST_CASE("queue: push")
           {
             queue.clear();
             std::for_each(std::execution::par, std::begin(iters), std::end(iters),
-                          [&queue](auto const& job)
+                          [&queue](auto const&)
                           {
                             bench::doNotOptimizeAway(queue.push(job_t{}));
                           });

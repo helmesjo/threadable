@@ -13,37 +13,35 @@ namespace threadable::details
   template<std::uint8_t bit>
   inline auto
   test(atomic_bitfield_t const& field, std::memory_order order = std::memory_order_seq_cst) -> bool
-    requires (bit < sizeof(bit) * 8)
+  // requires (bit < ~std::uint8_t{0})
   {
-    static constexpr std::uint8_t mask = 1 << bit;
-    return mask & field.load(order);
+    return bit & field.load(order);
   }
 
   template<std::uint8_t bit, bool value>
-    requires (bit < sizeof(bit) * 8)
+  // requires (bit < ~std::uint8_t{0})
   inline auto
-  test_and_set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
-    -> bool
+  test_and_set(atomic_bitfield_t& field,
+               std::memory_order  order = std::memory_order_seq_cst) -> bool
   {
-    static constexpr std::uint8_t mask = 1 << bit;
     if constexpr (value)
     {
       // Set the bit
-      return mask & field.fetch_or(mask, order);
+      return bit & field.fetch_or(bit, order);
     }
     else
     {
       // Clear the bit
-      return mask & field.fetch_and(static_cast<std::uint8_t>(~mask), order);
+      return bit & field.fetch_and(static_cast<std::uint8_t>(~bit), order);
     }
   }
 
   template<std::uint8_t bit, bool value>
-    requires (bit < sizeof(bit) * 8)
-  inline void
+  // requires (bit < ~std::uint8_t{0})
+  inline auto
   set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
   {
-    (void)test_and_set<bit, value>(field, order);
+    return test_and_set<bit, value>(field, order);
   }
 
   inline void
@@ -53,13 +51,12 @@ namespace threadable::details
   }
 
   template<std::uint8_t bit, bool old>
-    requires (bit < sizeof(bit) * 8)
+  // requires (bit < ~std::uint8_t{0})
   inline void
   wait(atomic_bitfield_t const& field, std::memory_order order = std::memory_order_seq_cst)
   {
-    static constexpr std::uint8_t mask    = 1 << bit;
-    auto                          current = field.load(order);
-    while (static_cast<bool>(current & mask) == old)
+    auto current = field.load(order);
+    while (static_cast<bool>(current & bit) == old)
     {
       // Wait for any change in atomicVar
       field.wait(current, order);

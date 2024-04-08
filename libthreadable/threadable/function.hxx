@@ -175,8 +175,8 @@ namespace threadable
     };
 
     template<typename callable_t, typename... arg_ts>
-    deferred_callable(callable_t&& callable, arg_ts&&... args)
-      -> deferred_callable<decltype(callable), decltype(args)...>;
+    deferred_callable(callable_t&& callable,
+                      arg_ts&&... args) -> deferred_callable<decltype(callable), decltype(args)...>;
 
     template<typename T>
     struct is_function : std::false_type
@@ -348,7 +348,8 @@ namespace threadable
     operator=(function_buffer&& buffer) noexcept -> auto&
     {
       std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
-      details::invoke_special_func(data(), details::method::move_ctor, body_ptr(buffer.data()));
+      details::invoke_special_func(data(), details::method::move_ctor,
+                                   details::body_ptr(buffer.data()));
       details::size(buffer.data(), 0);
       return *this;
     }
@@ -386,8 +387,8 @@ namespace threadable
   };
 
   template<typename callable_t, typename... arg_ts>
-  function_buffer(callable_t&&, arg_ts&&...)
-    -> function_buffer<required_buffer_size_v<callable_t, arg_ts...>>;
+  function_buffer(callable_t&&,
+                  arg_ts&&...) -> function_buffer<required_buffer_size_v<callable_t, arg_ts...>>;
 
   struct function_dyn
   {
@@ -432,7 +433,8 @@ namespace threadable
       details::invoke(buffer_);
     }
 
-    inline operator bool() const noexcept
+    inline
+    operator bool() const noexcept
     {
       return size() != 0;
     }
@@ -546,7 +548,8 @@ namespace threadable
       details::invoke(buffer_.data());
     }
 
-    inline operator bool() const noexcept
+    inline
+    operator bool() const noexcept
     {
       return buffer_.size() != 0;
     }
