@@ -8,6 +8,8 @@
 #include <cassert>
 #include <cstddef>
 
+#include "threadable/function.hxx"
+
 #if __has_include(<pstld/pstld.h>)
   #include <pstld/pstld.h>
 #endif
@@ -217,7 +219,11 @@ namespace threadable
     using function_t = function<details::job_buffer_size>;
 
     queue(queue const&) = delete;
-    ~queue()            = default;
+
+    ~queue()
+    {
+      clear();
+    }
 
     queue(execution_policy policy = execution_policy::parallel) noexcept
       : policy_(policy)
@@ -252,12 +258,14 @@ namespace threadable
     void
     push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept
     {
+      // assert(nextSlot_.is_lock_free());
       // 1. Acquire a slot
-      index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
-      assert(mask(slot + 1) != mask(tail_));
+      // index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
+      // assert(mask(slot + 1) != mask(tail_));
 
-      auto& job = jobs_[mask(slot)];
-      assert(!job);
+      // auto& job = jobs_[mask(slot)];
+      // typename job::function_t j;
+      thread_local auto job = threadable::job{};
 
       // 2. Assign job
       if constexpr (std::invocable<callable_t, job_token&, arg_ts...>)
@@ -276,12 +284,14 @@ namespace threadable
       std::atomic_thread_fence(std::memory_order_release);
 
       // 3. Commit slot
-      index_t expected = slot;
-      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_relaxed))
-      {
-        expected = slot;
-      }
-      head_.notify_all();
+      // index_t expected = slot;
+      // auto slot = head_.fetch_add(1, std::memory_order_release);
+      // jobs_[mask(slot)].set(job);
+      // while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_relaxed))
+      // {
+      //   expected = slot;
+      // }
+      // head_.notify_all();
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>
@@ -318,12 +328,13 @@ namespace threadable
     clear()
     {
       auto range = consume();
-      std::for_each(std::execution::par, std::begin(range), std::end(range),
+      std::for_each(std::begin(range), std::end(range),
                     [](job& job)
                     {
                       job.reset();
                     });
-      tail_ = head_.load(std::memory_order_acquire);
+      tail_ = 0;
+      head_.store(0, std::memory_order_release);
     }
 
     auto

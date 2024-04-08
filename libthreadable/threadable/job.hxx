@@ -16,8 +16,9 @@ namespace threadable
       atomic_bitfield_t state;
     };
 
-    static constexpr auto job_buffer_size =
-      cache_line_size - sizeof(job_base) - sizeof(function<0>);
+    // static constexpr auto job_buffer_size =
+    //   cache_line_size - sizeof(job_base) - sizeof(function<0>);
+    static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base);
   }
 
   enum job_state : std::uint8_t
@@ -25,21 +26,17 @@ namespace threadable
     active = 0
   };
 
+  // struct alignas(details::cache_line_size) job final : details::job_base
   struct alignas(details::cache_line_size) job final : details::job_base
   {
     using function_t = function<details::job_buffer_size>;
 
-    job() = default;
+    job()                          = default;
+    job(job&&)                     = delete;
+    job(job const&)                = delete;
+    auto operator=(job&&) -> auto& = delete;
 
-    ~job()
-    {
-      reset();
-    }
-
-    job(job&&)                          = delete;
-    job(job const&)                     = delete;
-    auto operator=(job&&) -> auto&      = delete;
-    auto operator=(job const&) -> auto& = delete;
+    // auto operator=(job const&) -> auto& = delete;
 
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
@@ -63,6 +60,13 @@ namespace threadable
     }
 
     auto
+    operator=(job const& rhs) noexcept -> auto&
+    {
+      func_ = rhs.func_;
+      return *this;
+    }
+
+    auto
     operator=(std::nullptr_t) noexcept -> auto&
     {
       reset();
@@ -77,7 +81,7 @@ namespace threadable
       details::atomic_notify_all(state);
     }
 
-    auto
+    [[nodiscard]] auto
     done() const noexcept -> bool
     {
       return !details::test<job_state::active>(state, std::memory_order_acquire);
@@ -99,7 +103,7 @@ namespace threadable
     }
 
     auto
-    get() noexcept -> auto&
+    get() noexcept -> function_t&
     {
       return func_;
     }
@@ -109,6 +113,7 @@ namespace threadable
   };
 
   static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
+
   static_assert(alignof(job) == details::cache_line_size,
                 "job must be aligned to cache line boundaries");
 

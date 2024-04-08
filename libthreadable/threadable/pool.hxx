@@ -38,31 +38,31 @@ namespace threadable
       details::atomic_clear(quit_);
 
       // start worker threads
-      for (std::size_t i = 0; i < workers - 1; ++i)
-      {
-        auto w    = std::make_unique<worker>();
-        w->thread = std::thread(
-          [](std::atomic_bool& quit, queue_t& work)
-          {
-            while (true)
-            {
-              // 1. Check if quit = true. If so, bail.
-              if (details::atomic_test(quit, std::memory_order_acquire)) [[unlikely]]
-              {
-                break;
-              }
-              // 2. Wait for jobs to ready.
-              else [[likely]]
-              {
-                work.wait();
-              }
-              // 3. Execute all jobs.
-              work.execute();
-            }
-          },
-          std::ref(quit_), std::ref(w->work));
-        workers_.push_back(std::move(w));
-      }
+      // for (std::size_t i = 0; i < workers - 1; ++i)
+      // {
+      //   auto w    = std::make_unique<worker>();
+      //   w->thread = std::thread(
+      //     [](std::atomic_bool& quit, queue_t& work)
+      //     {
+      //       while (true)
+      //       {
+      //         // 1. Check if quit = true. If so, bail.
+      //         if (details::atomic_test(quit, std::memory_order_acquire)) [[unlikely]]
+      //         {
+      //           break;
+      //         }
+      //         // 2. Wait for jobs to ready.
+      //         else [[likely]]
+      //         {
+      //           work.wait();
+      //         }
+      //         // 3. Execute all jobs.
+      //         work.execute();
+      //       }
+      //     },
+      //     std::ref(quit_), std::ref(w->work));
+      //   workers_.push_back(std::move(w));
+      // }
 
       // start scheduler thread
       scheduler_ = std::thread(

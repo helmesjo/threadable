@@ -143,7 +143,7 @@ namespace threadable
     inline constexpr void
     invoke_special_func(std::uint8_t* buf, method m, std::uint8_t* that = nullptr) noexcept
     {
-      special_func_ptr(buf)(body_ptr(buf), m, that ? body_ptr(that) : nullptr);
+      special_func_ptr(buf)(body_ptr(buf), m, that);
     }
 
     template<typename callable_t, typename... arg_ts>
@@ -263,7 +263,6 @@ namespace threadable
              typename callable_value_t = std::remove_reference_t<callable_t>>
     void
     set(callable_t&& callable) noexcept // NOLINT
-                                        // (bug in clang-tidy doesn't detect FWD incapture)
       requires (!is_function_v<callable_t>) &&
                (required_buffer_size_v<decltype(callable)> > buffer_size)
     {
@@ -329,7 +328,10 @@ namespace threadable
 
     ~function_buffer()
     {
-      reset();
+      if (size() > 0) [[likely]]
+      {
+        details::invoke_special_func(data(), details::method::dtor);
+      }
     }
 
     auto
@@ -337,7 +339,8 @@ namespace threadable
     {
       std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
       details::invoke_special_func(data(), details::method::copy_ctor,
-                                   const_cast<std::uint8_t*>(buffer.data())); // NOLINT
+                                   details::body_ptr(const_cast<std::uint8_t*>( // NOLINT
+                                     buffer.data())));
       return *this;
     }
 
@@ -345,7 +348,7 @@ namespace threadable
     operator=(function_buffer&& buffer) noexcept -> auto&
     {
       std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
-      details::invoke_special_func(data(), details::method::move_ctor, buffer.data());
+      details::invoke_special_func(data(), details::method::move_ctor, body_ptr(buffer.data()));
       details::size(buffer.data(), 0);
       return *this;
     }
@@ -429,8 +432,7 @@ namespace threadable
       details::invoke(buffer_);
     }
 
-    inline
-    operator bool() const noexcept
+    inline operator bool() const noexcept
     {
       return size() != 0;
     }
@@ -457,10 +459,11 @@ namespace threadable
     copy_buffer(std::span<std::uint8_t const> src)
     {
       assert(src.size() > details::function_buffer_meta_size);
-      buffer_ = new std::uint8_t[src.size()];                              // NOLINT
+      buffer_ = new std::uint8_t[src.size()]; // NOLINT
       std::memcpy(buffer_, src.data(), details::function_buffer_meta_size);
       details::invoke_special_func(buffer_, details::method::copy_ctor,
-                                   const_cast<std::uint8_t*>(src.data())); // NOLINT
+                                   details::body_ptr(
+                                     const_cast<std::uint8_t*>(src.data()))); // NOLINT
     }
 
     std::uint8_t* buffer_ = nullptr;
@@ -543,8 +546,7 @@ namespace threadable
       details::invoke(buffer_.data());
     }
 
-    inline
-    operator bool() const noexcept
+    inline operator bool() const noexcept
     {
       return buffer_.size() != 0;
     }

@@ -27,7 +27,7 @@ switch $cxx.stdlib: path.match, $cxx.id: path.match, $cxx.target.class: regex.ma
   }
 }
 
-exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
+exe{threadable-benchmarks}: {hxx ixx txx cxx}{** -pool.benchmark.cxx -function.benchmark.cxx} $libs
 {
   test = true
   install = false
