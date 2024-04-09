@@ -26,6 +26,7 @@ SCENARIO("queue: push & claim")
   {
     auto queue = threadable::queue<2>{};
     REQUIRE(queue.size() == 0);
+    REQUIRE(queue.max_size() == 1);
 
     WHEN("empty")
     {

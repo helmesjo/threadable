@@ -254,10 +254,13 @@ namespace threadable
     {
       // 1. Acquire a slot
       index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
-      assert(mask(slot + 1) != mask(tail_));
 
       auto& job = jobs_[mask(slot)];
       assert(!job);
+      if (job) [[unlikely]]
+      {
+        details::wait<job_state::active, true>(job.state, std::memory_order_acquire);
+      }
 
       // 2. Assign job
       if constexpr (std::invocable<callable_t, job_token&, arg_ts...>)
