@@ -175,8 +175,8 @@ namespace threadable
     };
 
     template<typename callable_t, typename... arg_ts>
-    deferred_callable(callable_t&& callable,
-                      arg_ts&&... args) -> deferred_callable<decltype(callable), decltype(args)...>;
+    deferred_callable(callable_t&& callable, arg_ts&&... args)
+      -> deferred_callable<decltype(callable), decltype(args)...>;
 
     template<typename T>
     struct is_function : std::false_type
@@ -357,7 +357,7 @@ namespace threadable
     inline void
     reset() noexcept
     {
-      if (size() > 0)
+      if (size() > 0) [[likely]]
       {
         details::invoke_special_func(data(), details::method::dtor);
         details::size(buffer_.data(), 0);
@@ -387,8 +387,8 @@ namespace threadable
   };
 
   template<typename callable_t, typename... arg_ts>
-  function_buffer(callable_t&&,
-                  arg_ts&&...) -> function_buffer<required_buffer_size_v<callable_t, arg_ts...>>;
+  function_buffer(callable_t&&, arg_ts&&...)
+    -> function_buffer<required_buffer_size_v<callable_t, arg_ts...>>;
 
   struct function_dyn
   {
@@ -417,7 +417,7 @@ namespace threadable
       : function_dyn(func.buffer())
     {}
 
-    function_dyn(std::invocable auto&& callable) noexcept
+    function_dyn(std::invocable auto&& callable) noexcept // NOLINT
       requires (!is_function_v<decltype(callable)> && !is_function_dyn_v<decltype(callable)>)
       : function_dyn(function_buffer(FWD(callable)))
     {}
@@ -433,8 +433,7 @@ namespace threadable
       details::invoke(buffer_);
     }
 
-    inline
-    operator bool() const noexcept
+    inline operator bool() const noexcept
     {
       return size() != 0;
     }
@@ -548,8 +547,7 @@ namespace threadable
       details::invoke(buffer_.data());
     }
 
-    inline
-    operator bool() const noexcept
+    inline operator bool() const noexcept
     {
       return buffer_.size() != 0;
     }

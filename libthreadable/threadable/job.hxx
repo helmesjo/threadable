@@ -11,14 +11,14 @@ namespace threadable
 {
   namespace details
   {
-    struct job_base
-    {
-      atomic_bitfield_t state;
-    };
+    // struct job_base
+    // {
+    //   atomic_bitfield_t state;
+    // };
 
     // static constexpr auto job_buffer_size =
     //   cache_line_size - sizeof(job_base) - sizeof(function<0>);
-    static constexpr auto job_buffer_size = cache_line_size - sizeof(job_base);
+    static constexpr auto job_buffer_size = cache_line_size;
   }
 
   enum job_state : std::uint8_t
@@ -28,7 +28,7 @@ namespace threadable
   };
 
   // struct alignas(details::cache_line_size) job final : details::job_base
-  struct alignas(details::cache_line_size) job final : details::job_base
+  struct alignas(details::cache_line_size) job
   {
     using function_t = function<details::job_buffer_size>;
 
@@ -116,11 +116,14 @@ namespace threadable
       return func_;
     }
 
-  private:
-    function_t func_;
+    alignas(details::cache_line_size) details::atomic_bitfield_t state;
+
+    // private:
+    alignas(details::cache_line_size) function_t func_;
   };
 
-  static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
+  static_assert(sizeof(job) == details::cache_line_size * 2,
+                "job size must equal 2x cache line size");
 
   static_assert(alignof(job) == details::cache_line_size,
                 "job must be aligned to cache line boundaries");

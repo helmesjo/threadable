@@ -8,9 +8,10 @@
 
 namespace threadable::details
 {
-  using atomic_bitfield_t = std::atomic<std::uint8_t>;
+  using bitfield_size_t   = std::uint8_t;
+  using atomic_bitfield_t = std::atomic<bitfield_size_t>;
 
-  template<std::uint8_t bit>
+  template<bitfield_size_t bit>
   inline auto
   test(atomic_bitfield_t const& field, std::memory_order order = std::memory_order_seq_cst) -> bool
   // requires (bit < ~std::uint8_t{0})
@@ -18,28 +19,28 @@ namespace threadable::details
     return bit & field.load(order);
   }
 
-  template<std::uint8_t bit, bool value>
+  template<bitfield_size_t bit, bool value>
   // requires (bit < ~std::uint8_t{0})
   inline auto
-  test_and_set(atomic_bitfield_t& field,
-               std::memory_order  order = std::memory_order_seq_cst) -> bool
+  test_and_set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
+    -> bool
   {
     if constexpr (value)
     {
       // Set the bit
-      return bit & field.fetch_or(bit, order);
+      return !(bit & field.fetch_or(bit, order));
     }
     else
     {
       // Clear the bit
-      return bit & field.fetch_and(static_cast<std::uint8_t>(~bit), order);
+      return bit & field.fetch_and(static_cast<bitfield_size_t>(~bit), order);
     }
   }
 
-  template<std::uint8_t bit, bool value>
+  template<bitfield_size_t bit, bool value>
   // requires (bit < ~std::uint8_t{0})
   inline auto
-  set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
+  set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst) -> bool
   {
     return test_and_set<bit, value>(field, order);
   }
@@ -47,10 +48,10 @@ namespace threadable::details
   inline void
   clear(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
   {
-    field.exchange(0, order);
+    field.store(0, order);
   }
 
-  template<std::uint8_t bit, bool old>
+  template<bitfield_size_t bit, bool old>
   // requires (bit < ~std::uint8_t{0})
   inline void
   wait(atomic_bitfield_t const& field, std::memory_order order = std::memory_order_seq_cst)

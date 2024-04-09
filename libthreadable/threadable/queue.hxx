@@ -231,103 +231,101 @@ namespace threadable
       : policy_(std::move(rhs.policy_))
       , tail_(std::move(rhs.tail_))
       , head_(rhs.head_.load(std::memory_order::relaxed))
-      , nextSlot_(rhs.nextSlot_.load(std::memory_order::relaxed))
       , jobs_(std::move(rhs.jobs_))
     {
       rhs.tail_ = 0;
       rhs.head_.store(0, std::memory_order::relaxed);
-      rhs.nextSlot_.store(0, std::memory_order::relaxed);
     }
 
     auto
     operator=(queue&& rhs) noexcept -> queue&
     {
-      tail_     = std::move(rhs.tail_);
-      head_     = rhs.head_.load(std::memory_order::relaxed);
-      nextSlot_ = rhs.nextSlot_.load(std::memory_order::relaxed);
-      policy_   = std::move(rhs.policy_);
-      jobs_     = std::move(rhs.jobs_);
+      tail_   = std::move(rhs.tail_);
+      head_   = rhs.head_.load(std::memory_order::relaxed);
+      policy_ = std::move(rhs.policy_);
+      jobs_   = std::move(rhs.jobs_);
       return *this;
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...> ||
                std::invocable<callable_t, job_token&, arg_ts...>
-    void
+    inline void
     push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept
     {
-      // assert(nextSlot_.is_lock_free());
-      // 1. Acquire a slot
-      // index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
-      // assert(mask(slot + 1) != mask(tail_));
-
-      // auto& job = jobs_[mask(slot)];
-      // typename job::function_t j;
-      index_t           slot = head_.load(std::memory_order_relaxed);
-      thread_local job* j    = nullptr;
-
-      do
+      // 1. Claim a slot
+      thread_local auto derp = head_.load(std::memory_order_acquire);
+      index_t           slot = head_.load(std::memory_order_acquire);
+      // auto&   job  = jobs_[mask(slot)];
+      // // job*    j    = &jobs_[mask(slot)];
+      while (details::test<job_state::claimed>(jobs_[mask(slot)].state, std::memory_order_acquire))
+        [[unlikely]]
       {
-        j = &jobs_[mask(slot)];
-        if (!details::test<job_state::claimed>(j->state, std::memory_order_relaxed)) [[likely]]
-        {
-          if (!(job_state::claimed &
-                j->state.fetch_or(job_state::claimed, std::memory_order_relaxed))) [[likely]]
-          {
-            break;
-          }
-        }
-        slot = head_.load(std::memory_order_acquire);
+        ++slot;
       }
-      while (true);
+      // while (!details::set<job_state::claimed, true>(jobs_[mask(slot)].state,
+      //                                                std::memory_order_release)) [[unlikely]]
+      // {
+      //   ++slot;
+      // }
+      // while (
+      //   !details::set<job_state::claimed, true>(jobs_[mask(slot)].state,
+      //   std::memory_order_release))
+      // {
+      //   ++slot;
+      // }
+      auto& job = jobs_[mask(slot)];
+      // details::set<job_state::claimed, false>(job.state, std::memory_order_release);
+      // while (!details::set<job_state::claimed, true>(jobs_[mask(slot)].state,
+      //                                                std::memory_order_release)) [[unlikely]]
+      // {
+      //   ++slot;
+      // }
 
       // 2. Assign job
-      if constexpr (std::invocable<callable_t, job_token&, arg_ts...>)
-      {
-        j->set(FWD(func), std::ref(token), FWD(args)...);
-      }
-      else
-      {
-        j->set(FWD(func), FWD(args)...);
-      }
+      // auto& j = jobs_[mask(slot)];
+      // if constexpr (std::invocable<callable_t, job_token&, arg_ts...>)
+      // {
+      //   job.set(FWD(func), std::ref(token), FWD(args)...);
+      // }
+      // else
+      // {
+      //   job.set(FWD(func), FWD(args)...);
+      // }
 
       // assert(*j);
 
-      // token.reassign(j->state);
+      // token.reassign(job.state);
 
       // std::atomic_thread_fence(std::memory_order_release);
 
       // 3. Commit slot
-      // auto slot = head_.fetch_add(1, std::memory_order_release);
-      // jobs_[mask(slot)].set(job);
-      if (slot >= head_.load(std::memory_order_relaxed))
-      {
-        // @FIX: Below we want to only have the 'thread that added to the latest slot'
-        //       update head, all others should bail.
-        auto scan = slot;
-        if (!jobs_[mask(scan + 1)])
-        {
-          while (!head_.compare_exchange_weak(scan, scan + 1, std::memory_order_release) &&
-                 !jobs_[mask(scan + 1)])
-          {
-            int dummy = 0;
-            // ++scan;
-          }
-        }
-      }
-      // assert(slot < head_.load(std::memory_order_acquire));
-      // index_t expected = slot;
-      // while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release))
+      // job const* next = &jobs_[mask(slot + 1)];
+      // if (!details::test<job_state::claimed>(next->state, std::memory_order_relaxed)) [[likely]]
       // {
-      //   expected = slot;
+      // @FIX: Below we want to only have the 'thread that added to the latest slot'
+      //       update head, all others should bail.
+      // head_.fetch_add(1, std::memory_order_release);
+      // head_.store(++tail_, std::memory_order_release);
+      // auto head = slot;
+      // while (!head_.compare_exchange_weak(head, slot + 1, std::memory_order_release,
+      //                                     std::memory_order_acquire) &&
+      //        head <= slot) [[unlikely]]
+      // {
+      //   // head_.fetch_add(1, std::memory_order_release);
+      //   // if (head > slot) [[likely]]
+      //   // {
+      //   //   break;
+      //   // }
       // }
-      // head_.notify_all();
+      // }
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
     auto
     push(callable_t&& func, arg_ts&&... args) noexcept -> job_token
+
     {
       job_token token;
       push(token, FWD(func), FWD(args)...);
@@ -337,7 +335,7 @@ namespace threadable
     void
     wait() const noexcept
     {
-      auto const head = nextSlot_.load(std::memory_order_acquire);
+      auto const head = head_.load(std::memory_order_acquire);
       if (mask(head - tail_) == 0)
       {
         head_.wait(head);
@@ -453,7 +451,6 @@ namespace threadable
     alignas(details::cache_line_size) execution_policy policy_ = execution_policy::parallel;
     alignas(details::cache_line_size) index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
-    alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
 
     alignas(details::cache_line_size)
       std::vector<job, aligned_allocator<job, details::cache_line_size>> jobs_{max_nr_of_jobs};
