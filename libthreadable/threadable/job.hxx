@@ -9,11 +9,13 @@
 
 namespace threadable
 {
+  using atomic_bitfield_t = details::atomic_bitfield_t<std::uint8_t>;
+
   namespace details
   {
     struct job_base
     {
-      atomic_bitfield_t state;
+      threadable::atomic_bitfield_t state;
     };
 
     static constexpr auto job_buffer_size =
@@ -118,7 +120,7 @@ namespace threadable
     job_token(job_token const&) = delete;
     ~job_token()                = default;
 
-    job_token(details::atomic_bitfield_t& state)
+    job_token(atomic_bitfield_t& state)
       : state_(&state)
     {}
 
@@ -141,7 +143,7 @@ namespace threadable
     }
 
     void
-    reassign(details::atomic_bitfield_t& state) noexcept
+    reassign(atomic_bitfield_t& state) noexcept
     {
       state_.store(&state, std::memory_order_release);
     }
@@ -187,8 +189,8 @@ namespace threadable
     }
 
   private:
-    details::atomic_flag_t                   cancelled_ = false;
-    std::atomic<details::atomic_bitfield_t*> state_     = nullptr;
+    details::atomic_flag_t          cancelled_ = false;
+    std::atomic<atomic_bitfield_t*> state_     = nullptr;
   };
 
   static_assert(std::move_constructible<job_token>);

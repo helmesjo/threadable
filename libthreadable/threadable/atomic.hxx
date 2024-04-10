@@ -8,22 +8,24 @@
 
 namespace threadable::details
 {
-  using atomic_bitfield_t = std::atomic<std::uint8_t>;
+  template<typename size_t>
+  using atomic_bitfield_t = std::atomic<size_t>;
 
-  template<std::uint8_t bit>
+  template<std::uint8_t bit, typename size_t>
   inline auto
-  test(atomic_bitfield_t const& field, std::memory_order order = std::memory_order_seq_cst) -> bool
+  test(atomic_bitfield_t<size_t> const& field,
+       std::memory_order                order = std::memory_order_seq_cst) -> bool
     requires (bit < sizeof(bit) * 8)
   {
     static constexpr std::uint8_t mask = 1 << bit;
     return mask & field.load(order);
   }
 
-  template<std::uint8_t bit, bool value>
+  template<std::uint8_t bit, bool value, typename size_t>
     requires (bit < sizeof(bit) * 8)
   inline auto
-  test_and_set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
-    -> bool
+  test_and_set(atomic_bitfield_t<size_t>& field,
+               std::memory_order          order = std::memory_order_seq_cst) -> bool
   {
     static constexpr std::uint8_t mask = 1 << bit;
     if constexpr (value)
@@ -38,24 +40,25 @@ namespace threadable::details
     }
   }
 
-  template<std::uint8_t bit, bool value>
+  template<std::uint8_t bit, bool value, typename size_t>
     requires (bit < sizeof(bit) * 8)
   inline void
-  set(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
+  set(atomic_bitfield_t<size_t>& field, std::memory_order order = std::memory_order_seq_cst)
   {
     (void)test_and_set<bit, value>(field, order);
   }
 
+  template<typename size_t>
   inline void
-  clear(atomic_bitfield_t& field, std::memory_order order = std::memory_order_seq_cst)
+  clear(atomic_bitfield_t<size_t>& field, std::memory_order order = std::memory_order_seq_cst)
   {
     field.exchange(0, order);
   }
 
-  template<std::uint8_t bit, bool old>
+  template<std::uint8_t bit, bool old, typename size_t>
     requires (bit < sizeof(bit) * 8)
   inline void
-  wait(atomic_bitfield_t const& field, std::memory_order order = std::memory_order_seq_cst)
+  wait(atomic_bitfield_t<size_t> const& field, std::memory_order order = std::memory_order_seq_cst)
   {
     static constexpr std::uint8_t mask    = 1 << bit;
     auto                          current = field.load(order);

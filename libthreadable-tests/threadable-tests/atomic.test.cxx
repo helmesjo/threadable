@@ -1,15 +1,14 @@
-#include "threadable/atomic.hxx"
-
 #include <threadable-tests/doctest_include.hxx>
-#include <threadable/queue.hxx>
+#include <threadable/atomic.hxx>
 
 #include <bitset>
 
 SCENARIO("atomic_bitfield")
 {
+  using bitfield_t = threadable::details::atomic_bitfield_t<std::size_t>;
   GIVEN("a bitfield set to 0")
   {
-    threadable::details::atomic_bitfield_t field{0};
+    auto field = bitfield_t{0};
     WHEN("test_and_set bit 6 to true")
     {
       THEN("new value is assigned and old is returned")
@@ -22,7 +21,7 @@ SCENARIO("atomic_bitfield")
   }
   GIVEN("a bitfield set to all 1")
   {
-    threadable::details::atomic_bitfield_t field{static_cast<std::uint8_t>(-1)};
+    auto field = bitfield_t{static_cast<std::uint8_t>(-1)};
     WHEN("test_and_set bit 3 to false")
     {
       THEN("new value is assigned and old is returned")
