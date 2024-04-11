@@ -122,10 +122,6 @@ namespace threadable
                 }
               }
             }
-            if (!executed)
-            {
-              std::this_thread::yield();
-            }
           }
         });
     }
