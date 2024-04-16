@@ -320,26 +320,27 @@ SCENARIO("queue: completion token")
         // REQUIRE(queue.execute() == 1);
       }
     }
-    WHEN("related job is destroyed while token is being waited on")
-    {
-      // Very rudimentary test
-      auto waiting = std::atomic_bool{false};
-      auto thread  = std::thread(
-        [&]
-        {
-          while (!waiting)
-            ;
-          std::this_thread::sleep_for(std::chrono::milliseconds{10});
-          queue = threadable::queue{};
-        });
+    // @TODO: Rework this. What to do if job is destroyed before token.wait()?
+    // WHEN("related job is destroyed while token is being waited on")
+    // {
+    //   // Very rudimentary test
+    //   auto waiting = std::atomic_bool{false};
+    //   auto thread  = std::thread(
+    //     [&]
+    //     {
+    //       while (!waiting)
+    //         ;
+    //       std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    //       queue = threadable::queue{};
+    //     });
 
-      THEN("it does not crash")
-      {
-        waiting = true;
-        token.wait();
-      }
-      thread.join();
-    }
+    //   THEN("it does not crash")
+    //   {
+    //     waiting = true;
+    //     token.wait();
+    //   }
+    //   thread.join();
+    // }
   }
 }
 

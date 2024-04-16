@@ -32,7 +32,7 @@ namespace threadable
 
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
-    pool(unsigned int workers = std::min(5u, std::thread::hardware_concurrency())) noexcept
+    pool(unsigned int workers = std::thread::hardware_concurrency()) noexcept
     {
       workers = std::max(2u, workers);
       details::atomic_clear(quit_);
@@ -88,11 +88,10 @@ namespace threadable
               queues = queues_;
             }
 
-            auto rand     = distr(gen);
-            bool executed = false;
+            auto rand = distr(gen);
             if (queues.size() == 1)
             {
-              executed = queues[0]->execute() > 0;
+              (void)queues[0]->execute();
             }
             else
             {
@@ -118,7 +117,6 @@ namespace threadable
                   auto prev = rand;
                   while ((rand = distr(gen)) != prev)
                     ;
-                  executed = true;
                 }
               }
             }
