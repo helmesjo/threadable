@@ -312,7 +312,7 @@ namespace threadable
     {
       auto head = head_.load(std::memory_order_acquire);
       auto b    = iterator(jobs_.data(), tail_);
-      auto e    = iterator(nullptr, std::min(tail_ + std::min(max, head), head));
+      auto e    = iterator(nullptr, std::min(tail_ + max, head));
       tail_     = head;
       return std::ranges::subrange(b, e);
     }

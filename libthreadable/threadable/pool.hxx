@@ -68,10 +68,9 @@ namespace threadable
       scheduler_ = std::thread(
         [this]
         {
-          thread_local auto rd  = std::random_device{};
-          thread_local auto gen = std::mt19937(rd());
-          thread_local auto distr =
-            std::uniform_int_distribution<std::size_t>(std::size_t{0}, workers_.size());
+          auto rd    = std::random_device{};
+          auto gen   = std::mt19937(rd());
+          auto distr = std::uniform_int_distribution<std::size_t>(std::size_t{0}, workers_.size());
 
           while (true)
           {
