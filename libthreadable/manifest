@@ -1,6 +1,6 @@
 : 1
 name: libthreadable
-version: 0.1.9+3
+version: 0.1.9+4
 summary: threadable C++ library
 license: MIT ; MIT License.
 description-file: README.md
