@@ -99,7 +99,7 @@ namespace threadable
       queue_t* queue = nullptr;
       {
         auto _ = std::scoped_lock{queueMutex_};
-        queue  = &queues_.emplace_back(std::make_unique<entry>(std::move(q)))->queue;
+        queue = &queues_.emplace_back(std::make_unique<entry>(entry{.queue = std::move(q)}))->queue;
         queue->set_notify(
           [this](...)
           {
@@ -203,8 +203,8 @@ namespace threadable
       auto const exec = [this](auto& entry)
       {
         // given the max allowed duration, calculate how many jobs can be executed
-        const auto maxJobs = std::max(clk_t::rep{1}, maxDuration_.count() / entry->avg_dur.count());
-        const auto start   = clk_t::now();
+        auto const maxJobs = std::max(clk_t::rep{1}, maxDuration_.count() / entry->avg_dur.count());
+        auto const start   = clk_t::now();
         if (entry->last_executed = entry->queue.execute(maxJobs); entry->last_executed > 0)
         {
           entry->avg_dur = (clk_t::now() - start) / entry->last_executed;

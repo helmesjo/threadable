@@ -1,6 +1,6 @@
 : 1
 name: libthreadable-tests
-version: 0.1.8
+version: 0.1.8+1
 project: threadable
 summary: threadable-tests C++ executable
 license: MIT ; MIT License.
