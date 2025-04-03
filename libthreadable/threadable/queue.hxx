@@ -6,18 +6,23 @@
 #include <atomic>
 #include <cassert>
 #include <cstddef>
-
-#if __has_include(<pstld/pstld.h>)
-  #include <pstld/pstld.h>
-#endif
-#ifdef __cpp_lib_execution
-  #include <execution>
-#else
-  #error requires __cpp_lib_execution
-#endif
+#include <execution>
 #include <iterator>
 #include <ranges>
 #include <vector>
+
+#if !defined(__cpp_lib_execution) && !defined(__cpp_lib_parallel_algorithm) && \
+  __has_include(<pstld/pstld.h>)
+  #ifndef PSTLD_HACK_INTO_STD
+    #define PSTLD_HACK_INTO_STD
+  #endif
+  #include <pstld/pstld.h>
+  #undef PSTLD_HACK_INTO_STD
+#endif
+
+#if __cpp_lib_execution < 201603L || __cpp_lib_parallel_algorithm < 201603L
+  #error requires __cpp_lib_execution & __cpp_lib_parallel_algorithm
+#endif
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
