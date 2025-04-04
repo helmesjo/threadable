@@ -86,62 +86,67 @@ namespace threadable
       details::header_size + (details::func_ptr_size * 2);
 
     inline constexpr auto
-    size(std::uint8_t* buf) noexcept -> std::uint8_t&
+    size(std::byte* buf) noexcept -> std::uint8_t&
     {
-      return static_cast<std::uint8_t&>(*buf);
+      return reinterpret_cast<std::uint8_t&>(*buf); // NOLINT
     }
 
     inline constexpr auto
-    size(std::uint8_t const* buf) noexcept -> std::uint8_t
+    size(std::byte const* buf) noexcept -> std::uint8_t
     {
       return static_cast<std::uint8_t>(*buf);
     }
 
     inline constexpr void
-    size(std::uint8_t* buf, std::uint8_t s) noexcept
+    size(std::byte* buf, std::uint8_t s) noexcept
     {
       size(buf) = s;
     }
 
     inline constexpr auto
-    invoke_ptr(std::uint8_t* buf) noexcept -> invoke_func_t&
+    invoke_ptr(std::byte* buf) noexcept -> invoke_func_t&
     {
       return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size)); // NOLINT
     }
 
     inline constexpr void
-    invoke_ptr(std::uint8_t* buf, invoke_func_t func) noexcept
+    invoke_ptr(std::byte* buf, invoke_func_t func) noexcept
     {
       invoke_ptr(buf) = func;
     }
 
     inline constexpr auto
-    special_func_ptr(std::uint8_t* buf) noexcept -> invoke_special_func_t&
+    special_func_ptr(std::byte* buf) noexcept -> invoke_special_func_t&
     {
       return *static_cast<invoke_special_func_t*>(
         static_cast<void*>(buf + header_size + func_ptr_size)); // NOLINT
     }
 
     inline constexpr void
-    special_func_ptr(std::uint8_t* buf, invoke_special_func_t func) noexcept
+    special_func_ptr(std::byte* buf, invoke_special_func_t func) noexcept
     {
       special_func_ptr(buf) = func;
     }
 
     inline constexpr auto
-    body_ptr(std::uint8_t* buf) noexcept -> std::uint8_t*
+    body_ptr(std::byte* buf) noexcept -> std::byte*
     {
-      return buf + header_size + func_ptr_size + func_ptr_size;
+      auto       ptr      = buf + header_size + func_ptr_size + func_ptr_size;
+      auto const addr     = reinterpret_cast<std::uintptr_t>(ptr); // NOLINT
+      auto const align    = alignof(std::max_align_t);
+      auto const misalign = addr % align;
+      // Pad to ensure callable alignment up to max_align_t
+      return ptr + (misalign ? align - misalign : 0);
     }
 
     inline constexpr void
-    invoke(std::uint8_t* buf) noexcept
+    invoke(std::byte* buf) noexcept
     {
       invoke_ptr(buf)(body_ptr(buf));
     }
 
     inline constexpr void
-    invoke_special_func(std::uint8_t* buf, method m, std::uint8_t* that = nullptr) noexcept
+    invoke_special_func(std::byte* buf, method m, std::byte* that = nullptr) noexcept
     {
       special_func_ptr(buf)(body_ptr(buf), m, that ? body_ptr(that) : nullptr);
     }
@@ -222,7 +227,7 @@ namespace threadable
   {
     static_assert(buffer_size <= std::numeric_limits<std::uint8_t>::max(),
                   "Buffer size must be <= 255");
-    using buffer_t = std::array<std::uint8_t, buffer_size>;
+    using buffer_t = std::array<std::byte, buffer_size>;
 
     template<std::size_t size>
       requires (size <= buffer_size)
@@ -298,7 +303,8 @@ namespace threadable
       details::special_func_ptr(buffer_.data(),
                                 std::addressof(details::invoke_special_func<callable_value_t>));
       auto bodyPtr = details::body_ptr(buffer_.data());
-      std::construct_at(reinterpret_cast<std::remove_const_t<callable_value_t>*>(bodyPtr), // NOLINT
+      std::construct_at(reinterpret_cast<callable_value_t*>( // NOLINT
+                          details::body_ptr(buffer_.data())),
                         FWD(callable));
     }
 
@@ -339,7 +345,7 @@ namespace threadable
     {
       std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
       details::invoke_special_func(data(), details::method::copy_ctor,
-                                   const_cast<std::uint8_t*>(buffer.data())); // NOLINT
+                                   const_cast<std::byte*>(buffer.data())); // NOLINT
       return *this;
     }
 
@@ -369,13 +375,13 @@ namespace threadable
     }
 
     inline auto
-    data() noexcept -> std::uint8_t*
+    data() noexcept -> std::byte*
     {
       return buffer_.data();
     }
 
     [[nodiscard]] inline auto
-    data() const noexcept -> std::uint8_t const*
+    data() const noexcept -> std::byte const*
     {
       return buffer_.data();
     }
@@ -456,16 +462,16 @@ namespace threadable
 
   private:
     void
-    copy_buffer(std::span<std::uint8_t const> src)
+    copy_buffer(std::span<std::byte const> src)
     {
       assert(src.size() > details::function_buffer_meta_size);
-      buffer_ = new std::uint8_t[src.size()];                              // NOLINT
+      buffer_ = new std::byte[src.size()];                              // NOLINT
       std::memcpy(buffer_, src.data(), details::function_buffer_meta_size);
       details::invoke_special_func(buffer_, details::method::copy_ctor,
-                                   const_cast<std::uint8_t*>(src.data())); // NOLINT
+                                   const_cast<std::byte*>(src.data())); // NOLINT
     }
 
-    std::uint8_t* buffer_ = nullptr;
+    std::byte* buffer_ = nullptr;
   };
 
   // NOTE: On GCC (13.2.0) doing this inline with 'requires requires'
