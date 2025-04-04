@@ -510,12 +510,7 @@ namespace threadable
       reset();
     }
 
-    auto
-    operator=(function const& func) noexcept -> function&
-    {
-      buffer_ = func.buffer_;
-      return *this;
-    }
+    auto operator=(function const& func) noexcept -> function& = default;
 
     auto
     operator=(function&& func) noexcept -> function&
