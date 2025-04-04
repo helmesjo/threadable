@@ -8,6 +8,9 @@ namespace threadable
   template<typename T, std::size_t alignment>
   struct aligned_allocator : public std::allocator<T>
   {
+    static_assert(alignment >= alignof(T) && (alignment & (alignment - 1)) == 0,
+                  "Alignment must be a power of 2 and at least alignof(T)");
+
     aligned_allocator() = default;
 
     using base_t = std::allocator<T>;
