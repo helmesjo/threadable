@@ -75,8 +75,10 @@ namespace threadable
     reset() noexcept
     {
       func_.reset();
-      details::clear(state, std::memory_order_release);
-      details::atomic_notify_all(state);
+      if (details::reset<job_state::active>(state, std::memory_order_release))
+      {
+        details::atomic_notify_all(state);
+      }
     }
 
     auto
