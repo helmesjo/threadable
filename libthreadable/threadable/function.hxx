@@ -106,7 +106,7 @@ namespace threadable
     inline constexpr auto
     invoke_ptr(std::uint8_t* buf) noexcept -> invoke_func_t&
     {
-      return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size));
+      return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size)); // NOLINT
     }
 
     inline constexpr void
@@ -119,7 +119,7 @@ namespace threadable
     special_func_ptr(std::uint8_t* buf) noexcept -> invoke_special_func_t&
     {
       return *static_cast<invoke_special_func_t*>(
-        static_cast<void*>(buf + header_size + func_ptr_size));
+        static_cast<void*>(buf + header_size + func_ptr_size)); // NOLINT
     }
 
     inline constexpr void
@@ -225,6 +225,7 @@ namespace threadable
     using buffer_t = std::array<std::uint8_t, buffer_size>;
 
     template<std::size_t size>
+      requires (size <= buffer_size)
     void
     set(function<size> const& func) noexcept
     {
@@ -232,6 +233,7 @@ namespace threadable
     }
 
     template<std::size_t size>
+      requires (size <= buffer_size)
     void
     set(function<size>&& func) noexcept
     {
