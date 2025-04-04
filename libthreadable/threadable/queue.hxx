@@ -1,5 +1,6 @@
 #pragma once
 
+#include <threadable/allocator.hxx>
 #include <threadable/job.hxx>
 
 #include <algorithm>
@@ -421,7 +422,8 @@ namespace threadable
     alignas(details::cache_line_size) atomic_index_t head_{0};
     alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
 
-    alignas(details::cache_line_size) std::vector<job> jobs_{max_nr_of_jobs};
+    alignas(details::cache_line_size)
+      std::vector<job, aligned_allocator<job, details::cache_line_size>> jobs_{max_nr_of_jobs};
   };
 }
 
