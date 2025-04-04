@@ -121,7 +121,7 @@ namespace threadable
         return index_ == other.index_;
       }
 
-      // todo: Add tests and make sure iterator works for wrap-around
+      // Returns logical distance, not circular addition
       inline auto
       operator+(circular_iterator const& rhs) const noexcept -> difference_type
       {
@@ -137,25 +137,25 @@ namespace threadable
       inline auto
       operator+(difference_type rhs) const noexcept -> circular_iterator
       {
-        return circular_iterator(jobs_, index_ + rhs);
+        return circular_iterator(jobs_, mask(index_ + rhs));
       }
 
       inline auto
       operator-(difference_type rhs) const noexcept -> circular_iterator
       {
-        return circular_iterator(jobs_, index_ - rhs);
+        return circular_iterator(jobs_, mask(index_ - rhs));
       }
 
       friend inline auto
-      operator+(difference_type lhs, circular_iterator const& rhs) -> circular_iterator
+      operator+(difference_type lhs, circular_iterator const& rhs) noexcept -> circular_iterator
       {
-        return circular_iterator(rhs.jobs_, lhs + rhs.index_);
+        return circular_iterator(rhs.jobs_, mask(lhs + rhs.index_));
       }
 
       friend inline auto
-      operator-(difference_type lhs, circular_iterator const& rhs) -> circular_iterator
+      operator-(difference_type lhs, circular_iterator const& rhs) noexcept -> circular_iterator
       {
-        return circular_iterator(rhs.jobs_, lhs - rhs.index_);
+        return circular_iterator(rhs.jobs_, mask(lhs - rhs.index_));
       }
 
       inline auto
@@ -261,6 +261,7 @@ namespace threadable
       index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
 
       auto& job = jobs_[mask(slot)];
+      // Blocks in release if slot is occupied, asserts in debug to catch overflow
       assert(!job);
       if (job) [[unlikely]]
       {
@@ -281,11 +282,9 @@ namespace threadable
 
       token.reassign(job.state);
 
-      std::atomic_thread_fence(std::memory_order_release);
-
       // 3. Commit slot
       index_t expected = slot;
-      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_relaxed))
+      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release))
       {
         expected = slot;
       }
@@ -344,7 +343,7 @@ namespace threadable
     end(std::size_t max = max_nr_of_jobs) const noexcept -> const_iterator
     {
       auto head = head_.load(std::memory_order_acquire);
-      return const_iterator(nullptr, std::min(tail_ + max, head));
+      return const_iterator(jobs_.data(), mask(tail_ + max));
     }
 
     auto
