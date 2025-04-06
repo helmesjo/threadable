@@ -131,12 +131,7 @@ namespace threadable
     inline auto
     body_ptr(std::byte* buf) noexcept -> std::byte*
     {
-      auto       ptr      = buf + header_size + func_ptr_size + func_ptr_size;
-      auto const addr     = reinterpret_cast<std::uintptr_t>(ptr); // NOLINT
-      auto const align    = alignof(std::max_align_t);
-      auto const misalign = addr % align;
-      // Pad to ensure callable alignment up to max_align_t
-      return ptr + (misalign ? align - misalign : 0);
+      return buf + header_size + func_ptr_size + func_ptr_size;
     }
 
     inline void
