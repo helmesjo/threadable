@@ -23,6 +23,7 @@ namespace
 SCENARIO("circular_iterator")
 {
   using queue_t      = threadable::queue<16>;
+  using iter_t       = threadable::queue<16>::iterator;
   constexpr auto max = queue_t::max_size();
   constexpr auto end = max + 1;
   static_assert(max == 15); // for comments to be accurate
@@ -59,8 +60,8 @@ SCENARIO("circular_iterator")
     THEN("tail is less than head")
     {
       REQUIRE(tailIt < headIt); // 15 < 20, despite mask(20) = 4
-      REQUIRE(queue_t::mask(tailIt.index()) == max);
-      REQUIRE(queue_t::mask(headIt.index()) == 4);
+      REQUIRE(iter_t::mask(tailIt.index()) == max);
+      REQUIRE(iter_t::mask(headIt.index()) == 4);
     }
   }
 

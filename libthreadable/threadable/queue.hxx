@@ -1,6 +1,7 @@
 #pragma once
 
 #include <threadable/allocator.hxx>
+#include <threadable/circular_iterator.hxx>
 #include <threadable/job.hxx>
 
 #include <algorithm>
@@ -56,160 +57,8 @@ namespace threadable
 #endif
 
   public:
-    inline static constexpr auto
-    mask(index_t index) noexcept
-    {
-      return index & index_mask;
-    }
-
-    template<typename elem_t = job>
-    struct circular_iterator
-    {
-      using iterator_category = std::random_access_iterator_tag;
-      using iterator_concept  = std::contiguous_iterator_tag;
-      using difference_type   = std::ptrdiff_t;
-      using value_type        = elem_t;
-      using pointer           = value_type*;
-      using reference         = value_type&;
-      using element_type      = value_type;
-
-      circular_iterator() = default;
-
-      explicit circular_iterator(pointer jobs, index_t index) noexcept
-        : jobs_(jobs)
-        , index_(index)
-      {}
-
-      inline auto
-      operator*() noexcept -> reference
-      {
-        return jobs_[mask(index_)];
-      }
-
-      inline auto
-      operator->() const noexcept -> pointer
-      {
-        return &jobs_[mask(index_)];
-      }
-
-      inline auto
-      operator[](difference_type rhs) const noexcept -> reference
-      {
-        return jobs_[mask(index_ + rhs)];
-      }
-
-      friend inline auto
-      operator*(circular_iterator const& it) -> reference
-      {
-        return it.jobs_[mask(it.index_)];
-      }
-
-      inline auto
-      operator<=>(circular_iterator const& rhs) const noexcept
-      {
-        if (jobs_ != rhs.jobs_)
-        {
-          return jobs_ <=> rhs.jobs_;
-        }
-        return index_ <=> rhs.index_;
-      }
-
-      inline auto
-      operator==(circular_iterator const& other) const noexcept -> bool
-      {
-        return jobs_ == other.jobs_ && mask(index_ - other.index_) == 0;
-      }
-
-      // Returns logical distance, not circular addition
-      inline auto
-      operator+(circular_iterator const& rhs) const noexcept -> difference_type
-      {
-        return index_ + rhs.index_;
-      }
-
-      inline auto
-      operator-(circular_iterator const& rhs) const noexcept -> difference_type
-      {
-        return index_ - rhs.index_;
-      }
-
-      inline auto
-      operator+(difference_type rhs) const noexcept -> circular_iterator
-      {
-        return circular_iterator(jobs_, mask(index_ + rhs));
-      }
-
-      inline auto
-      operator-(difference_type rhs) const noexcept -> circular_iterator
-      {
-        return circular_iterator(jobs_, mask(index_ - rhs));
-      }
-
-      friend inline auto
-      operator+(difference_type lhs, circular_iterator const& rhs) noexcept -> circular_iterator
-      {
-        return circular_iterator(rhs.jobs_, mask(lhs + rhs.index_));
-      }
-
-      friend inline auto
-      operator-(difference_type lhs, circular_iterator const& rhs) noexcept -> circular_iterator
-      {
-        return circular_iterator(rhs.jobs_, mask(lhs - rhs.index_));
-      }
-
-      inline auto
-      operator+=(difference_type rhs) noexcept -> circular_iterator&
-      {
-        index_ += rhs;
-        return *this;
-      }
-
-      inline auto
-      operator-=(difference_type rhs) noexcept -> circular_iterator&
-      {
-        index_ -= rhs;
-        return *this;
-      }
-
-      inline auto
-      operator++() noexcept -> circular_iterator&
-      {
-        ++index_;
-        return *this;
-      }
-
-      inline auto
-      operator--() noexcept -> circular_iterator&
-      {
-        --index_;
-        return *this;
-      }
-
-      inline auto
-      operator++(int) noexcept -> circular_iterator
-      {
-        return circular_iterator(jobs_, index_++);
-      }
-
-      inline auto
-      operator--(int) noexcept -> circular_iterator
-      {
-        return circular_iterator(jobs_, index_--);
-      }
-
-      inline auto
-      index() const
-      {
-        return index_;
-      }
-
-    private:
-      pointer jobs_  = nullptr;
-      index_t index_ = 0;
-    };
-
-    using iterator       = circular_iterator<job>;       // NOLINT
-    using const_iterator = circular_iterator<job const>; // NOLINT
+    using iterator       = circular_iterator<job, index_mask>;       // NOLINT
+    using const_iterator = circular_iterator<job const, index_mask>; // NOLINT
     static_assert(std::is_const_v<typename const_iterator::value_type>);
     static_assert(std::is_const_v<std::remove_reference_t<typename const_iterator::reference>>);
     static_assert(std::is_const_v<std::remove_pointer_t<typename const_iterator::pointer>>);
@@ -259,7 +108,7 @@ namespace threadable
       // 1. Acquire a slot
       index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
 
-      auto& job = jobs_[mask(slot)];
+      auto& job = jobs_[iterator::mask(slot)];
       // Blocks in release if slot is occupied, asserts in debug to catch overflow
       assert(!job);
       if (job) [[unlikely]]
@@ -304,7 +153,7 @@ namespace threadable
     wait() const noexcept
     {
       auto const head = nextSlot_.load(std::memory_order_acquire);
-      if (mask(head - tail_) == 0)
+      if (iterator::mask(head - tail_) == 0)
       {
         head_.wait(head);
       }
