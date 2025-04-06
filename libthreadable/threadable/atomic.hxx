@@ -61,7 +61,7 @@ namespace threadable::details
   inline void
   clear(atomic_bitfield_t<width_t>& field, std::memory_order order = std::memory_order_relaxed)
   {
-    field.exchange(0, order);
+    field.store(0, order);
   }
 
   template<std::uint8_t bit, bool old, typename width_t>

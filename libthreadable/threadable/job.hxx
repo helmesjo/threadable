@@ -4,6 +4,7 @@
 #include <threadable/function.hxx>
 
 #include <algorithm>
+#include <atomic>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
@@ -49,7 +50,9 @@ namespace threadable
     set(callable_t&& func, arg_ts&&... args) noexcept -> decltype(auto)
     {
       func_.set(FWD(func), FWD(args)...);
-      details::set<job_state::active, true>(state, std::memory_order_release);
+      // no thread waiting, so avoid slower details::set<job_state::active, true>(...)
+      // which internally uses store.fetch_or()
+      state.store(job_state::active, std::memory_order_relaxed);
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on (checking state true -> false)
       // details::atomic_notify_all(active);
@@ -88,7 +91,7 @@ namespace threadable
     }
 
     void
-    operator()()
+    operator()() noexcept
     {
       assert(func_);
       assert(!done());

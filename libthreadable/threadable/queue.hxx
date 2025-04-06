@@ -102,8 +102,8 @@ namespace threadable
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...> ||
                std::invocable<callable_t, job_token&, arg_ts...>
-    void
-    push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept
+    auto
+    push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept -> job_token&
     {
       // 1. Acquire a slot
       index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
@@ -137,6 +137,7 @@ namespace threadable
         expected = slot;
       }
       head_.notify_all();
+      return token;
     }
 
     template<std::copy_constructible callable_t, typename... arg_ts>

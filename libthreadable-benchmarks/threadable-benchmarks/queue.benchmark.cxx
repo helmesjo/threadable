@@ -44,6 +44,7 @@ TEST_CASE("queue: push")
   b.title("push");
   {
     auto queue = threadable::queue<jobs_per_iteration>();
+    auto token = threadable::job_token{};
 
     b.run("threadable::queue",
           [&]
@@ -51,7 +52,7 @@ TEST_CASE("queue: push")
             queue.clear();
             for (std::size_t i = 0; i < queue.max_size(); ++i)
             {
-              bench::doNotOptimizeAway(queue.push(job_t{}));
+              bench::doNotOptimizeAway(queue.push(token, job_t{}));
             }
           });
   }
