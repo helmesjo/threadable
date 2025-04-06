@@ -113,7 +113,7 @@ namespace threadable
       assert(!job);
       if (job) [[unlikely]]
       {
-        details::wait<job_state::active, true>(job.state, std::memory_order_acquire);
+        job.state.wait(job_state::active, std::memory_order_acquire);
       }
 
       // 2. Assign job
@@ -215,7 +215,7 @@ namespace threadable
         auto b = std::begin(r);
         // make sure previous has been executed
         auto const& prev = *(b - 1);
-        details::wait<job_state::active, true>(prev.state, std::memory_order_acquire);
+        prev.state.wait(job_state::active, std::memory_order_acquire);
         std::for_each(b, std::end(r),
                       [](job& job)
                       {
