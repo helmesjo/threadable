@@ -85,50 +85,50 @@ namespace threadable
     inline constexpr std::size_t  function_buffer_meta_size =
       details::header_size + (details::func_ptr_size * 2);
 
-    inline constexpr auto
+    inline auto
     size(std::byte* buf) noexcept -> std::uint8_t&
     {
       return reinterpret_cast<std::uint8_t&>(*buf); // NOLINT
     }
 
-    inline constexpr auto
+    inline auto
     size(std::byte const* buf) noexcept -> std::uint8_t
     {
       return static_cast<std::uint8_t>(*buf);
     }
 
-    inline constexpr void
+    inline void
     size(std::byte* buf, std::uint8_t s) noexcept
     {
       size(buf) = s;
     }
 
-    inline constexpr auto
+    inline auto
     invoke_ptr(std::byte* buf) noexcept -> invoke_func_t&
     {
       return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size)); // NOLINT
     }
 
-    inline constexpr void
+    inline void
     invoke_ptr(std::byte* buf, invoke_func_t func) noexcept
     {
       invoke_ptr(buf) = func;
     }
 
-    inline constexpr auto
+    inline auto
     special_func_ptr(std::byte* buf) noexcept -> invoke_special_func_t&
     {
       return *static_cast<invoke_special_func_t*>(
         static_cast<void*>(buf + header_size + func_ptr_size)); // NOLINT
     }
 
-    inline constexpr void
+    inline void
     special_func_ptr(std::byte* buf, invoke_special_func_t func) noexcept
     {
       special_func_ptr(buf) = func;
     }
 
-    inline constexpr auto
+    inline auto
     body_ptr(std::byte* buf) noexcept -> std::byte*
     {
       auto       ptr      = buf + header_size + func_ptr_size + func_ptr_size;
@@ -139,13 +139,13 @@ namespace threadable
       return ptr + (misalign ? align - misalign : 0);
     }
 
-    inline constexpr void
+    inline void
     invoke(std::byte* buf) noexcept
     {
       invoke_ptr(buf)(body_ptr(buf));
     }
 
-    inline constexpr void
+    inline void
     invoke_special_func(std::byte* buf, method m, std::byte* that = nullptr) noexcept
     {
       special_func_ptr(buf)(body_ptr(buf), m, that ? body_ptr(that) : nullptr);
