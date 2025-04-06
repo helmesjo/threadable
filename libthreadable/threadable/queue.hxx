@@ -55,18 +55,13 @@ namespace threadable
                   "number of jobs must be <= half the index range");
 #endif
 
-// Workaround for bug in MSVC with nested types accessing outer (private) members
-#ifdef _WIN32
-
   public:
-#endif
     inline static constexpr auto
     mask(index_t index) noexcept
     {
       return index & index_mask;
     }
 
-  public:
     template<typename elem_t = job>
     struct circular_iterator
     {
@@ -112,13 +107,17 @@ namespace threadable
       inline auto
       operator<=>(circular_iterator const& rhs) const noexcept
       {
+        if (jobs_ != rhs.jobs_)
+        {
+          return jobs_ <=> rhs.jobs_;
+        }
         return index_ <=> rhs.index_;
       }
 
       inline auto
       operator==(circular_iterator const& other) const noexcept -> bool
       {
-        return index_ == other.index_;
+        return jobs_ == other.jobs_ && mask(index_ - other.index_) == 0;
       }
 
       // Returns logical distance, not circular addition
@@ -316,13 +315,13 @@ namespace threadable
     {
       auto head = head_.load(std::memory_order_acquire);
       auto b    = iterator(jobs_.data(), tail_);
-      auto e    = iterator(nullptr, std::min(tail_ + max, head));
+      auto e    = iterator(jobs_.data(), std::min(tail_ + max, head));
       tail_     = head;
       return std::ranges::subrange(b, e);
     }
 
     void
-    clear()
+    clear() noexcept
     {
       auto range = consume();
       std::for_each(std::execution::par, std::begin(range), std::end(range),
@@ -343,7 +342,10 @@ namespace threadable
     end(std::size_t max = max_nr_of_jobs) const noexcept -> const_iterator
     {
       auto head = head_.load(std::memory_order_acquire);
-      return const_iterator(jobs_.data(), mask(tail_ + max));
+      // Subtract indices, mask to wrap within buffer:
+      auto size     = (head - tail_) & (max_nr_of_jobs - 1);
+      auto endIndex = tail_ + std::min(size, max);
+      return const_iterator(jobs_.data(), endIndex);
     }
 
     auto
@@ -390,13 +392,19 @@ namespace threadable
     size() const noexcept -> std::size_t
     {
       auto const head = head_.load(std::memory_order_relaxed);
-      return mask(head - tail_);
+      return (head - tail_) & (max_nr_of_jobs - 1); // Correct circular distance
     }
 
     auto
     empty() const noexcept -> bool
     {
       return size() == 0;
+    }
+
+    auto
+    data() const noexcept -> decltype(auto)
+    {
+      return jobs_.data();
     }
 
   private:
