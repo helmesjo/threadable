@@ -45,7 +45,7 @@ SCENARIO("circular_iterator")
 
   WHEN("tail is before head across wraparound")
   {
-    for (int i = 0; i < max; ++i)
+    for (std::size_t i = 0; i < max; ++i)
     {
       q.push([] {});         // head_ = 15, tail_ = 0
     }
@@ -67,7 +67,7 @@ SCENARIO("circular_iterator")
 
   WHEN("head wraps to 0 and tail is near end")
   {
-    for (int i = 0; i < max; ++i)
+    for (std::size_t i = 0; i < max; ++i)
     {
       q.push([] {});         // head_ = 15, tail_ = 0
     }
@@ -85,7 +85,7 @@ SCENARIO("circular_iterator")
 
   WHEN("iterators span full buffer wraparound")
   {
-    for (int i = 0; i < max; ++i)
+    for (std::size_t i = 0; i < max; ++i)
     {
       q.push([] {});          // head_ = 16, tail_ = 0
     }

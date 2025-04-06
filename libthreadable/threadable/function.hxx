@@ -302,7 +302,6 @@ namespace threadable
       details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<callable_value_t>));
       details::special_func_ptr(buffer_.data(),
                                 std::addressof(details::invoke_special_func<callable_value_t>));
-      auto bodyPtr = details::body_ptr(buffer_.data());
       std::construct_at(reinterpret_cast<callable_value_t*>( // NOLINT
                           details::body_ptr(buffer_.data())),
                         FWD(callable));
