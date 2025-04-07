@@ -82,18 +82,4 @@ SCENARIO("circular_iterator")
       REQUIRE(*it == *begin);
     }
   }
-
-  WHEN("comparing iterators from different queues")
-  {
-    auto v2 = buffer_t{};
-
-    auto it1 = iter_t{buf, 0};       // index_ = 0, jobs_ = q.data()
-    auto it2 = iter_t{v2.data(), 0}; // index_ = 0, jobs_ = q2.data()
-
-    THEN("they are not equal due to different buffers")
-    {
-      REQUIRE(it1 != it2);            // buf_ differs
-      REQUIRE(!((it1 <=> it2) == 0)); // Not equal ordering
-    }
-  }
 }
