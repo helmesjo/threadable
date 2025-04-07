@@ -30,7 +30,7 @@ TEST_CASE("circular_iterator: dereference")
   b.title("dereference");
   {
     auto it = buffer.begin();
-    b.run("std::vector",
+    b.run("std::vector::iterator",
           [&]
           {
             bench::doNotOptimizeAway(*it);
@@ -49,7 +49,7 @@ TEST_CASE("circular_iterator: dereference")
   {
     auto it    = buffer.begin();
     auto index = iter_t::difference_type{0};
-    b.run("std::vector",
+    b.run("std::vector::iterator",
           [&]
           {
             bench::doNotOptimizeAway(it[++index]);
@@ -86,7 +86,7 @@ TEST_CASE("circular_iterator: traversing")
     auto const begin = buffer.begin();
     auto const end   = buffer.end();
     auto       it    = begin;
-    b.run("std::vector",
+    b.run("std::vector::iterator",
           [&]
           {
             bench::doNotOptimizeAway(++it);
@@ -112,7 +112,7 @@ TEST_CASE("circular_iterator: traversing")
     auto const begin = buffer.begin();
     auto const end   = buffer.end();
     auto       it    = end;
-    b.run("std::vector",
+    b.run("std::vector::iterator",
           [&]
           {
             bench::doNotOptimizeAway(--it);
