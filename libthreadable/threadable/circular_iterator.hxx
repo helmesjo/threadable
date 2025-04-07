@@ -16,6 +16,8 @@ namespace threadable
     using reference         = value_type&;
     using element_type      = value_type;
 
+    inline static constexpr size_t buffer_size = index_mask + 1;
+
     inline static constexpr auto
     mask(size_t index) noexcept
     {
@@ -26,6 +28,7 @@ namespace threadable
 
     explicit circular_iterator(pointer jobs, size_t index) noexcept
       : jobs_(jobs)
+      , current_(jobs + mask(index))
       , index_(index)
     {}
 
@@ -38,38 +41,33 @@ namespace threadable
     inline auto
     operator*() noexcept -> reference
     {
-      return jobs_[mask(index_)];
+      return *current_;
     }
 
     friend inline auto
     operator*(circular_iterator const& it) -> reference
     {
-      return it.jobs_[mask(it.index_)];
+      return *it.current_;
     }
 
     inline auto
     operator->() const noexcept -> pointer
     {
-      return jobs_ + mask(index_);
+      return current_;
     }
 
     inline auto
     operator<=>(circular_iterator const& rhs) const noexcept
     {
-      if (jobs_ != rhs.jobs_)
-      {
-        return jobs_ <=> rhs.jobs_;
-      }
       return index_ <=> rhs.index_;
     }
 
     inline auto
-    operator==(circular_iterator const& other) const noexcept -> bool
+    operator==(circular_iterator const& rhs) const noexcept -> bool
     {
-      return jobs_ == other.jobs_ && mask(index_ - other.index_) == 0;
+      return current_ == rhs.current_;
     }
 
-    // Returns logical distance, not circular addition
     inline auto
     operator+(circular_iterator const& rhs) const noexcept -> difference_type
     {
@@ -110,6 +108,7 @@ namespace threadable
     operator+=(difference_type rhs) noexcept -> circular_iterator&
     {
       index_ += rhs;
+      current_ = jobs_ + mask(index_);
       return *this;
     }
 
@@ -123,26 +122,38 @@ namespace threadable
     operator++() noexcept -> circular_iterator&
     {
       ++index_;
-      return *this;
-    }
-
-    inline auto
-    operator--() noexcept -> circular_iterator&
-    {
-      --index_;
+      if (++current_ > (jobs_ + buffer_size - 1)) [[unlikely]]
+      {
+        current_ = jobs_;
+      }
       return *this;
     }
 
     inline auto
     operator++(int) noexcept -> circular_iterator
     {
-      return circular_iterator(jobs_, index_++);
+      auto prev = *this;
+      ++(*this);
+      return prev;
+    }
+
+    inline auto
+    operator--() noexcept -> circular_iterator&
+    {
+      --index_;
+      if (--current_ < jobs_) [[unlikely]]
+      {
+        current_ = (jobs_ + buffer_size - 1);
+      }
+      return *this;
     }
 
     inline auto
     operator--(int) noexcept -> circular_iterator
     {
-      return circular_iterator(jobs_, index_--);
+      auto prev = *this;
+      --(*this);
+      return prev;
     }
 
     inline auto
@@ -152,7 +163,8 @@ namespace threadable
     }
 
   private:
-    pointer jobs_  = nullptr;
-    size_t  index_ = 0;
+    pointer jobs_    = nullptr;
+    pointer current_ = nullptr;
+    size_t  index_   = 0;
   };
 }
