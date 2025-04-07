@@ -30,27 +30,27 @@ namespace threadable
     {}
 
     inline auto
-    operator*() noexcept -> reference
-    {
-      return jobs_[mask(index_)];
-    }
-
-    inline auto
-    operator->() const noexcept -> pointer
-    {
-      return &jobs_[mask(index_)];
-    }
-
-    inline auto
     operator[](difference_type rhs) const noexcept -> reference
     {
       return jobs_[mask(index_ + rhs)];
+    }
+
+    inline auto
+    operator*() noexcept -> reference
+    {
+      return jobs_[mask(index_)];
     }
 
     friend inline auto
     operator*(circular_iterator const& it) -> reference
     {
       return it.jobs_[mask(it.index_)];
+    }
+
+    inline auto
+    operator->() const noexcept -> pointer
+    {
+      return jobs_ + mask(index_);
     }
 
     inline auto
@@ -85,25 +85,25 @@ namespace threadable
     inline auto
     operator+(difference_type rhs) const noexcept -> circular_iterator
     {
-      return circular_iterator(jobs_, mask(index_ + rhs));
+      return circular_iterator(jobs_, index_ + rhs);
     }
 
     inline auto
     operator-(difference_type rhs) const noexcept -> circular_iterator
     {
-      return circular_iterator(jobs_, mask(index_ - rhs));
+      return circular_iterator(jobs_, index_ - rhs);
     }
 
     friend inline auto
     operator+(difference_type lhs, circular_iterator const& rhs) noexcept -> circular_iterator
     {
-      return circular_iterator(rhs.jobs_, mask(lhs + rhs.index_));
+      return circular_iterator(rhs.jobs_, lhs + rhs.index_);
     }
 
     friend inline auto
     operator-(difference_type lhs, circular_iterator const& rhs) noexcept -> circular_iterator
     {
-      return circular_iterator(rhs.jobs_, mask(lhs - rhs.index_));
+      return circular_iterator(rhs.jobs_, lhs - rhs.index_);
     }
 
     inline auto
@@ -116,8 +116,7 @@ namespace threadable
     inline auto
     operator-=(difference_type rhs) noexcept -> circular_iterator&
     {
-      index_ -= rhs;
-      return *this;
+      return *this += -rhs;
     }
 
     inline auto
