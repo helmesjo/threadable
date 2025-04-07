@@ -45,12 +45,12 @@ SCENARIO("circular_iterator")
 
   WHEN("head wraps to 0 and tail is near end")
   {
-    auto tailIt = iter_t(buf, max_size);     // index_ = 15
-    auto headIt = iter_t(buf, buf_size);     // index_ = 16
+    auto tailIt = iter_t(buf, max_size); // index_ = 15
+    auto headIt = iter_t(buf, buf_size); // index_ = 16
     THEN("tail is less than head despite raw indices")
     {
-      REQUIRE(tailIt < headIt);              // 15 < 16, mask(15) = 15, mask(16) = 0
-      REQUIRE(*tailIt == buf[buf_size - 1]); // Valid dereference
+      REQUIRE(tailIt < headIt);          // 15 < 16, mask(15) = 15, mask(16) = 0
+      REQUIRE(*tailIt == *end);          // Valid dereference
     }
   }
 

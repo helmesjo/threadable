@@ -1,8 +1,6 @@
 #include <threadable-benchmarks/util.hxx>
 #include <threadable/circular_iterator.hxx>
 
-#include <iterator>
-#include <ranges>
 #include <vector>
 
 #include <doctest/doctest.h>
@@ -55,7 +53,7 @@ TEST_CASE("circular_iterator: dereference")
             bench::doNotOptimizeAway(it[++index]);
             // simulate bounds-checking
             // for a realistic comparison
-            if (index >= buffer.size()) [[unlikely]]
+            if (static_cast<std::size_t>(index) >= buffer.size()) [[unlikely]]
             {
               index = 0;
             }
@@ -92,7 +90,7 @@ TEST_CASE("circular_iterator: traversing")
             bench::doNotOptimizeAway(++it);
             // simulate bounds-checking
             // for a realistic comparison
-            if (it == buffer.end()) [[unlikely]]
+            if (it == end) [[unlikely]]
             {
               it = begin;
             }
