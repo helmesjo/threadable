@@ -193,7 +193,7 @@ namespace threadable
     {
       auto head = head_.load(std::memory_order_acquire);
       // Subtract indices, mask to wrap within buffer:
-      auto size     = (head - tail_) & (max_nr_of_jobs - 1);
+      auto size     = iterator::mask(head - tail_);
       auto endIndex = tail_ + std::min(size, max);
       return const_iterator(jobs_.data(), endIndex);
     }
@@ -242,7 +242,7 @@ namespace threadable
     size() const noexcept -> std::size_t
     {
       auto const head = head_.load(std::memory_order_relaxed);
-      return (head - tail_) & (max_nr_of_jobs - 1); // Correct circular distance
+      return iterator::mask(head - tail_); // circular distance
     }
 
     auto
