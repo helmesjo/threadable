@@ -627,7 +627,7 @@ SCENARIO("function: execution")
 
         int& nonconst_val; // NOLINT
         int& const_val;    // NOLINT
-      } const callable{nonconstVal, constVal};
+      } const callable{.nonconst_val = nonconstVal, .const_val = constVal};
 
       func.set(callable);
       WHEN("it is invoked")
