@@ -26,7 +26,7 @@ TEST_CASE("pool: job execution")
     bench::doNotOptimizeAway(val = threadable::utils::do_non_trivial_work(val) );
   });
 
-  b.title("push & wait");
+  b.title("pool: push & wait");
   {
     std::queue<job_t> queue;
     b.run("std::queue",

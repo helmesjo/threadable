@@ -26,7 +26,7 @@ TEST_CASE("queue: push")
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
   });
 
-  b.title("push");
+  b.title("queue: push");
   {
     auto queue = std::vector<std::function<void()>>();
     queue.reserve(jobs_per_iteration);
@@ -41,7 +41,7 @@ TEST_CASE("queue: push")
             }
           });
   }
-  b.title("push");
+  b.title("queue: push");
   {
     auto queue = threadable::queue<jobs_per_iteration>();
     auto token = threadable::job_token{};
@@ -67,7 +67,7 @@ TEST_CASE("queue: iterate (sequential)")
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
   });
 
-  b.title("iterate - sequential");
+  b.title("queue: iterate - sequential");
   {
     auto queue = std::vector<std::function<void()>>();
     queue.resize(jobs_per_iteration, job_t{});
@@ -110,7 +110,7 @@ TEST_CASE("queue: iterate (parallel)")
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
   });
 
-  b.title("iterate - parallel");
+  b.title("queue: iterate - parallel");
   {
     auto queue = std::vector<std::function<void()>>();
     queue.resize(jobs_per_iteration, job_t{});
@@ -153,7 +153,7 @@ TEST_CASE("queue: execute (sequential)")
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
   });
 
-  b.title("execute - sequential");
+  b.title("queue: execute - sequential");
   {
     auto queue = std::vector<std::function<void()>>();
     queue.resize(jobs_per_iteration, job_t{});
@@ -197,7 +197,7 @@ TEST_CASE("queue: execute (parallel)")
     bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
   });
 
-  b.title("execute - parallel");
+  b.title("queue: execute - parallel");
   {
     auto queue = std::vector<std::function<void()>>();
     queue.resize(jobs_per_iteration, job_t{});

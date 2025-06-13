@@ -27,7 +27,7 @@ TEST_CASE("function")
   auto func      = threadable::function<>(lambda);
   auto funcStd   = std::function<void()>(lambda);
 
-  b.title("assign")
+  b.title("function: assign")
     .run("lambda",
          [&]
          {
@@ -44,7 +44,7 @@ TEST_CASE("function")
            bench::doNotOptimizeAway(func = lambda);
          });
 
-  b.title("invoke")
+  b.title("function: invoke")
     .run("lambda",
          [&]
          {
@@ -61,7 +61,7 @@ TEST_CASE("function")
            func();
          });
 
-  b.title("reset")
+  b.title("function: reset")
     .run("lambda",
          [&]
          {

@@ -25,7 +25,7 @@ TEST_CASE("circular_iterator: dereference")
   buffer.resize(count);
 
   b.unit("*it");
-  b.title("dereference");
+  b.title("iterator: dereference");
   {
     auto it = buffer.begin();
     b.run("std::vector::iterator",
@@ -43,7 +43,7 @@ TEST_CASE("circular_iterator: dereference")
           });
   }
   b.unit("it[]");
-  b.title("indexing");
+  b.title("iterator: indexing");
   {
     auto it    = buffer.begin();
     auto index = iter_t::difference_type{0};
@@ -78,7 +78,7 @@ TEST_CASE("circular_iterator: traversing")
   auto buffer = std::vector<int>();
   buffer.resize(buffer_size);
 
-  b.title("traverse - forward");
+  b.title("iterator: traverse - forward");
   b.unit("++it");
   {
     auto const begin = buffer.begin();
@@ -104,7 +104,7 @@ TEST_CASE("circular_iterator: traversing")
             bench::doNotOptimizeAway(++it);
           });
   }
-  b.title("traverse - backward");
+  b.title("iterator: traverse - backward");
   b.unit("--it");
   {
     auto const begin = buffer.begin();
