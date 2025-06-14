@@ -88,6 +88,8 @@ namespace fho
       rhs.nextSlot_.store(0, std::memory_order::relaxed);
     }
 
+    auto operator=(queue const&) -> queue& = delete;
+
     auto
     operator=(queue&& rhs) noexcept -> queue&
     {
