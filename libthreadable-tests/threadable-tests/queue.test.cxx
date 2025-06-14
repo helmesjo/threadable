@@ -24,7 +24,7 @@ SCENARIO("queue: push & claim")
 {
   GIVEN("queue with capacity 2 (max size 1)")
   {
-    auto queue = threadable::queue<2>{};
+    auto queue = fho::queue<2>{};
     REQUIRE(queue.size() == 0);
     REQUIRE(queue.max_size() == 1);
 
@@ -91,7 +91,7 @@ SCENARIO("queue: push & claim")
       AND_WHEN("queue is destroyed")
       {
         {
-          auto queue2 = threadable::queue<2>{};
+          auto queue2 = fho::queue<2>{};
           queue2.push(type{});
           called    = 0;
           destroyed = 0;
@@ -135,9 +135,9 @@ SCENARIO("queue: push & claim")
     WHEN("push callable with 'job_token&' as first parameter")
     {
       bool                  wasCancelled = false;
-      threadable::job_token token;
+      fho::job_token token;
       token = queue.push(
-        [&wasCancelled](threadable::job_token& token)
+        [&wasCancelled](fho::job_token& token)
         {
           wasCancelled = token.cancelled();
         },
@@ -156,7 +156,7 @@ SCENARIO("queue: push & claim")
       {
         // NOLINTBEGIN
         int                   called  = 0;
-        static constexpr auto too_big = threadable::details::job_buffer_size * 2;
+        static constexpr auto too_big = fho::details::job_buffer_size * 2;
         // both capturing big data & passing as argument
         queue.push(
           [&called, bigData = std::make_shared<std::uint8_t[]>(
@@ -177,7 +177,7 @@ SCENARIO("queue: push & claim")
   GIVEN("queue with capacity 128")
   {
     static constexpr auto queue_capacity = 128;
-    auto                  queue          = threadable::queue<queue_capacity>{};
+    auto                  queue          = fho::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
     std::vector<std::size_t> jobsExecuted;
@@ -235,7 +235,7 @@ SCENARIO("queue: push & claim")
 SCENARIO("queue: alignment")
 {
   static constexpr auto queue_capacity = 128;
-  auto                  queue          = threadable::queue<queue_capacity>{};
+  auto                  queue          = fho::queue<queue_capacity>{};
   GIVEN("a queue of 128 items")
   {
     for (std::size_t i = 0; i < queue.max_size(); ++i)
@@ -246,7 +246,7 @@ SCENARIO("queue: alignment")
     {
       for (auto const& item : queue)
       {
-        REQUIRE(is_aligned(&item, threadable::details::cache_line_size));
+        REQUIRE(is_aligned(&item, fho::details::cache_line_size));
       }
     }
   }
@@ -256,7 +256,7 @@ SCENARIO("queue: execution order")
 {
   GIVEN("a sequential queue")
   {
-    auto queue = threadable::queue<32>(threadable::execution_policy::sequential);
+    auto queue = fho::queue<32>(fho::execution_policy::sequential);
 
     auto order = std::vector<std::size_t>{};
     auto m     = std::mutex{};
@@ -286,7 +286,7 @@ SCENARIO("queue: execution order")
 
 SCENARIO("queue: completion token")
 {
-  auto queue = threadable::queue{};
+  auto queue = fho::queue{};
   GIVEN("push job & store token")
   {
     auto token = queue.push([] {});
@@ -331,7 +331,7 @@ SCENARIO("queue: completion token")
     //       while (!waiting)
     //         ;
     //       std::this_thread::sleep_for(std::chrono::milliseconds{10});
-    //       queue = threadable::queue{};
+    //       queue = fho::queue{};
     //     });
 
     //   THEN("it does not crash")
@@ -349,7 +349,7 @@ SCENARIO("queue: stress-test")
   GIVEN("produce & consume enough for wrap-around")
   {
     static constexpr std::size_t queue_capacity = 1 << 8;
-    auto                         queue          = threadable::queue<queue_capacity>();
+    auto                         queue          = fho::queue<queue_capacity>();
 
     static constexpr auto nr_of_jobs   = queue.max_size() * 2;
     std::size_t           jobsExecuted = 0;
@@ -370,7 +370,7 @@ SCENARIO("queue: stress-test")
   GIVEN("1 producer & 1 consumer")
   {
     static constexpr std::size_t queue_capacity = 1 << 8;
-    auto                         queue          = threadable::queue<queue_capacity>();
+    auto                         queue          = fho::queue<queue_capacity>();
 
     THEN("there are no race conditions")
     {
@@ -409,7 +409,7 @@ SCENARIO("queue: stress-test")
   {
     static constexpr std::size_t queue_capacity = 1 << 20;
     static constexpr std::size_t nr_producers   = 5;
-    auto                         queue          = threadable::queue<queue_capacity>();
+    auto                         queue          = fho::queue<queue_capacity>();
 
     THEN("there are no race conditions")
     {
@@ -465,7 +465,7 @@ SCENARIO("queue: standard algorithms")
   GIVEN("queue with capacity of 1M")
   {
     static constexpr auto queue_capacity = 1 << 20;
-    auto                  queue          = threadable::queue<queue_capacity>{};
+    auto                  queue          = fho::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
     std::atomic_size_t jobsExecuted;

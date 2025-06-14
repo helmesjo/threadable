@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <iterator>
 
-namespace threadable
+namespace fho
 {
   template<typename elem_t, size_t index_mask>
   struct circular_iterator

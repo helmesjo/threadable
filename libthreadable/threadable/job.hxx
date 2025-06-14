@@ -8,7 +8,7 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-namespace threadable
+namespace fho
 {
 
   enum job_state : std::uint8_t
@@ -23,7 +23,7 @@ namespace threadable
   {
     struct job_base
     {
-      threadable::atomic_state_t state;
+      fho::atomic_state_t state;
     };
 
     static constexpr auto job_buffer_size =

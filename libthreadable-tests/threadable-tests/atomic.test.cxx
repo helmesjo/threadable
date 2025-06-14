@@ -5,7 +5,7 @@
 
 SCENARIO("atomic_bitfield")
 {
-  using bitfield_t = threadable::details::atomic_bitfield_t<std::size_t>;
+  using bitfield_t = fho::details::atomic_bitfield_t<std::size_t>;
   GIVEN("a bitfield set to 0")
   {
     auto field = bitfield_t{0};
@@ -13,9 +13,9 @@ SCENARIO("atomic_bitfield")
     {
       THEN("new value is assigned and old is returned")
       {
-        REQUIRE_FALSE(threadable::details::test_and_set<5, true>(field));
+        REQUIRE_FALSE(fho::details::test_and_set<5, true>(field));
         REQUIRE(std::bitset<8>(field).to_string() == std::bitset<8>(1 << 5).to_string());
-        threadable::details::wait<5, false>(field);
+        fho::details::wait<5, false>(field);
       }
     }
   }
@@ -26,10 +26,10 @@ SCENARIO("atomic_bitfield")
     {
       THEN("new value is assigned and old is returned")
       {
-        REQUIRE(threadable::details::test_and_set<2, false>(field));
+        REQUIRE(fho::details::test_and_set<2, false>(field));
         REQUIRE(std::bitset<8>(field).to_string() ==
                 std::bitset<8>(static_cast<unsigned int>(~(1 << 2))).to_string());
-        threadable::details::wait<2, true>(field);
+        fho::details::wait<2, true>(field);
       }
     }
   }

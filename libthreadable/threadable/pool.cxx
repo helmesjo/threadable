@@ -1,6 +1,6 @@
 #include <threadable/pool.hxx>
 
-namespace threadable::details
+namespace fho::details
 {
   auto
   pool() -> pool_t&

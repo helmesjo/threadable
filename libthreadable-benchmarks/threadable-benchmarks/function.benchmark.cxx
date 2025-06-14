@@ -21,10 +21,10 @@ TEST_CASE("function")
 
   auto lambda = []()
   {
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val));
+    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val));
   };
   using lambda_t = decltype(lambda);
-  auto func      = threadable::function<>(lambda);
+  auto func      = fho::function<>(lambda);
   auto funcStd   = std::function<void()>(lambda);
 
   b.title("function: assign")
@@ -38,7 +38,7 @@ TEST_CASE("function")
          {
            bench::doNotOptimizeAway(funcStd = lambda);
          })
-    .run("threadable::function",
+    .run("fho::function",
          [&]
          {
            bench::doNotOptimizeAway(func = lambda);
@@ -55,7 +55,7 @@ TEST_CASE("function")
          {
            funcStd();
          })
-    .run("threadable::function",
+    .run("fho::function",
          [&]
          {
            func();
@@ -72,7 +72,7 @@ TEST_CASE("function")
          {
            bench::doNotOptimizeAway(funcStd = nullptr);
          })
-    .run("threadable::function",
+    .run("fho::function",
          [&]
          {
            bench::doNotOptimizeAway(func = nullptr);

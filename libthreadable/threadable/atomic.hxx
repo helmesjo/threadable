@@ -6,7 +6,7 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-namespace threadable::details
+namespace fho::details
 {
   template<typename width_t>
   using atomic_bitfield_t = std::atomic<width_t>;
@@ -84,7 +84,7 @@ namespace threadable::details
 
 #if 0 // __cpp_lib_atomic_flag_test >= 201907 // a bunch of compilers define this without supporting
       // it.
-namespace threadable::details
+namespace fho::details
 {
   using atomic_flag_t = std::atomic_flag;
 
@@ -116,7 +116,7 @@ namespace threadable::details
   }
 }
 #else
-namespace threadable::details
+namespace fho::details
 {
   using atomic_flag_t = std::atomic_bool;
 
@@ -157,7 +157,7 @@ namespace threadable::details
 #endif
 
 #if __cpp_lib_atomic_wait >= 201907
-namespace threadable::details
+namespace fho::details
 {
   template<typename atomic_t, typename obj_t>
   inline void

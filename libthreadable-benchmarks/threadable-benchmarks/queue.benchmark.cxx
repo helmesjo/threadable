@@ -23,7 +23,7 @@ TEST_CASE("queue: push")
   b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
 
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("queue: push");
@@ -43,10 +43,10 @@ TEST_CASE("queue: push")
   }
   b.title("queue: push");
   {
-    auto queue = threadable::queue<jobs_per_iteration>();
-    auto token = threadable::job_token{};
+    auto queue = fho::queue<jobs_per_iteration>();
+    auto token = fho::job_token{};
 
-    b.run("threadable::queue",
+    b.run("fho::queue",
           [&]
           {
             queue.clear();
@@ -64,7 +64,7 @@ TEST_CASE("queue: iterate (sequential)")
   b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
 
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("queue: iterate - sequential");
@@ -83,13 +83,13 @@ TEST_CASE("queue: iterate (sequential)")
           });
   }
   {
-    auto queue = threadable::queue<jobs_per_iteration>();
+    auto queue = fho::queue<jobs_per_iteration>();
     for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
       queue.push(job_t{});
     }
 
-    b.run("threadable::queue",
+    b.run("fho::queue",
           [&]
           {
             std::for_each(std::execution::seq, std::begin(queue), std::end(queue),
@@ -107,7 +107,7 @@ TEST_CASE("queue: iterate (parallel)")
   b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
 
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("queue: iterate - parallel");
@@ -126,13 +126,13 @@ TEST_CASE("queue: iterate (parallel)")
           });
   }
   {
-    auto queue = threadable::queue<jobs_per_iteration>();
+    auto queue = fho::queue<jobs_per_iteration>();
     for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
       queue.push(job_t{});
     }
 
-    b.run("threadable::queue",
+    b.run("fho::queue",
           [&]
           {
             std::for_each(std::execution::par, std::begin(queue), std::end(queue),
@@ -150,7 +150,7 @@ TEST_CASE("queue: execute (sequential)")
   b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
 
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("queue: execute - sequential");
@@ -169,14 +169,14 @@ TEST_CASE("queue: execute (sequential)")
           });
   }
   {
-    auto queue = threadable::queue<jobs_per_iteration>();
+    auto queue = fho::queue<jobs_per_iteration>();
     for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
       queue.push(job_t{});
     }
     auto range = queue.consume();
 
-    b.run("threadable::queue",
+    b.run("fho::queue",
           [&]
           {
             std::for_each(std::execution::seq, std::begin(range), std::end(range),
@@ -194,7 +194,7 @@ TEST_CASE("queue: execute (parallel)")
   b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
 
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("queue: execute - parallel");
@@ -213,14 +213,14 @@ TEST_CASE("queue: execute (parallel)")
           });
   }
   {
-    auto queue = threadable::queue<jobs_per_iteration>();
+    auto queue = fho::queue<jobs_per_iteration>();
     for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
       queue.push(job_t{});
     }
     auto range = queue.consume();
 
-    b.run("threadable::queue",
+    b.run("fho::queue",
           [&]
           {
             std::for_each(std::execution::par, std::begin(range), std::end(range),

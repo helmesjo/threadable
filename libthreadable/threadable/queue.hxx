@@ -28,7 +28,7 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-namespace threadable
+namespace fho
 {
   namespace details
   {

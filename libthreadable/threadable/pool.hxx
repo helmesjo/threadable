@@ -14,7 +14,7 @@
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-namespace threadable
+namespace fho
 {
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class pool
@@ -217,7 +217,7 @@ namespace threadable
 
   namespace details
   {
-    using pool_t = threadable::pool<details::default_max_nr_of_jobs>;
+    using pool_t = fho::pool<details::default_max_nr_of_jobs>;
     extern auto pool() -> pool_t&;
     using queue_t = pool_t::queue_t;
   }

@@ -3,7 +3,7 @@
 #include <memory>
 #include <new>
 
-namespace threadable
+namespace fho
 {
   template<typename T, std::size_t alignment>
   struct aligned_allocator : public std::allocator<T>

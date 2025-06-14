@@ -15,7 +15,7 @@ namespace
 
 SCENARIO("function: type traits")
 {
-  using namespace threadable;
+  using namespace fho;
 
   static_assert(is_function_v<function<>>);
   static_assert(is_function_v<function<> const&>);
@@ -36,10 +36,10 @@ SCENARIO("function_buffer")
   WHEN("constructed with function pointer")
   {
     int  called = 0;
-    auto buffer = threadable::function_buffer<64>(free_func, std::ref(called));
+    auto buffer = fho::function_buffer<64>(free_func, std::ref(called));
     THEN("it can be invoked")
     {
-      threadable::details::invoke(buffer.data());
+      fho::details::invoke(buffer.data());
       REQUIRE(called == 1);
     }
   }
@@ -55,24 +55,24 @@ SCENARIO("function_buffer")
     };
 
     int  called = 0;
-    auto buffer = threadable::function_buffer<64>(&type::func, type{}, std::ref(called));
+    auto buffer = fho::function_buffer<64>(&type::func, type{}, std::ref(called));
     THEN("it can be invoked")
     {
-      threadable::details::invoke(buffer.data());
+      fho::details::invoke(buffer.data());
       REQUIRE(called == 1);
     }
   }
   WHEN("constructed with callable")
   {
     int  called = 0;
-    auto buffer = threadable::function_buffer(
+    auto buffer = fho::function_buffer(
       [&called]
       {
         ++called;
       });
     THEN("it can be invoked")
     {
-      threadable::details::invoke(buffer.data());
+      fho::details::invoke(buffer.data());
       REQUIRE(called == 1);
     }
   }
@@ -80,7 +80,7 @@ SCENARIO("function_buffer")
   {
     int   passedArg1 = 0;
     float passedArg2 = 0;
-    auto  buffer     = threadable::function_buffer<64>(
+    auto  buffer     = fho::function_buffer<64>(
       [&](int arg1, float&& arg2)
       {
         passedArg1 = arg1;
@@ -90,7 +90,7 @@ SCENARIO("function_buffer")
 
     THEN("it can be invoked & arguments are forwarded")
     {
-      threadable::details::invoke(buffer.data());
+      fho::details::invoke(buffer.data());
       REQUIRE(passedArg1 == 1);
       REQUIRE(passedArg2 == doctest::Approx(3.4f));
     }
@@ -125,33 +125,33 @@ SCENARIO("function_buffer")
 
     static_assert(std::copy_constructible<type>);
 
-    auto buffer = threadable::function_buffer(type{});
+    auto buffer = fho::function_buffer(type{});
     constCopied = 0;
     moveCopied  = 0;
     THEN("the callables' copy-ctor is invoked")
     {
       auto copy = buffer;
       REQUIRE(constCopied == 1);
-      REQUIRE_NOTHROW(threadable::details::invoke(buffer.data()));
+      REQUIRE_NOTHROW(fho::details::invoke(buffer.data()));
     }
     THEN("the callables' move-ctor is invoked")
     {
       auto copy = std::move(buffer);
       REQUIRE(moveCopied == 1);
-      REQUIRE_NOTHROW(threadable::details::invoke(buffer.data()));
+      REQUIRE_NOTHROW(fho::details::invoke(buffer.data()));
     }
   }
   WHEN("nested in lambda capture (by value)")
   {
     int  called = 0;
-    auto buffer = threadable::function_buffer(
+    auto buffer = fho::function_buffer(
       [&called]
       {
         ++called;
       });
     auto lambda = [buffer = buffer]() mutable
     {
-      threadable::details::invoke(buffer.data());
+      fho::details::invoke(buffer.data());
     };
     THEN("it can be invoked")
     {
@@ -162,14 +162,14 @@ SCENARIO("function_buffer")
   WHEN("nested in lambda capture (by r-value)")
   {
     int  called = 0;
-    auto buffer = threadable::function_buffer(
+    auto buffer = fho::function_buffer(
       [&called]
       {
         ++called;
       });
     auto lambda = [buffer = std::move(buffer)]() mutable
     {
-      threadable::details::invoke(buffer.data());
+      fho::details::invoke(buffer.data());
     };
     THEN("it can be invoked")
     {
@@ -184,58 +184,58 @@ SCENARIO("function_buffer")
     {
       ++called;
     };
-    auto buffer = threadable::function_buffer(lambda);
+    auto buffer = fho::function_buffer(lambda);
     buffer.reset();
     buffer.set(lambda);
     THEN("it can be invoked")
     {
-      threadable::details::invoke(buffer.data());
+      fho::details::invoke(buffer.data());
       REQUIRE(called == 1);
     }
   }
-  WHEN("constructed with threadable::function")
+  WHEN("constructed with fho::function")
   {
     int  called = 0;
-    auto func   = threadable::function(
+    auto func   = fho::function(
       [&called]
       {
         ++called;
       });
     AND_WHEN("by value")
     {
-      auto buffer = threadable::function_buffer(func);
+      auto buffer = fho::function_buffer(func);
       THEN("it can be invoked")
       {
-        threadable::details::invoke(buffer.data());
+        fho::details::invoke(buffer.data());
         REQUIRE(called == 1);
       }
     }
     AND_WHEN("by r-value")
     {
-      auto buffer = threadable::function_buffer(std::move(func));
+      auto buffer = fho::function_buffer(std::move(func));
       THEN("it can be invoked")
       {
-        threadable::details::invoke(buffer.data());
+        fho::details::invoke(buffer.data());
         REQUIRE(called == 1);
       }
     }
   }
-  WHEN("set with threadable::function")
+  WHEN("set with fho::function")
   {
     int  called = 0;
-    auto func   = threadable::function(
+    auto func   = fho::function(
       [&called]
       {
         ++called;
       });
-    auto buffer = threadable::function_buffer(func);
+    auto buffer = fho::function_buffer(func);
     buffer.reset();
     AND_WHEN("by value")
     {
       buffer.set(func);
       THEN("it can be invoked")
       {
-        threadable::details::invoke(buffer.data());
+        fho::details::invoke(buffer.data());
         REQUIRE(called == 1);
       }
     }
@@ -244,7 +244,7 @@ SCENARIO("function_buffer")
       buffer.set(std::move(func));
       THEN("it can be invoked")
       {
-        threadable::details::invoke(buffer.data());
+        fho::details::invoke(buffer.data());
         REQUIRE(called == 1);
       }
     }
@@ -256,7 +256,7 @@ SCENARIO("function_dyn")
   WHEN("constructed with callable")
   {
     int  called = 0;
-    auto func   = threadable::function_dyn(
+    auto func   = fho::function_dyn(
       [&called]
       {
         ++called;
@@ -271,7 +271,7 @@ SCENARIO("function_dyn")
   WHEN("constructed with function_buffer")
   {
     int  called = 0;
-    auto func   = threadable::function_dyn(threadable::function_buffer(
+    auto func   = fho::function_dyn(fho::function_buffer(
       [&called]
       {
         ++called;
@@ -286,7 +286,7 @@ SCENARIO("function_dyn")
   WHEN("constructed with function")
   {
     int  called = 0;
-    auto func   = threadable::function_dyn(threadable::function(
+    auto func   = fho::function_dyn(fho::function(
       [&called]
       {
         ++called;
@@ -301,12 +301,12 @@ SCENARIO("function_dyn")
   WHEN("copy-constructed")
   {
     int  called = 0;
-    auto func1  = threadable::function_dyn(
+    auto func1  = fho::function_dyn(
       [&called]
       {
         ++called;
       });
-    auto func2 = threadable::function_dyn(func1);
+    auto func2 = fho::function_dyn(func1);
     REQUIRE(func1);
     REQUIRE(func2);
     THEN("copy can be invoked")
@@ -323,12 +323,12 @@ SCENARIO("function_dyn")
   WHEN("move-constructed")
   {
     int  called = 0;
-    auto func1  = threadable::function_dyn(
+    auto func1  = fho::function_dyn(
       [&called]
       {
         ++called;
       });
-    auto func2 = threadable::function_dyn(std::move(func1));
+    auto func2 = fho::function_dyn(std::move(func1));
     REQUIRE(func2);
     THEN("it can be invoked")
     {
@@ -370,13 +370,13 @@ SCENARIO("function_dyn")
     // this order and combination of things is
     // important to trigger the obscure case,
     // so leave as-is.
-    auto func = threadable::function();
+    auto func = fho::function();
     func.set(
       [obj = type{5}]
       {
         REQUIRE(*obj.val == 5);
       });
-    auto funcDyn = threadable::function_dyn(func);
+    auto funcDyn = fho::function_dyn(func);
     func.set(
       [func = funcDyn]() mutable
       {
@@ -391,12 +391,12 @@ SCENARIO("function_dyn")
   WHEN("constructed with callable capturing function_dyn")
   {
     int  called = 0;
-    auto func1  = threadable::function_dyn(
+    auto func1  = fho::function_dyn(
       [&called]
       {
         ++called;
       });
-    auto func2 = threadable::function(
+    auto func2 = fho::function(
       [func1]() mutable
       {
         func1();
@@ -425,7 +425,7 @@ SCENARIO("function_dyn")
 
 SCENARIO("function: set/reset")
 {
-  auto func = threadable::function{};
+  auto func = fho::function{};
   GIVEN("is empty")
   {
     THEN("function is unset")
@@ -555,7 +555,7 @@ SCENARIO("function: set/reset")
 
 SCENARIO("function: execution")
 {
-  auto func = threadable::function{};
+  auto func = fho::function{};
   GIVEN("callable is set")
   {
     WHEN("callable with value member")
@@ -687,7 +687,7 @@ SCENARIO("function: execution")
 SCENARIO("function: Conversion")
 {
   static constexpr auto func_size = 64;
-  auto                  func      = threadable::function<func_size>{};
+  auto                  func      = fho::function<func_size>{};
   GIVEN("callable is set")
   {
     thread_local int called = 0;
@@ -726,7 +726,7 @@ SCENARIO("function: Conversion")
     }
     WHEN("function is converted to function_dyn")
     {
-      threadable::function_dyn funcDyn = func;
+      fho::function_dyn funcDyn = func;
 
       static_assert(sizeof(funcDyn) == sizeof(std::unique_ptr<std::uint8_t*>));
       REQUIRE(funcDyn);
@@ -773,7 +773,7 @@ SCENARIO("function_dyn")
       }
     };
 
-    auto funcDyn = threadable::function_dyn(type{});
+    auto funcDyn = fho::function_dyn(type{});
 
     WHEN("it is invoked")
     {

@@ -10,7 +10,7 @@ using namespace std::chrono_literals;
 
 SCENARIO("pool: create/remove queues")
 {
-  auto pool = threadable::pool();
+  auto pool = fho::pool();
   GIVEN("queue is created")
   {
     auto& queue  = pool.create();
@@ -97,10 +97,10 @@ SCENARIO("pool: push jobs to global pool")
   std::vector<std::size_t> results;
   GIVEN("a job is pushed to sequential queue")
   {
-    threadable::job_token token;
+    fho::job_token token;
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
-      token = threadable::push<threadable::execution_policy::sequential>(
+      token = fho::push<fho::execution_policy::sequential>(
         [i, &results, &mutex]
         {
           std::scoped_lock _{mutex};
@@ -120,10 +120,10 @@ SCENARIO("pool: push jobs to global pool")
   GIVEN("a job is pushed to parallel queue")
   {
     std::atomic_size_t      counter = 0;
-    threadable::token_group group;
+    fho::token_group group;
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
-      group += threadable::push<threadable::execution_policy::parallel>(
+      group += fho::push<fho::execution_policy::parallel>(
         [&counter]
         {
           ++counter;
@@ -140,13 +140,13 @@ SCENARIO("pool: push jobs to global pool")
 SCENARIO("pool: stress-test")
 {
   constexpr auto capacity = std::size_t{1 << 18};
-  auto           pool     = threadable::pool<capacity>();
+  auto           pool     = fho::pool<capacity>();
   GIVEN("single producer pushes a large amount of jobs")
   {
-    auto& queue   = pool.create(threadable::execution_policy::parallel);
+    auto& queue   = pool.create(fho::execution_policy::parallel);
     auto  counter = std::atomic_size_t{0};
 
-    auto group = threadable::token_group{};
+    auto group = fho::token_group{};
     for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
       group += queue.push(
@@ -167,7 +167,7 @@ SCENARIO("pool: stress-test")
   {
     constexpr auto nr_producers = 3;
 
-    auto& queue     = pool.create(threadable::execution_policy::parallel);
+    auto& queue     = pool.create(fho::execution_policy::parallel);
     auto  counter   = std::atomic_size_t{0};
     auto  producers = std::vector<std::thread>{};
 
@@ -178,7 +178,7 @@ SCENARIO("pool: stress-test")
         {
           static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
                         "All jobs must be pushed");
-          threadable::token_group group;
+          fho::token_group group;
           for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
           {
             group += queue.push(
@@ -210,7 +210,7 @@ SCENARIO("pool: stress-test")
     for (std::size_t i = 0; i < nr_producers; ++i)
     {
       producers.emplace_back(
-        [&counter, &pool, &queue = pool.create(threadable::execution_policy::parallel)]
+        [&counter, &pool, &queue = pool.create(fho::execution_policy::parallel)]
         {
           static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
                         "All jobs must be pushed");

@@ -17,13 +17,13 @@ namespace
 
 TEST_CASE("pool: job execution")
 {
-  auto pool = threadable::pool<jobs_per_iteration>();
+  auto pool = fho::pool<jobs_per_iteration>();
 
   bench::Bench b;
   b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
 
   using job_t = decltype([](){
-    bench::doNotOptimizeAway(val = threadable::utils::do_non_trivial_work(val) );
+    bench::doNotOptimizeAway(val = fho::utils::do_non_trivial_work(val) );
   });
 
   b.title("pool: push & wait");
@@ -45,11 +45,11 @@ TEST_CASE("pool: job execution")
           });
   }
   {
-    auto& queue = pool.create(threadable::execution_policy::parallel);
-    b.run("threadable::pool",
+    auto& queue = pool.create(fho::execution_policy::parallel);
+    b.run("fho::pool",
           [&]
           {
-            threadable::token_group group;
+            fho::token_group group;
             for (std::size_t i = 0; i < queue.max_size(); ++i)
             {
               group += queue.push(job_t{});
