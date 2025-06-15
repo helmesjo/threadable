@@ -143,16 +143,16 @@ namespace fho
               queues = queues_;
             }
 
-            if (queues.size() == 1)
+            if (queues.size() == 1) [[unlikely]]
             {
               (void)queues[0]->execute();
             }
-            else
+            else [[likely]]
             {
               auto rand = distr(gen);
               for (auto& queue : queues)
               {
-                if (auto range = queue->consume(); !range.empty())
+                if (auto range = queue->consume(); !range.empty()) [[likely]]
                 {
                   // assign to (random) worker
                   // @TODO: Implement a proper load balancer.
@@ -160,8 +160,8 @@ namespace fho
                   e.submit(range);
 
                   auto prev = rand;
-                  while ((rand = distr(gen)) != prev)
-                    ;
+                  while ((rand = distr(gen)) != prev) [[unlikely]]
+                  {}
                 }
               }
             }

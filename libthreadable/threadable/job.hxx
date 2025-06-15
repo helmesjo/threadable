@@ -81,7 +81,7 @@ namespace fho
       assert(!done());
 
       func_();
-      if (reset() == job_state::active)
+      if (reset() == job_state::active) [[likely]]
       {
         state.notify_all();
       }

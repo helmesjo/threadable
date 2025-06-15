@@ -156,7 +156,7 @@ namespace fho
     wait() const noexcept
     {
       auto const head = nextSlot_.load(std::memory_order_acquire);
-      if (iterator::mask(head - tail_) == 0)
+      if (iterator::mask(head - tail_) == 0) [[likely]]
       {
         head_.wait(head);
       }
