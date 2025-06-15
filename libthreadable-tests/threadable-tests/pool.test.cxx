@@ -1,8 +1,8 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/pool.hxx>
 
+#include <barrier>
 #include <cstddef>
-#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -92,12 +92,12 @@ SCENARIO("pool: create/remove queues")
 
 SCENARIO("pool: push jobs to global pool")
 {
-  constexpr std::size_t    nr_of_jobs = 1024;
-  std::mutex               mutex;
-  std::vector<std::size_t> results;
+  constexpr auto nr_of_jobs = std::size_t{1024};
+  auto           mutex      = std::mutex{};
+  auto           results    = std::vector<std::size_t>{};
   GIVEN("a job is pushed to sequential queue")
   {
-    fho::job_token token;
+    auto token = fho::job_token{};
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       token = fho::push<fho::execution_policy::sequential>(
@@ -119,8 +119,8 @@ SCENARIO("pool: push jobs to global pool")
   }
   GIVEN("a job is pushed to parallel queue")
   {
-    std::atomic_size_t      counter = 0;
-    fho::token_group group;
+    auto counter = std::atomic_size_t{0};
+    auto group   = fho::token_group{};
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       group += fho::push<fho::execution_policy::parallel>(
@@ -203,25 +203,30 @@ SCENARIO("pool: stress-test")
   }
   GIVEN("multiple producers pushes a large amount of jobs to their own queue and then remove it")
   {
-    static constexpr auto    nr_producers = 3;
-    std::atomic_size_t       counter{0};
-    std::vector<std::thread> producers;
+    static constexpr auto nr_producers = 3;
+
+    auto counter   = std::atomic_size_t{0};
+    auto producers = std::vector<std::thread>{};
+    auto barrier   = std::barrier{nr_producers};
 
     for (std::size_t i = 0; i < nr_producers; ++i)
     {
       producers.emplace_back(
-        [&counter, &pool, &queue = pool.create(fho::execution_policy::parallel)]
+        [&counter, &pool, &barrier, &queue = pool.create(fho::execution_policy::parallel)]
         {
-          static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
-                        "All jobs must be pushed");
+          static_assert(queue.max_size() % nr_producers == 0, "All jobs must be pushed");
+
+          auto tokens = fho::token_group{};
+          barrier.arrive_and_wait();
           for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
           {
-            (void)queue.push(
+            tokens += queue.push(
               [&counter]
               {
                 ++counter;
               });
           }
+          tokens.wait();
           REQUIRE(pool.remove(std::move(queue)));
         });
     }
@@ -230,5 +235,6 @@ SCENARIO("pool: stress-test")
     {
       thread.join();
     }
+    REQUIRE(counter.load() == decltype(pool)::queue_t::max_size());
   }
 }

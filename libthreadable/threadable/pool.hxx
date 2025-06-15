@@ -10,12 +10,89 @@
 #include <cstddef>
 #include <mutex>
 #include <random>
+#include <ranges>
 #include <thread>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
 namespace fho
 {
+  class executor
+  {
+  public:
+    executor()
+      : work_(execution_policy::sequential)
+      , thread_(
+          [this]
+          {
+            run();
+          })
+    {}
+
+    ~executor()
+    {
+      stop();
+    }
+
+    executor(executor const&)                    = delete;
+    executor(executor&&)                         = delete;
+    auto operator=(executor const&) -> executor& = delete;
+    auto operator=(executor&&) -> executor&      = delete;
+
+    template<typename T>
+    auto
+    submit(std::ranges::subrange<T> range) noexcept
+      requires std::invocable<std::ranges::range_value_t<decltype(range)>>
+    {
+      return work_.push(
+        [r = std::move(range)]
+        {
+          for (auto& j : r)
+          {
+            j();
+          }
+        });
+    }
+
+    auto
+    submit(std::invocable auto&& work) noexcept
+    {
+      return work_.push(FWD(work));
+    }
+
+    void
+    stop() noexcept
+    {
+      submit(
+        [this]
+        {
+          stop_.exchange(true, std::memory_order_relaxed);
+        });
+      if (thread_.joinable())
+      {
+        thread_.join();
+      }
+    }
+
+  private:
+    void
+    run()
+    {
+      while (!stop_.load(std::memory_order_relaxed))
+      {
+        work_.wait();
+        for (auto& w : work_.consume())
+        {
+          w();
+        }
+      }
+    }
+
+    std::atomic_bool stop_{false};
+    queue<1024>      work_;
+    std::thread      thread_;
+  };
+
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class pool
   {
@@ -35,48 +112,27 @@ namespace fho
     pool(unsigned int workers = std::thread::hardware_concurrency()) noexcept
     {
       workers = std::max(2u, workers);
-      details::atomic_clear(quit_);
 
       // start worker threads
       for (std::size_t i = 0; i < workers - 1; ++i)
       {
-        auto w    = std::make_unique<worker>();
-        w->thread = std::thread(
-          [](std::atomic_bool& quit, queue_t& work)
-          {
-            while (true)
-            {
-              // 1. Check if quit = true. If so, bail.
-              if (details::atomic_test(quit, std::memory_order_acquire)) [[unlikely]]
-              {
-                break;
-              }
-              // 2. Wait for jobs to ready.
-              else [[likely]]
-              {
-                work.wait();
-              }
-              // 3. Execute all jobs.
-              work.execute();
-            }
-          },
-          std::ref(quit_), std::ref(w->work));
-        workers_.push_back(std::move(w));
+        executors_.emplace_back(std::make_unique<executor>());
       }
 
       // start scheduler thread
       scheduler_ = std::thread(
         [this]
         {
-          auto rd    = std::random_device{};
-          auto gen   = std::mt19937(rd());
-          auto distr = std::uniform_int_distribution<std::size_t>(std::size_t{0}, workers_.size());
+          auto rd  = std::random_device{};
+          auto gen = std::mt19937(rd());
+          auto distr =
+            std::uniform_int_distribution<std::size_t>(std::size_t{0}, executors_.size() - 1);
 
           while (true)
           {
             // 1. Check if quit = true. If so, bail.
             // 2. Distribute queues to workers.
-            if (details::atomic_test(quit_, std::memory_order_acquire)) [[unlikely]]
+            if (details::atomic_test(stop_, std::memory_order_acquire)) [[unlikely]]
             {
               break;
             }
@@ -87,32 +143,22 @@ namespace fho
               queues = queues_;
             }
 
-            auto rand = distr(gen);
             if (queues.size() == 1)
             {
               (void)queues[0]->execute();
             }
             else
             {
+              auto rand = distr(gen);
               for (auto& queue : queues)
               {
                 if (auto range = queue->consume(); !range.empty())
                 {
                   // assign to (random) worker
                   // @TODO: Implement a proper load balancer.
-                  if (rand < workers_.size()) [[likely]]
-                  {
-                    worker& w = *workers_[rand];
-                    w.work.push(
-                      [queue, range = std::move(range)]
-                      {
-                        queue->execute(range);
-                      });
-                  }
-                  else [[unlikely]]
-                  {
-                    queue->execute(range);
-                  }
+                  executor& e = *executors_[rand];
+                  e.submit(range);
+
                   auto prev = rand;
                   while ((rand = distr(gen)) != prev)
                     ;
@@ -131,17 +177,15 @@ namespace fho
 
     ~pool()
     {
-      details::atomic_set(quit_, std::memory_order_release);
-      details::atomic_notify_all(quit_);
+      details::atomic_set(stop_, std::memory_order_release);
+      details::atomic_notify_all(stop_);
       if (scheduler_.joinable())
       {
         scheduler_.join();
       }
-
-      for (auto& w : workers_)
+      for (auto& w : executors_)
       {
-        w->work.push([] {});
-        w->thread.join();
+        w->stop();
       }
     }
 
@@ -209,10 +253,10 @@ namespace fho
 
   private:
     alignas(details::cache_line_size) mutable std::mutex queueMutex_;
-    alignas(details::cache_line_size) details::atomic_flag_t quit_;
+    alignas(details::cache_line_size) details::atomic_flag_t stop_{false};
     alignas(details::cache_line_size) queues_t queues_;
     alignas(details::cache_line_size) std::thread scheduler_;
-    alignas(details::cache_line_size) std::vector<std::unique_ptr<worker>> workers_;
+    alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
   };
 
   namespace details

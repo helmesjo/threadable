@@ -428,8 +428,7 @@ SCENARIO("queue: stress-test")
         producers.emplace_back(
           [&barrier, &queue, &jobsExecuted]
           {
-            static_assert(decltype(queue)::max_size() % nr_producers == 0,
-                          "All jobs must be pushed");
+            static_assert(queue.max_size() % nr_producers == 0, "All jobs must be pushed");
 
             auto tokens = fho::token_group{};
             barrier.arrive_and_wait();
@@ -478,7 +477,7 @@ SCENARIO("queue: standard algorithms")
     auto                  queue          = fho::queue<queue_capacity>{};
     REQUIRE(queue.size() == 0);
 
-    std::atomic_size_t jobsExecuted;
+    auto jobsExecuted = std::atomic_size_t{0};
     WHEN("push all")
     {
       while (queue.size() < queue.max_size())
