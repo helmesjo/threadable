@@ -214,7 +214,8 @@ SCENARIO("pool: stress-test")
       producers.emplace_back(
         [&counter, &pool, &barrier, &queue = pool.create(fho::execution_policy::parallel)]
         {
-          static_assert(queue.max_size() % nr_producers == 0, "All jobs must be pushed");
+          static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
+                        "All jobs must be pushed");
 
           auto tokens = fho::token_group{};
           barrier.arrive_and_wait();
