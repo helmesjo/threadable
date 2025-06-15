@@ -10,6 +10,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <new>
 #include <span>
 #include <type_traits>
 #include <version>
@@ -25,7 +26,8 @@ namespace fho
 
   namespace details
   {
-#if __cpp_lib_hardware_interference_size >= 201603
+    // NOTE: GCC/Clang incorrectly reports 64 bytes when targeting Apple Silicon.
+#if __cpp_lib_hardware_interference_size >= 201603 && !defined(__APPLE__)
     constexpr auto cache_line_size = std::hardware_destructive_interference_size;
 #else
   #if defined(__x86_64__) || defined(_M_X64)

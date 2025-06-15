@@ -29,6 +29,9 @@ SCENARIO("function: type traits")
                 details::function_buffer_meta_size + sizeof(lambda));
   static_assert(required_buffer_size_v<decltype(lambda), int, int> ==
                 details::function_buffer_meta_size + sizeof(lambda) + sizeof(int) + sizeof(int));
+
+  std::cerr << std::format("hardware_destructive_interference_size: {}\n",
+                           fho::details::cache_line_size);
 }
 
 SCENARIO("function_buffer")
