@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <barrier>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -134,8 +135,9 @@ SCENARIO("queue: push & claim")
     }
     WHEN("push callable with 'job_token&' as first parameter")
     {
-      bool                  wasCancelled = false;
-      fho::job_token token;
+      bool wasCancelled = false;
+      auto token        = fho::job_token{};
+
       token = queue.push(
         [&wasCancelled](fho::job_token& token)
         {
@@ -348,8 +350,9 @@ SCENARIO("queue: stress-test")
 {
   GIVEN("produce & consume enough for wrap-around")
   {
-    static constexpr std::size_t queue_capacity = 1 << 8;
-    auto                         queue          = fho::queue<queue_capacity>();
+    static constexpr auto queue_capacity = std::size_t{1 << 8};
+
+    auto queue = fho::queue<queue_capacity>();
 
     static constexpr auto nr_of_jobs   = queue.max_size() * 2;
     std::size_t           jobsExecuted = 0;
@@ -369,15 +372,16 @@ SCENARIO("queue: stress-test")
   }
   GIVEN("1 producer & 1 consumer")
   {
-    static constexpr std::size_t queue_capacity = 1 << 8;
-    auto                         queue          = fho::queue<queue_capacity>();
+    static constexpr auto queue_capacity = std::size_t{1 << 8};
+
+    auto queue = fho::queue<queue_capacity>();
 
     THEN("there are no race conditions")
     {
-      std::atomic_size_t jobsExecuted{0};
+      auto jobsExecuted = std::atomic_size_t{0};
       {
         // start producer
-        std::thread producer(
+        auto producer = std::thread(
           [&queue, &jobsExecuted]
           {
             for (std::size_t i = 0; i < queue.max_size(); ++i)
@@ -390,7 +394,7 @@ SCENARIO("queue: stress-test")
             }
           });
         // start consumer
-        std::thread consumer(
+        auto consumer = std::thread(
           [&queue, &producer]
           {
             while (producer.joinable() || !queue.empty())
@@ -407,54 +411,60 @@ SCENARIO("queue: stress-test")
   }
   GIVEN("8 producers & 1 consumer")
   {
-    static constexpr std::size_t queue_capacity = 1 << 20;
-    static constexpr std::size_t nr_producers   = 5;
-    auto                         queue          = fho::queue<queue_capacity>();
+    static constexpr auto queue_capacity = std::size_t{1 << 20};
+    static constexpr auto nr_producers   = std::size_t{5};
+
+    auto queue   = fho::queue<queue_capacity>();
+    auto barrier = std::barrier{nr_producers};
 
     THEN("there are no race conditions")
     {
       std::atomic_size_t jobsExecuted{0};
-      {
-        // start producers
-        std::vector<std::thread> producers;
-        for (std::size_t i = 0; i < nr_producers; ++i)
-        {
-          producers.emplace_back(
-            [&queue, &jobsExecuted]
-            {
-              static_assert(decltype(queue)::max_size() % nr_producers == 0,
-                            "All jobs must be pushed");
-              for (std::size_t i = 0; i < queue.max_size() / nr_producers; ++i)
-              {
-                queue.push(
-                  [&jobsExecuted]
-                  {
-                    ++jobsExecuted;
-                  });
-              }
-            });
-        }
-        // start consumer
-        std::thread consumer(
-          [&queue, &producers]
-          {
-            while (std::any_of(std::begin(producers), std::end(producers),
-                               [](auto const& p)
-                               {
-                                 return p.joinable();
-                               }) ||
-                   !queue.empty())
-            {
-              queue.execute();
-            }
-          });
 
-        for (auto& producer : producers)
-        {
-          producer.join();
-        }
-        consumer.join();
+      // start producers
+      std::vector<std::thread> producers;
+      for (std::size_t i = 0; i < nr_producers; ++i)
+      {
+        producers.emplace_back(
+          [&barrier, &queue, &jobsExecuted]
+          {
+            static_assert(decltype(queue)::max_size() % nr_producers == 0,
+                          "All jobs must be pushed");
+
+            auto tokens = fho::token_group{};
+            barrier.arrive_and_wait();
+            for (std::size_t i = 0; i < queue.max_size() / nr_producers; ++i)
+            {
+              tokens += queue.push(
+                [&jobsExecuted]
+                {
+                  ++jobsExecuted;
+                });
+            }
+            tokens.wait();
+          });
       }
+      // start consumer
+      std::thread consumer(
+        [&queue, &producers]
+        {
+          while (std::ranges::any_of(producers,
+                                     [](auto const& p)
+                                     {
+                                       return p.joinable();
+                                     }) ||
+                 !queue.empty())
+          {
+            queue.execute();
+          }
+        });
+
+      for (auto& producer : producers)
+      {
+        producer.join();
+      }
+      consumer.join();
+
       REQUIRE(jobsExecuted.load() == queue.max_size());
     }
   }

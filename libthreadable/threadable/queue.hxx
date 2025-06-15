@@ -163,7 +163,7 @@ namespace fho
     }
 
     auto
-    consume(std::size_t max = max_nr_of_jobs) noexcept
+    consume(std::size_t max = max_nr_of_jobs) noexcept -> std::ranges::subrange<iterator>
     {
       auto head = head_.load(std::memory_order_acquire);
       auto b    = iterator(jobs_.data(), tail_);

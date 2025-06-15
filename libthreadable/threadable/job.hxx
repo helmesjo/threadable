@@ -203,6 +203,18 @@ namespace fho
 
   struct token_group
   {
+    token_group()  = default;
+    ~token_group() = default;
+
+    token_group(token_group const&)                    = default;
+    token_group(token_group&&)                         = default;
+    auto operator=(token_group const&) -> token_group& = default;
+    auto operator=(token_group&&) -> token_group&      = default;
+
+    token_group(std::size_t capacity)
+      : tokens_(capacity)
+    {}
+
     auto
     operator+=(job_token&& token) noexcept -> token_group&
     {
