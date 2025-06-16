@@ -1,6 +1,7 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/function.hxx>
 
+#include <format>
 #include <memory>
 #include <type_traits>
 
