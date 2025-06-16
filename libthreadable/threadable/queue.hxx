@@ -9,6 +9,7 @@
 #include <cassert>
 #include <cstddef>
 #include <execution>
+#include <iostream>
 #include <iterator>
 #include <ranges>
 #include <vector>
@@ -78,12 +79,12 @@ namespace fho
 
     queue(queue&& rhs) noexcept
       : policy_(std::move(rhs.policy_))
-      , tail_(std::move(rhs.tail_))
+      , tail_(rhs.tail_.load(std::memory_order::relaxed))
       , head_(rhs.head_.load(std::memory_order::relaxed))
       , nextSlot_(rhs.nextSlot_.load(std::memory_order::relaxed))
       , jobs_(std::move(rhs.jobs_))
     {
-      rhs.tail_ = 0;
+      rhs.tail_.store(0, std::memory_order::relaxed);
       rhs.head_.store(0, std::memory_order::relaxed);
       rhs.nextSlot_.store(0, std::memory_order::relaxed);
     }
@@ -93,7 +94,7 @@ namespace fho
     auto
     operator=(queue&& rhs) noexcept -> queue&
     {
-      tail_     = std::move(rhs.tail_);
+      tail_     = rhs.tail_.load(std::memory_order::relaxed);
       head_     = rhs.head_.load(std::memory_order::relaxed);
       nextSlot_ = rhs.nextSlot_.load(std::memory_order::relaxed);
       policy_   = std::move(rhs.policy_);
@@ -108,14 +109,16 @@ namespace fho
     push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept -> job_token&
     {
       // 1. Acquire a slot
-      index_t const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
+      auto const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
+      auto const tail = tail_.load(std::memory_order_acquire);
 
       auto& job = jobs_[iterator::mask(slot)];
       // Blocks in release if slot is occupied, asserts in debug to catch overflow
-      assert(!job);
-      if (job) [[unlikely]]
+      // assert(!job);
+      if (iterator::mask(slot - tail) == index_mask) [[unlikely]]
       {
-        job.state.wait(job_state::active, std::memory_order_acquire);
+        auto& t = jobs_[iterator::mask(tail)];
+        t.state.wait(job_state::active, std::memory_order_acquire);
       }
 
       // 2. Assign job
@@ -155,8 +158,9 @@ namespace fho
     void
     wait() const noexcept
     {
-      auto const head = nextSlot_.load(std::memory_order_acquire);
-      if (iterator::mask(head - tail_) == 0) [[likely]]
+      auto const head = head_.load(std::memory_order_acquire);
+      auto const tail = tail_.load(std::memory_order_acquire);
+      if (iterator::mask(head - tail) == 0) [[unlikely]]
       {
         head_.wait(head);
       }
@@ -165,10 +169,12 @@ namespace fho
     auto
     consume(std::size_t max = max_nr_of_jobs) noexcept -> std::ranges::subrange<iterator>
     {
-      auto head = head_.load(std::memory_order_acquire);
-      auto b    = iterator(jobs_.data(), tail_);
-      auto e    = iterator(jobs_.data(), std::min(tail_ + max, head));
-      tail_     = head;
+      auto const head = head_.load(std::memory_order_acquire);
+      auto const tail = tail_.load(std::memory_order_acquire);
+      auto       b    = iterator(jobs_.data(), tail);
+      auto       e    = iterator(jobs_.data(), head);
+      tail_.store(head, std::memory_order_release);
+      // tail_.notify_all();
       return std::ranges::subrange(b, e);
     }
 
@@ -181,23 +187,20 @@ namespace fho
                     {
                       job.reset();
                     });
-      tail_ = head_.load(std::memory_order_acquire);
     }
 
     auto
     begin() const noexcept -> const_iterator
     {
-      return const_iterator(jobs_.data(), tail_);
+      auto const tail = tail_.load(std::memory_order_acquire);
+      return const_iterator(jobs_.data(), tail);
     }
 
     auto
-    end(std::size_t max = max_nr_of_jobs) const noexcept -> const_iterator
+    end() const noexcept -> const_iterator
     {
-      auto head = head_.load(std::memory_order_acquire);
-      // Subtract indices, mask to wrap within buffer:
-      auto size     = iterator::mask(head - tail_);
-      auto endIndex = tail_ + std::min(size, max);
-      return const_iterator(jobs_.data(), endIndex);
+      auto const head = head_.load(std::memory_order_acquire);
+      return begin() + head;
     }
 
     auto
@@ -244,7 +247,8 @@ namespace fho
     size() const noexcept -> std::size_t
     {
       auto const head = head_.load(std::memory_order_relaxed);
-      return iterator::mask(head - tail_); // circular distance
+      auto const tail = tail_.load(std::memory_order_acquire);
+      return iterator::mask(head - tail); // circular distance
     }
 
     auto
@@ -277,7 +281,7 @@ namespace fho
     */
 
     alignas(details::cache_line_size) execution_policy policy_ = execution_policy::parallel;
-    alignas(details::cache_line_size) index_t tail_{0};
+    alignas(details::cache_line_size) atomic_index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
     alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
 

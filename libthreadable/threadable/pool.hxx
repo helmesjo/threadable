@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <iostream>
 #include <mutex>
 #include <random>
 #include <ranges>
@@ -63,13 +64,13 @@ namespace fho
     void
     stop() noexcept
     {
-      submit(
-        [this]
-        {
-          stop_.exchange(true, std::memory_order_relaxed);
-        });
       if (thread_.joinable())
       {
+        submit(
+          [this]
+          {
+            stop_.exchange(true, std::memory_order_relaxed);
+          });
         thread_.join();
       }
     }
@@ -80,16 +81,15 @@ namespace fho
     {
       while (!stop_.load(std::memory_order_relaxed))
       {
-        work_.wait();
-        for (auto& w : work_.consume())
+        if (auto c = work_.execute(); c == 0) [[unlikely]]
         {
-          w();
+          work_.wait();
         }
       }
     }
 
     std::atomic_bool stop_{false};
-    queue<1024>      work_;
+    queue<2>         work_;
     std::thread      thread_;
   };
 
@@ -109,23 +109,22 @@ namespace fho
 
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
-    pool(unsigned int workers = std::thread::hardware_concurrency()) noexcept
+    pool(unsigned int workers = 1) noexcept
     {
-      workers = std::max(2u, workers);
-
       // start worker threads
-      for (std::size_t i = 0; i < workers - 1; ++i)
+      for (std::size_t i = 0; i < workers; ++i)
       {
         executors_.emplace_back(std::make_unique<executor>());
       }
 
       // start scheduler thread
       scheduler_ = std::thread(
-        [this]
+        [this, workers]
         {
-          auto rd  = std::random_device{};
-          auto gen = std::mt19937(rd());
-          auto distr =
+          auto const mt  = workers > 0;
+          auto       rd  = std::random_device{};
+          auto       gen = std::mt19937(rd());
+          auto       distr =
             std::uniform_int_distribution<std::size_t>(std::size_t{0}, executors_.size() - 1);
 
           while (true)
@@ -152,16 +151,23 @@ namespace fho
               auto rand = distr(gen);
               for (auto& queue : queues)
               {
-                if (auto range = queue->consume(); !range.empty()) [[likely]]
+                if (mt) [[likely]]
                 {
-                  // assign to (random) worker
-                  // @TODO: Implement a proper load balancer.
-                  executor& e = *executors_[rand];
-                  e.submit(range);
-
+                  if (auto range = queue->consume(); !range.empty()) [[likely]]
+                  {
+                    // assign to (random) worker
+                    // @TODO: Implement a proper load balancer.
+                    executor& e = *executors_[rand];
+                    e.submit(range);
+                  }
                   auto prev = rand;
-                  while ((rand = distr(gen)) != prev) [[unlikely]]
-                  {}
+                  rand      = distr(gen);
+                  // while ((rand = distr(gen)) != prev && workers > 1) [[unlikely]]
+                  // {}
+                }
+                else [[unlikely]]
+                {
+                  queue->execute();
                 }
               }
             }
@@ -259,34 +265,35 @@ namespace fho
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
   };
 
-  namespace details
-  {
-    using pool_t = fho::pool<details::default_max_nr_of_jobs>;
-    extern auto pool() -> pool_t&;
-    using queue_t = pool_t::queue_t;
-  }
+  // namespace details
+  // {
+  //   using pool_t = fho::pool<details::default_max_nr_of_jobs>;
+  //   extern auto pool() -> pool_t&;
+  //   using queue_t = pool_t::queue_t;
+  // }
 
-  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t,
-           typename... arg_ts>
-  [[nodiscard]] inline auto
-  push(callable_t&& func, arg_ts&&... args) noexcept
-    requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
-  {
-    static auto& queue = details::pool().create(policy); // NOLINT
-    return queue.push(FWD(func), FWD(args)...);
-  }
+  // template<execution_policy policy = execution_policy::parallel, std::copy_constructible
+  // callable_t,
+  //          typename... arg_ts>
+  // [[nodiscard]] inline auto
+  // push(callable_t&& func, arg_ts&&... args) noexcept
+  //   requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
+  // {
+  //   static auto& queue = details::pool().create(policy); // NOLINT
+  //   return queue.push(FWD(func), FWD(args)...);
+  // }
 
-  [[nodiscard]] inline auto
-  create(execution_policy policy = execution_policy::parallel) noexcept -> details::queue_t&
-  {
-    return details::pool().create(policy);
-  }
+  // [[nodiscard]] inline auto
+  // create(execution_policy policy = execution_policy::parallel) noexcept -> details::queue_t&
+  // {
+  //   return details::pool().create(policy);
+  // }
 
-  inline auto
-  remove(details::queue_t&& queue) noexcept -> bool
-  {
-    return details::pool().remove(std::move(queue));
-  }
+  // inline auto
+  // remove(details::queue_t&& queue) noexcept -> bool
+  // {
+  //   return details::pool().remove(std::move(queue));
+  // }
 }
 
 #undef FWD

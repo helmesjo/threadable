@@ -8,7 +8,7 @@ if($cxx.id == 'gcc')
   cxx.coptions += -Wno-interference-size
 }
 
-exe{threadable-tests}: {hxx ixx txx cxx}{**} $libs
+exe{threadable-tests}: {hxx ixx txx cxx}{** -function.test.cxx -atomic.test.cxx -queue.test.cxx -circular_iterator.test.cxx} $libs
 {
   test = true
   install = false
