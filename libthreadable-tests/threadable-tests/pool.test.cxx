@@ -92,52 +92,52 @@ SCENARIO("pool: create/remove queues")
   }
 }
 
-// SCENARIO("pool: push jobs to global pool")
-// {
-//   constexpr auto nr_of_jobs = std::size_t{1024};
-//   auto           mutex      = std::mutex{};
-//   auto           results    = std::vector<std::size_t>{};
-//   GIVEN("a job is pushed to sequential queue")
-//   {
-//     auto tokens = fho::token_group{};
-//     for (std::size_t i = 0; i < nr_of_jobs; ++i)
-//     {
-//       tokens += fho::push<fho::execution_policy::sequential>(
-//         [i, &results, &mutex]
-//         {
-//           std::scoped_lock _{mutex};
-//           results.push_back(i);
-//         });
-//     }
-//     tokens.wait();
-//     THEN("all jobs are executed in order")
-//     {
-//       REQUIRE(results.size() == nr_of_jobs);
-//       // for (std::size_t i = 0; i < nr_of_jobs; ++i)
-//       // {
-//       //   REQUIRE(results[i] == i);
-//       // }
-//     }
-//   }
-//   GIVEN("a job is pushed to parallel queue")
-//   {
-//     auto counter = std::atomic_size_t{0};
-//     auto tokens  = fho::token_group{};
-//     for (std::size_t i = 0; i < nr_of_jobs; ++i)
-//     {
-//       tokens += fho::push<fho::execution_policy::parallel>(
-//         [&counter]
-//         {
-//           ++counter;
-//         });
-//     }
-//     tokens.wait();
-//     THEN("all jobs are executed")
-//     {
-//       REQUIRE(counter == nr_of_jobs);
-//     }
-//   }
-// }
+SCENARIO("pool: push jobs to global pool")
+{
+  constexpr auto nr_of_jobs = std::size_t{1024};
+  auto           mutex      = std::mutex{};
+  auto           results    = std::vector<std::size_t>{};
+  GIVEN("a job is pushed to sequential queue")
+  {
+    auto tokens = fho::token_group{};
+    for (std::size_t i = 0; i < nr_of_jobs; ++i)
+    {
+      tokens += fho::push<fho::execution_policy::sequential>(
+        [i, &results, &mutex]
+        {
+          std::scoped_lock _{mutex};
+          results.push_back(i);
+        });
+    }
+    tokens.wait();
+    THEN("all jobs are executed in order")
+    {
+      REQUIRE(results.size() == nr_of_jobs);
+      for (std::size_t i = 0; i < nr_of_jobs; ++i)
+      {
+        REQUIRE(results[i] == i);
+      }
+    }
+  }
+  GIVEN("a job is pushed to parallel queue")
+  {
+    auto counter = std::atomic_size_t{0};
+    auto tokens  = fho::token_group{};
+    for (std::size_t i = 0; i < nr_of_jobs; ++i)
+    {
+      tokens += fho::push<fho::execution_policy::parallel>(
+        [&counter]
+        {
+          ++counter;
+        });
+    }
+    tokens.wait();
+    THEN("all jobs are executed")
+    {
+      REQUIRE(counter == nr_of_jobs);
+    }
+  }
+}
 
 SCENARIO("pool: stress-test")
 {

@@ -265,35 +265,34 @@ namespace fho
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
   };
 
-  // namespace details
-  // {
-  //   using pool_t = fho::pool<details::default_max_nr_of_jobs>;
-  //   extern auto pool() -> pool_t&;
-  //   using queue_t = pool_t::queue_t;
-  // }
+  namespace details
+  {
+    using pool_t = fho::pool<details::default_max_nr_of_jobs>;
+    extern auto pool() -> pool_t&;
+    using queue_t = pool_t::queue_t;
+  }
 
-  // template<execution_policy policy = execution_policy::parallel, std::copy_constructible
-  // callable_t,
-  //          typename... arg_ts>
-  // [[nodiscard]] inline auto
-  // push(callable_t&& func, arg_ts&&... args) noexcept
-  //   requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
-  // {
-  //   static auto& queue = details::pool().create(policy); // NOLINT
-  //   return queue.push(FWD(func), FWD(args)...);
-  // }
+  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t,
+           typename... arg_ts>
+  [[nodiscard]] inline auto
+  push(callable_t&& func, arg_ts&&... args) noexcept
+    requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
+  {
+    static auto& queue = details::pool().create(policy); // NOLINT
+    return queue.push(FWD(func), FWD(args)...);
+  }
 
-  // [[nodiscard]] inline auto
-  // create(execution_policy policy = execution_policy::parallel) noexcept -> details::queue_t&
-  // {
-  //   return details::pool().create(policy);
-  // }
+  [[nodiscard]] inline auto
+  create(execution_policy policy = execution_policy::parallel) noexcept -> details::queue_t&
+  {
+    return details::pool().create(policy);
+  }
 
-  // inline auto
-  // remove(details::queue_t&& queue) noexcept -> bool
-  // {
-  //   return details::pool().remove(std::move(queue));
-  // }
+  inline auto
+  remove(details::queue_t&& queue) noexcept -> bool
+  {
+    return details::pool().remove(std::move(queue));
+  }
 }
 
 #undef FWD
