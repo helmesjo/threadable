@@ -10,87 +10,87 @@
 
 using namespace std::chrono_literals;
 
-// SCENARIO("pool: create/remove queues")
-// {
-//   auto pool = fho::pool();
-//   GIVEN("queue is created")
-//   {
-//     auto& queue  = pool.create();
-//     int   called = 0;
-//     WHEN("job is pushed")
-//     {
-//       auto token = queue.push(
-//         [&called]
-//         {
-//           ++called;
-//         });
-//       THEN("it gets executed")
-//       {
-//         token.wait();
-//         REQUIRE(called == 1);
-//       }
-//     }
-//     THEN("queue can be removed")
-//     {
-//       REQUIRE(pool.remove(std::move(queue)));
-//     }
-//     // @TODO: Figure out how to test this (token.wait() on potentially removed job)
-//     // WHEN("queue is removed inside a job")
-//     // {
-//     //   auto token = queue.push(
-//     //     [&pool, &queue]
-//     //     {
-//     //       REQUIRE(pool.remove(std::move(queue)));
-//     //     });
-//     //   THEN("it gets removed")
-//     //   {
-//     //     token.wait();
-//     //     REQUIRE(pool.queues() == 0);
-//     //   }
-//     // }
-//   }
-//   GIVEN("queue is pre-created")
-//   {
-//     auto queue = decltype(pool)::queue_t();
-//     WHEN("added (without jobs) to pool")
-//     {
-//       auto& q = pool.add(std::move(queue));
-//       AND_WHEN("job is pushed")
-//       {
-//         int  called = 0;
-//         auto token2 = q.push(
-//           [&called]
-//           {
-//             ++called;
-//           });
-//         THEN("it gets executed")
-//         {
-//           token2.wait();
-//           REQUIRE(called == 1);
-//         }
-//       }
-//       AND_WHEN("removed from pool")
-//       {
-//         REQUIRE(pool.remove(std::move(q)));
-//       }
-//     }
-//     WHEN("added (with jobs) to pool")
-//     {
-//       int  called = 0;
-//       auto token  = queue.push(
-//         [&called]
-//         {
-//           ++called;
-//         });
-//       (void)pool.add(std::move(queue));
-//       THEN("existing jobs are executed")
-//       {
-//         token.wait();
-//         REQUIRE(called == 1);
-//       }
-//     }
-//   }
-// }
+SCENARIO("pool: create/remove queues")
+{
+  auto pool = fho::pool();
+  GIVEN("queue is created")
+  {
+    auto& queue  = pool.create();
+    int   called = 0;
+    WHEN("job is pushed")
+    {
+      auto token = queue.push(
+        [&called]
+        {
+          ++called;
+        });
+      THEN("it gets executed")
+      {
+        token.wait();
+        REQUIRE(called == 1);
+      }
+    }
+    THEN("queue can be removed")
+    {
+      REQUIRE(pool.remove(std::move(queue)));
+    }
+    // @TODO: Figure out how to test this (token.wait() on potentially removed job)
+    // WHEN("queue is removed inside a job")
+    // {
+    //   auto token = queue.push(
+    //     [&pool, &queue]
+    //     {
+    //       REQUIRE(pool.remove(std::move(queue)));
+    //     });
+    //   THEN("it gets removed")
+    //   {
+    //     token.wait();
+    //     REQUIRE(pool.queues() == 0);
+    //   }
+    // }
+  }
+  GIVEN("queue is pre-created")
+  {
+    auto queue = decltype(pool)::queue_t();
+    WHEN("added (without jobs) to pool")
+    {
+      auto& q = pool.add(std::move(queue));
+      AND_WHEN("job is pushed")
+      {
+        int  called = 0;
+        auto token2 = q.push(
+          [&called]
+          {
+            ++called;
+          });
+        THEN("it gets executed")
+        {
+          token2.wait();
+          REQUIRE(called == 1);
+        }
+      }
+      AND_WHEN("removed from pool")
+      {
+        REQUIRE(pool.remove(std::move(q)));
+      }
+    }
+    WHEN("added (with jobs) to pool")
+    {
+      int  called = 0;
+      auto token  = queue.push(
+        [&called]
+        {
+          ++called;
+        });
+      (void)pool.add(std::move(queue));
+      THEN("existing jobs are executed")
+      {
+        token.wait();
+        REQUIRE(called == 1);
+      }
+    }
+  }
+}
 
 // SCENARIO("pool: push jobs to global pool")
 // {
@@ -143,66 +143,66 @@ SCENARIO("pool: stress-test")
 {
   constexpr auto capacity = std::size_t{1 << 18};
   auto           pool     = fho::pool<capacity>();
-  // GIVEN("single producer pushes a large amount of jobs")
-  // {
-  //   auto& queue   = pool.create(fho::execution_policy::parallel);
-  //   auto  counter = std::atomic_size_t{0};
+  GIVEN("single producer pushes a large amount of jobs")
+  {
+    auto& queue   = pool.create(fho::execution_policy::parallel);
+    auto  counter = std::atomic_size_t{0};
 
-  //   auto tokens = fho::token_group{};
-  //   for (std::size_t i = 0; i < queue.max_size(); ++i)
-  //   {
-  //     tokens += queue.push(
-  //       [&counter]
-  //       {
-  //         ++counter;
-  //       });
-  //   }
+    auto tokens = fho::token_group{};
+    for (std::size_t i = 0; i < queue.max_size(); ++i)
+    {
+      tokens += queue.push(
+        [&counter]
+        {
+          ++counter;
+        });
+    }
 
-  //   tokens.wait();
+    tokens.wait();
 
-  //   THEN("all gets executed")
-  //   {
-  //     REQUIRE(counter.load() == queue.max_size());
-  //   }
-  // }
-  // GIVEN("multiple producers pushes a large amount of jobs")
-  // {
-  //   constexpr auto nr_producers = 3;
+    THEN("all gets executed")
+    {
+      REQUIRE(counter.load() == queue.max_size());
+    }
+  }
+  GIVEN("multiple producers pushes a large amount of jobs")
+  {
+    constexpr auto nr_producers = 3;
 
-  //   auto& queue     = pool.create(fho::execution_policy::parallel);
-  //   auto  counter   = std::atomic_size_t{0};
-  //   auto  producers = std::vector<std::thread>{};
+    auto& queue     = pool.create(fho::execution_policy::parallel);
+    auto  counter   = std::atomic_size_t{0};
+    auto  producers = std::vector<std::thread>{};
 
-  //   for (std::size_t i = 0; i < nr_producers; ++i)
-  //   {
-  //     producers.emplace_back(
-  //       [&counter, &queue]
-  //       {
-  //         static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
-  //                       "All jobs must be pushed");
-  //         auto tokens = fho::token_group{};
-  //         for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
-  //         {
-  //           tokens += queue.push(
-  //             [&counter]
-  //             {
-  //               ++counter;
-  //             });
-  //         }
-  //         tokens.wait();
-  //       });
-  //   }
+    for (std::size_t i = 0; i < nr_producers; ++i)
+    {
+      producers.emplace_back(
+        [&counter, &queue]
+        {
+          static_assert(decltype(pool)::queue_t::max_size() % nr_producers == 0,
+                        "All jobs must be pushed");
+          auto tokens = fho::token_group{};
+          for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
+          {
+            tokens += queue.push(
+              [&counter]
+              {
+                ++counter;
+              });
+          }
+          tokens.wait();
+        });
+    }
 
-  //   for (auto& thread : producers)
-  //   {
-  //     thread.join();
-  //   }
+    for (auto& thread : producers)
+    {
+      thread.join();
+    }
 
-  //   THEN("all gets executed")
-  //   {
-  //     REQUIRE(counter.load() == queue.max_size());
-  //   }
-  // }
+    THEN("all gets executed")
+    {
+      REQUIRE(counter.load() == queue.max_size());
+    }
+  }
   GIVEN("multiple producers pushes a large amount of jobs to their own queue and then remove it")
   {
     static constexpr auto nr_producers = 3;

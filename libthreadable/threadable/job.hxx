@@ -13,9 +13,18 @@ namespace fho
 
   enum job_state : std::uint8_t
   {
-    inactive = 0,
-    active   = 1
+    empty   = 0,
+    active  = 1 << 0,
+    claimed = 1 << 1
   };
+
+  // struct alignas(1) jstate
+  // {
+  //   std::uint8_t active : 1 {};
+  //   std::uint8_t claimed : 1 {};
+  // };
+
+  // static_assert(sizeof(jstate) == 1);
 
   using atomic_state_t = std::atomic<job_state>;
 
@@ -81,7 +90,7 @@ namespace fho
       assert(!done());
 
       func_();
-      if (reset() == job_state::active) [[likely]]
+      if (reset() != job_state::empty) [[likely]]
       {
         state.notify_all();
       }
@@ -96,7 +105,7 @@ namespace fho
     reset() noexcept -> job_state
     {
       func_.reset();
-      return state.exchange(job_state::inactive, std::memory_order_release);
+      return state.exchange(job_state::empty, std::memory_order_release);
     }
 
     auto

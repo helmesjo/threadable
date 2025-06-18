@@ -14,6 +14,8 @@
 #include <ranges>
 #include <vector>
 
+#include "threadable/atomic.hxx"
+
 #if !defined(__cpp_lib_execution) && !defined(__cpp_lib_parallel_algorithm) && \
   __has_include(<pstld/pstld.h>)
   #ifndef PSTLD_HACK_INTO_STD
@@ -104,21 +106,29 @@ namespace fho
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...> ||
-               std::invocable<callable_t, job_token&, arg_ts...>
+                 std::invocable<callable_t, job_token&, arg_ts...>
     auto
     push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept -> job_token&
     {
       // 1. Acquire a slot
-      auto const slot = nextSlot_.fetch_add(1, std::memory_order_relaxed);
+      auto const slot = nextSlot_.fetch_add(1, std::memory_order_acquire);
       auto const tail = tail_.load(std::memory_order_acquire);
 
       auto& job = jobs_[iterator::mask(slot)];
+      auto  exp = job_state::empty;
+      // TODO: Need to make sure slot isn't past max_size() because then head will
+      //       be updated past max_nr_of_jobs and indicate "buffer empty" (with max_nr_jobs == 2 for
+      //       the test case I'm debugging)
+      while (!job.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release))
+      {
+        exp = job_state::empty;
+      }
       // Blocks in release if slot is occupied, asserts in debug to catch overflow
       // assert(!job);
-      if (iterator::mask(slot - tail) == index_mask) [[unlikely]]
+
+      if (fho::details::test<job_state::active>(job.state)) [[unlikely]]
       {
-        auto& t = jobs_[iterator::mask(tail)];
-        t.state.wait(job_state::active, std::memory_order_acquire);
+        fho::details::wait<job_state::active, true>(job.state);
       }
 
       // 2. Assign job
@@ -219,8 +229,8 @@ namespace fho
       {
         auto b = std::begin(r);
         // make sure previous has been executed
-        auto const& prev = *(b - 1);
-        prev.state.wait(job_state::active, std::memory_order_acquire);
+        // auto const& prev = *(b - 1);
+        // fho::details::wait<job_state::active, true>(prev.state);
         std::for_each(b, std::end(r),
                       [](job& job)
                       {

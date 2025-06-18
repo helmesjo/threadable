@@ -13,12 +13,12 @@ namespace fho::details
 
   template<std::uint8_t bit, typename width_t>
   inline auto
-  test(atomic_bitfield_t<width_t> const& field, std::memory_order order = std::memory_order_relaxed)
-    -> bool
+  test(atomic_bitfield_t<width_t> const& field,
+       std::memory_order                 order = std::memory_order_relaxed) -> bool
     requires (bit < sizeof(width_t) * 8)
   {
-    static constexpr std::uint8_t mask = 1 << bit;
-    return mask & field.load(order);
+    // static constexpr std::uint8_t mask = 1 << bit;
+    return bit & field.load(order);
   }
 
   template<std::uint8_t bit, bool value, typename width_t>
@@ -51,8 +51,8 @@ namespace fho::details
   template<std::uint8_t bit, typename width_t>
     requires (bit < sizeof(width_t) * 8)
   inline auto
-  reset(atomic_bitfield_t<width_t>& field, std::memory_order order = std::memory_order_relaxed)
-    -> bool
+  reset(atomic_bitfield_t<width_t>& field,
+        std::memory_order           order = std::memory_order_relaxed) -> bool
   {
     return test_and_set<bit, false>(field, order);
   }
