@@ -106,26 +106,22 @@ namespace fho
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...> ||
-                 std::invocable<callable_t, job_token&, arg_ts...>
+               std::invocable<callable_t, job_token&, arg_ts...>
     auto
     push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept -> job_token&
     {
-      // 1. Acquire a slot
+      // 1. Claim a slot
       auto const slot = nextSlot_.fetch_add(1, std::memory_order_acquire);
-      auto const tail = tail_.load(std::memory_order_acquire);
 
       auto& job = jobs_[iterator::mask(slot)];
       auto  exp = job_state::empty;
-      // TODO: Need to make sure slot isn't past max_size() because then head will
-      //       be updated past max_nr_of_jobs and indicate "buffer empty" (with max_nr_jobs == 2 for
-      //       the test case I'm debugging)
       while (!job.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release))
+        [[unlikely]]
       {
         exp = job_state::empty;
       }
-      // Blocks in release if slot is occupied, asserts in debug to catch overflow
-      // assert(!job);
 
+      // Blocks in release if slot is occupied, asserts in debug to catch overflow
       if (fho::details::test<job_state::active>(job.state)) [[unlikely]]
       {
         fho::details::wait<job_state::active, true>(job.state);
@@ -145,8 +141,15 @@ namespace fho
 
       token.reassign(job.state);
 
+      // Check if full before comitting
+      auto const tail = tail_.load(std::memory_order_relaxed);
+      if (iterator::mask(slot + 1 - tail) == 0) [[unlikely]]
+      {
+        tail_.wait(tail, std::memory_order_relaxed);
+      }
+
       // 3. Commit slot
-      index_t expected = slot;
+      auto expected = slot;
       while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release))
       {
         expected = slot;
@@ -184,7 +187,7 @@ namespace fho
       auto       b    = iterator(jobs_.data(), tail);
       auto       e    = iterator(jobs_.data(), head);
       tail_.store(head, std::memory_order_release);
-      // tail_.notify_all();
+      tail_.notify_one();
       return std::ranges::subrange(b, e);
     }
 
