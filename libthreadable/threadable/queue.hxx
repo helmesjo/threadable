@@ -154,10 +154,7 @@ namespace fho
       {
         expected = slot;
       }
-
-      // NOTE: Intentionally not notifying here since we
-      //       use spin-locks for better performance.
-      // head_.notify_all();
+      head_.notify_one();
       return token;
     }
 
@@ -178,7 +175,7 @@ namespace fho
       auto const head = head_.load(std::memory_order_relaxed);
       if (iterator::mask(head - tail) == 0) [[unlikely]]
       {
-        std::this_thread::sleep_for(std::chrono::nanoseconds{1});
+        head_.wait(head, std::memory_order_relaxed);
       }
     }
 
@@ -238,13 +235,17 @@ namespace fho
       }
       else [[unlikely]]
       {
-        // Make sure previous has been executed.
-        // auto const prev = (b - 1);
-        // if (fho::details::test<job_state::active>(prev->state, std::memory_order_relaxed))
-        //   [[unlikely]]
-        // {
-        //   fho::details::wait<job_state::active, true>(prev->state);
-        // }
+        // Make sure previous job has been executed, where
+        // `b-1` is `e` if `r` wraps around, or active if it's
+        // already consumed but being processed by another
+        // thread.
+        auto const prev = b - 1;
+        if ((prev != e) &&
+            fho::details::test<job_state::active>(prev->state, std::memory_order_relaxed))
+          [[unlikely]]
+        {
+          fho::details::wait<job_state::active, true>(prev->state);
+        }
         std::for_each(b, e,
                       [](job& job)
                       {
