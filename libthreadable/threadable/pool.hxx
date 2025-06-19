@@ -137,12 +137,14 @@ namespace fho
               queues = queues_;
             }
 
-            auto rand = distr(gen);
+            auto rand      = distr(gen);
+            auto submitted = false;
             for (auto& queue : queues)
             {
-              if (mt) [[likely]]
+              if (auto range = queue->consume(); !range.empty()) [[likely]]
               {
-                if (auto range = queue->consume(); !range.empty()) [[likely]]
+                submitted = true;
+                if (mt) [[likely]]
                 {
                   // assign to (random) worker
                   // @TODO: Implement a proper load balancer, both
@@ -150,15 +152,19 @@ namespace fho
                   executor& e = *executors_[rand];
                   e.submit(range);
                 }
-                // auto prev = rand;
-                rand = distr(gen);
-                // while (workers > 1 && (rand = distr(gen)) != prev) [[unlikely]]
-                // {}
+                else [[unlikely]]
+                {
+                  queue->execute();
+                }
+                auto prev = rand;
+                rand      = distr(gen);
+                while (workers > 1 && (rand = distr(gen)) != prev) [[unlikely]]
+                {}
               }
-              else [[unlikely]]
-              {
-                queue->execute();
-              }
+            }
+            if (!submitted)
+            {
+              std::this_thread::sleep_for(std::chrono::nanoseconds{1});
             }
           }
         });
@@ -172,8 +178,7 @@ namespace fho
 
     ~pool()
     {
-      details::atomic_set(stop_, std::memory_order_release);
-      details::atomic_notify_all(stop_);
+      stop_.store(true, std::memory_order_release);
       if (scheduler_.joinable())
       {
         scheduler_.join();
