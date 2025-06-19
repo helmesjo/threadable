@@ -6,8 +6,6 @@
 #include <thread>
 #include <vector>
 
-#include "threadable/job.hxx"
-
 using namespace std::chrono_literals;
 
 SCENARIO("pool: create/remove queues")
@@ -96,26 +94,26 @@ SCENARIO("pool: push jobs to global pool")
 {
   constexpr auto nr_of_jobs = std::size_t{1024};
   auto           mutex      = std::mutex{};
-  auto           results    = std::vector<std::size_t>{};
+  auto           executed   = std::vector<std::size_t>(nr_of_jobs, 0);
   GIVEN("a job is pushed to sequential queue")
   {
     auto tokens = fho::token_group{};
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       tokens += fho::push<fho::execution_policy::sequential>(
-        [i, &results, &mutex]
+        [i, &executed, &mutex]
         {
           std::scoped_lock _{mutex};
-          results.push_back(i);
+          executed[i] = i;
         });
     }
     tokens.wait();
     THEN("all jobs are executed in order")
     {
-      REQUIRE(results.size() == nr_of_jobs);
+      REQUIRE(executed.size() == nr_of_jobs);
       for (std::size_t i = 0; i < nr_of_jobs; ++i)
       {
-        REQUIRE(results[i] == i);
+        REQUIRE(executed[i] == i);
       }
     }
   }
