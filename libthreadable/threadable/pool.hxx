@@ -137,19 +137,16 @@ namespace fho
               queues = queues_;
             }
 
-            auto rand      = distr(gen);
-            auto submitted = false;
             for (auto& queue : queues)
             {
               if (auto range = queue->consume(); !range.empty()) [[likely]]
               {
-                submitted = true;
                 if (mt) [[likely]]
                 {
                   // assign to (random) worker
                   // @TODO: Implement a proper load balancer, both
                   //        for range size & executor selection.
-                  executor& e = *executors_[rand];
+                  executor& e = *executors_[distr(gen)];
                   e.submit(std::move(range));
                 }
                 else [[unlikely]]
@@ -160,12 +157,7 @@ namespace fho
                                   j();
                                 });
                 }
-                rand = distr(gen);
               }
-            }
-            if (!submitted)
-            {
-              std::this_thread::sleep_for(std::chrono::nanoseconds{1});
             }
           }
         });
