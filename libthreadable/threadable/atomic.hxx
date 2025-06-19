@@ -11,23 +11,21 @@ namespace fho::details
   template<typename width_t>
   using atomic_bitfield_t = std::atomic<width_t>;
 
-  template<std::uint8_t bit, typename width_t>
+  template<auto mask, typename width_t>
   inline auto
-  test(atomic_bitfield_t<width_t> const& field,
-       std::memory_order                 order = std::memory_order_relaxed) -> bool
-    requires (bit < sizeof(width_t) * 8)
+  test(atomic_bitfield_t<width_t> const& field, std::memory_order order = std::memory_order_relaxed)
+    -> bool
+    requires (sizeof(mask) <= sizeof(width_t))
   {
-    // static constexpr std::uint8_t mask = 1 << bit;
-    return bit & field.load(order);
+    return mask & field.load(order);
   }
 
-  template<std::uint8_t bit, bool value, typename width_t>
-    requires (bit < sizeof(width_t) * 8)
+  template<auto mask, bool value, typename width_t>
+    requires (mask < sizeof(width_t) * 8)
   inline auto
   test_and_set(atomic_bitfield_t<width_t>& field,
                std::memory_order           order = std::memory_order_relaxed) -> bool
   {
-    static constexpr std::uint8_t mask = 1 << bit;
     if constexpr (value)
     {
       // Set the bit
@@ -36,25 +34,25 @@ namespace fho::details
     else
     {
       // Clear the bit
-      return mask & field.fetch_and(static_cast<std::uint8_t>(~mask), order);
+      return mask & field.fetch_and(static_cast<width_t>(~mask), order);
     }
   }
 
-  template<std::uint8_t bit, bool value, typename width_t>
-    requires (bit < sizeof(width_t) * 8)
+  template<auto mask, bool value, typename width_t>
+    requires (sizeof(mask) <= sizeof(width_t))
   inline void
   set(atomic_bitfield_t<width_t>& field, std::memory_order order = std::memory_order_relaxed)
   {
-    (void)test_and_set<bit, value>(field, order);
+    (void)test_and_set<mask, value>(field, order);
   }
 
-  template<std::uint8_t bit, typename width_t>
-    requires (bit < sizeof(width_t) * 8)
+  template<auto mask, typename width_t>
+    requires (sizeof(mask) <= sizeof(width_t))
   inline auto
-  reset(atomic_bitfield_t<width_t>& field,
-        std::memory_order           order = std::memory_order_relaxed) -> bool
+  reset(atomic_bitfield_t<width_t>& field, std::memory_order order = std::memory_order_relaxed)
+    -> bool
   {
-    return test_and_set<bit, false>(field, order);
+    return test_and_set<mask, false>(field, order);
   }
 
   template<typename width_t>
@@ -64,13 +62,12 @@ namespace fho::details
     field.store(0, order);
   }
 
-  template<std::uint8_t bit, bool old, typename width_t>
-    requires (bit < sizeof(width_t) * 8)
+  template<auto mask, bool old, typename width_t>
+    requires (sizeof(mask) <= sizeof(width_t))
   inline void
   wait(atomic_bitfield_t<width_t> const& field, std::memory_order order = std::memory_order_relaxed)
   {
-    static constexpr std::uint8_t mask    = 1 << bit;
-    auto                          current = field.load(order);
+    auto current = field.load(order);
     while (static_cast<bool>(current & mask) == old)
     {
       // Wait for any change in atomicVar

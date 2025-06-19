@@ -13,9 +13,10 @@ SCENARIO("atomic_bitfield")
     {
       THEN("new value is assigned and old is returned")
       {
-        REQUIRE_FALSE(fho::details::test_and_set<5, true>(field));
-        REQUIRE(std::bitset<8>(field).to_string() == std::bitset<8>(1 << 5).to_string());
-        fho::details::wait<5, false>(field);
+        REQUIRE_FALSE(fho::details::test_and_set<1 << 5, true>(field));
+        REQUIRE(fho::details::test<1 << 5>(field));
+        REQUIRE(field.load() == std::bitset<8>("00100000").to_ulong());
+        fho::details::wait<1 << 5, false>(field);
       }
     }
   }
@@ -26,10 +27,9 @@ SCENARIO("atomic_bitfield")
     {
       THEN("new value is assigned and old is returned")
       {
-        REQUIRE(fho::details::test_and_set<2, false>(field));
-        REQUIRE(std::bitset<8>(field).to_string() ==
-                std::bitset<8>(static_cast<unsigned int>(~(1 << 2))).to_string());
-        fho::details::wait<2, true>(field);
+        REQUIRE(fho::details::test_and_set<1 << 2, false>(field));
+        REQUIRE(field.load() == std::bitset<8>("11111011").to_ulong());
+        fho::details::wait<1 << 2, true>(field);
       }
     }
   }
