@@ -150,16 +150,17 @@ namespace fho
                   // @TODO: Implement a proper load balancer, both
                   //        for range size & executor selection.
                   executor& e = *executors_[rand];
-                  e.submit(range);
+                  e.submit(std::move(range));
                 }
                 else [[unlikely]]
                 {
-                  queue->execute();
+                  std::for_each(range.begin(), range.end(),
+                                [](auto& j)
+                                {
+                                  j();
+                                });
                 }
-                auto prev = rand;
-                rand      = distr(gen);
-                while (workers > 1 && (rand = distr(gen)) != prev) [[unlikely]]
-                {}
+                rand = distr(gen);
               }
             }
             if (!submitted)

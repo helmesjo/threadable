@@ -104,7 +104,7 @@ namespace fho
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...> ||
-               std::invocable<callable_t, job_token&, arg_ts...>
+                 std::invocable<callable_t, job_token&, arg_ts...>
     auto
     push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept -> job_token&
     {
