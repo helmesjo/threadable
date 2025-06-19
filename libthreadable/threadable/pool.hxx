@@ -8,7 +8,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
-#include <iostream>
 #include <mutex>
 #include <random>
 #include <ranges>
@@ -33,6 +32,10 @@ namespace fho
     ~executor()
     {
       stop();
+      if (thread_.joinable())
+      {
+        thread_.join();
+      }
     }
 
     executor(executor const&)                    = delete;
@@ -64,15 +67,8 @@ namespace fho
     void
     stop() noexcept
     {
-      if (thread_.joinable())
-      {
-        submit(
-          [this]
-          {
-            stop_.exchange(true, std::memory_order_relaxed);
-          });
-        thread_.join();
-      }
+      stop_.store(true, std::memory_order_relaxed);
+      std::ignore = work_.consume();
     }
 
   private:
@@ -260,19 +256,9 @@ namespace fho
 
   namespace details
   {
-    using pool_t = fho::pool<details::default_max_nr_of_jobs>;
+    using pool_t = fho::pool<>;
     extern auto pool() -> pool_t&;
     using queue_t = pool_t::queue_t;
-  }
-
-  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t,
-           typename... arg_ts>
-  [[nodiscard]] inline auto
-  push(callable_t&& func, arg_ts&&... args) noexcept
-    requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
-  {
-    static auto& queue = details::pool().create(policy); // NOLINT
-    return queue.push(FWD(func), FWD(args)...);
   }
 
   [[nodiscard]] inline auto
@@ -285,6 +271,16 @@ namespace fho
   remove(details::queue_t&& queue) noexcept -> bool
   {
     return details::pool().remove(std::move(queue));
+  }
+
+  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t,
+           typename... arg_ts>
+  [[nodiscard]] inline auto
+  push(callable_t&& func, arg_ts&&... args) noexcept
+    requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
+  {
+    static auto& queue = create(policy); // NOLINT
+    return queue.push(FWD(func), FWD(args)...);
   }
 }
 
