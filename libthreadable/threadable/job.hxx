@@ -18,13 +18,7 @@ namespace fho
     claimed = 1 << 1
   };
 
-  // struct alignas(1) jstate
-  // {
-  //   std::uint8_t active : 1 {};
-  //   std::uint8_t claimed : 1 {};
-  // };
-
-  // static_assert(sizeof(jstate) == 1);
+  static_assert(sizeof(job_state) == 1);
 
   using atomic_state_t = std::atomic<job_state>;
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <threadable/allocator.hxx>
+#include <threadable/atomic.hxx>
 #include <threadable/circular_iterator.hxx>
 #include <threadable/job.hxx>
 
@@ -9,12 +10,9 @@
 #include <cassert>
 #include <cstddef>
 #include <execution>
-#include <iostream>
 #include <iterator>
 #include <ranges>
 #include <vector>
-
-#include "threadable/atomic.hxx"
 
 #if !defined(__cpp_lib_execution) && !defined(__cpp_lib_parallel_algorithm) && \
   __has_include(<pstld/pstld.h>)
@@ -83,12 +81,12 @@ namespace fho
       : policy_(std::move(rhs.policy_))
       , tail_(rhs.tail_.load(std::memory_order::relaxed))
       , head_(rhs.head_.load(std::memory_order::relaxed))
-      , nextSlot_(rhs.nextSlot_.load(std::memory_order::relaxed))
+      , next_(rhs.next_.load(std::memory_order::relaxed))
       , jobs_(std::move(rhs.jobs_))
     {
       rhs.tail_.store(0, std::memory_order::relaxed);
       rhs.head_.store(0, std::memory_order::relaxed);
-      rhs.nextSlot_.store(0, std::memory_order::relaxed);
+      rhs.next_.store(0, std::memory_order::relaxed);
     }
 
     auto operator=(queue const&) -> queue& = delete;
@@ -96,11 +94,11 @@ namespace fho
     auto
     operator=(queue&& rhs) noexcept -> queue&
     {
-      tail_     = rhs.tail_.load(std::memory_order::relaxed);
-      head_     = rhs.head_.load(std::memory_order::relaxed);
-      nextSlot_ = rhs.nextSlot_.load(std::memory_order::relaxed);
-      policy_   = std::move(rhs.policy_);
-      jobs_     = std::move(rhs.jobs_);
+      tail_   = rhs.tail_.load(std::memory_order::relaxed);
+      head_   = rhs.head_.load(std::memory_order::relaxed);
+      next_   = rhs.next_.load(std::memory_order::relaxed);
+      policy_ = std::move(rhs.policy_);
+      jobs_   = std::move(rhs.jobs_);
       return *this;
     }
 
@@ -110,24 +108,24 @@ namespace fho
     auto
     push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept -> job_token&
     {
-      // 1. Claim a slot
-      auto const slot = nextSlot_.fetch_add(1, std::memory_order_acquire);
+      // 1. Claim a slot.
+      auto const slot = next_.fetch_add(1, std::memory_order_relaxed);
 
       auto& job = jobs_[iterator::mask(slot)];
       auto  exp = job_state::empty;
-      while (!job.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release))
-        [[unlikely]]
+      while (!job.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release,
+                                              std::memory_order_relaxed)) [[likely]]
       {
         exp = job_state::empty;
       }
 
-      // Blocks in release if slot is occupied, asserts in debug to catch overflow
+      // Spin-lock if slot is occupied.
       if (fho::details::test<job_state::active>(job.state)) [[unlikely]]
       {
-        fho::details::wait<job_state::active, true>(job.state);
+        std::this_thread::sleep_for(std::chrono::nanoseconds{1});
       }
 
-      // 2. Assign job
+      // 2. Assign job.
       if constexpr (std::invocable<callable_t, job_token&, arg_ts...>)
       {
         job.set(FWD(func), std::ref(token), FWD(args)...);
@@ -141,20 +139,25 @@ namespace fho
 
       token.reassign(job.state);
 
-      // Check if full before comitting
-      auto const tail = tail_.load(std::memory_order_relaxed);
-      if (iterator::mask(slot + 1 - tail) == 0) [[unlikely]]
+      // Check if full before comitting.
+      auto tail = tail_.load(std::memory_order_relaxed);
+      while (iterator::mask(slot + 1 - tail) == 0) [[unlikely]]
       {
-        tail_.wait(tail, std::memory_order_relaxed);
+        std::this_thread::sleep_for(std::chrono::nanoseconds{1});
+        tail = tail_.load(std::memory_order_relaxed);
       }
 
-      // 3. Commit slot
+      // 3. Commit slot.
       auto expected = slot;
-      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release))
+      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release,
+                                          std::memory_order_relaxed)) [[likely]]
       {
         expected = slot;
       }
-      head_.notify_all();
+
+      // NOTE: Intentionally not notifying here since we
+      //       use spin-locks for better performance.
+      // head_.notify_all();
       return token;
     }
 
@@ -171,23 +174,25 @@ namespace fho
     void
     wait() const noexcept
     {
-      auto const head = head_.load(std::memory_order_acquire);
-      auto const tail = tail_.load(std::memory_order_acquire);
+      auto const tail = tail_.load(std::memory_order_relaxed);
+      auto const head = head_.load(std::memory_order_relaxed);
       if (iterator::mask(head - tail) == 0) [[unlikely]]
       {
-        head_.wait(head);
+        std::this_thread::sleep_for(std::chrono::nanoseconds{1});
       }
     }
 
     auto
     consume(std::size_t max = max_nr_of_jobs) noexcept -> std::ranges::subrange<iterator>
     {
-      auto const head = head_.load(std::memory_order_acquire);
       auto const tail = tail_.load(std::memory_order_acquire);
+      auto const head = head_.load(std::memory_order_acquire);
       auto       b    = iterator(jobs_.data(), tail);
       auto       e    = iterator(jobs_.data(), head);
       tail_.store(head, std::memory_order_release);
-      tail_.notify_one();
+      // NOTE: Intentionally not notifying here since we
+      //       use spin-locks for better performance.
+      // tail_.notify_all();
       return std::ranges::subrange(b, e);
     }
 
@@ -220,9 +225,12 @@ namespace fho
     execute(std::ranges::range auto r) const -> std::size_t
     {
       assert(r.data() >= jobs_.data() && r.data() <= jobs_.data() + jobs_.size());
+
+      auto const b = std::begin(r);
+      auto const e = std::end(r);
       if (policy_ == execution_policy::parallel) [[likely]]
       {
-        std::for_each(std::execution::par, std::begin(r), std::end(r),
+        std::for_each(std::execution::par, b, e,
                       [](job& job)
                       {
                         job();
@@ -230,11 +238,14 @@ namespace fho
       }
       else [[unlikely]]
       {
-        auto b = std::begin(r);
-        // make sure previous has been executed
-        // auto const& prev = *(b - 1);
-        // fho::details::wait<job_state::active, true>(prev.state);
-        std::for_each(b, std::end(r),
+        // Make sure previous has been executed.
+        // auto const prev = (b - 1);
+        // if (fho::details::test<job_state::active>(prev->state, std::memory_order_relaxed))
+        //   [[unlikely]]
+        // {
+        //   fho::details::wait<job_state::active, true>(prev->state);
+        // }
+        std::for_each(b, e,
                       [](job& job)
                       {
                         job();
@@ -259,8 +270,8 @@ namespace fho
     auto
     size() const noexcept -> std::size_t
     {
+      auto const tail = tail_.load(std::memory_order_relaxed);
       auto const head = head_.load(std::memory_order_relaxed);
-      auto const tail = tail_.load(std::memory_order_acquire);
       return iterator::mask(head - tail); // circular distance
     }
 
@@ -296,7 +307,7 @@ namespace fho
     alignas(details::cache_line_size) execution_policy policy_ = execution_policy::parallel;
     alignas(details::cache_line_size) atomic_index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
-    alignas(details::cache_line_size) atomic_index_t nextSlot_{0};
+    alignas(details::cache_line_size) atomic_index_t next_{0};
 
     alignas(details::cache_line_size)
       std::vector<job, aligned_allocator<job, details::cache_line_size>> jobs_{max_nr_of_jobs};

@@ -79,17 +79,17 @@ namespace fho
     void
     run()
     {
-      while (!stop_.load(std::memory_order_relaxed))
+      while (!stop_.load(std::memory_order_relaxed)) [[likely]]
       {
         if (auto c = work_.execute(); c == 0) [[unlikely]]
         {
-          work_.wait();
+          std::this_thread::sleep_for(std::chrono::nanoseconds{1});
         }
       }
     }
 
     std::atomic_bool stop_{false};
-    queue<2>         work_;
+    queue<>          work_;
     std::thread      thread_;
   };
 
@@ -109,7 +109,7 @@ namespace fho
 
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
-    pool(unsigned int workers = 1) noexcept
+    pool(unsigned int workers = std::thread::hardware_concurrency() - 1) noexcept
     {
       // start worker threads
       for (std::size_t i = 0; i < workers; ++i)
@@ -121,11 +121,10 @@ namespace fho
       scheduler_ = std::thread(
         [this, workers]
         {
-          auto const mt  = workers > 0;
-          auto       rd  = std::random_device{};
-          auto       gen = std::mt19937(rd());
-          auto       distr =
-            std::uniform_int_distribution<std::size_t>(std::size_t{0}, executors_.size() - 1);
+          auto const mt    = workers > 0;
+          auto       rd    = std::random_device{};
+          auto       gen   = std::mt19937(rd());
+          auto       distr = std::uniform_int_distribution<std::size_t>(0, mt ? workers - 1 : 0);
 
           while (true)
           {
@@ -142,33 +141,27 @@ namespace fho
               queues = queues_;
             }
 
-            if (queues.size() == 1) [[unlikely]]
+            auto rand = distr(gen);
+            for (auto& queue : queues)
             {
-              (void)queues[0]->execute();
-            }
-            else [[likely]]
-            {
-              auto rand = distr(gen);
-              for (auto& queue : queues)
+              if (mt) [[likely]]
               {
-                if (mt) [[likely]]
+                if (auto range = queue->consume(); !range.empty()) [[likely]]
                 {
-                  if (auto range = queue->consume(); !range.empty()) [[likely]]
-                  {
-                    // assign to (random) worker
-                    // @TODO: Implement a proper load balancer.
-                    executor& e = *executors_[rand];
-                    e.submit(range);
-                  }
-                  auto prev = rand;
-                  rand      = distr(gen);
-                  // while ((rand = distr(gen)) != prev && workers > 1) [[unlikely]]
-                  // {}
+                  // assign to (random) worker
+                  // @TODO: Implement a proper load balancer, both
+                  //        for range size & executor selection.
+                  executor& e = *executors_[rand];
+                  e.submit(range);
                 }
-                else [[unlikely]]
-                {
-                  queue->execute();
-                }
+                // auto prev = rand;
+                rand = distr(gen);
+                // while (workers > 1 && (rand = distr(gen)) != prev) [[unlikely]]
+                // {}
+              }
+              else [[unlikely]]
+              {
+                queue->execute();
               }
             }
           }
