@@ -120,10 +120,10 @@ namespace fho
         exp = job_state::empty;
       }
 
-      // Spin-lock if slot is occupied.
+      // Wait if slot is occupied.
       if (fho::details::test<job_state::active>(job.state)) [[unlikely]]
       {
-        std::this_thread::sleep_for(std::chrono::nanoseconds{1});
+        fho::details::wait<job_state::active, true>(job.state);
       }
 
       // 2. Assign job.
@@ -141,11 +141,10 @@ namespace fho
       token.reassign(job.state);
 
       // Check if full before comitting.
-      auto tail = tail_.load(std::memory_order_relaxed);
-      while (iterator::mask(slot + 1 - tail) == 0) [[unlikely]]
+      if (auto tail = tail_.load(std::memory_order_relaxed); iterator::mask(slot + 1 - tail) == 0)
+        [[unlikely]]
       {
-        std::this_thread::sleep_for(std::chrono::nanoseconds{1});
-        tail = tail_.load(std::memory_order_relaxed);
+        tail_.wait(tail, std::memory_order_relaxed);
       }
 
       // 3. Commit slot.
