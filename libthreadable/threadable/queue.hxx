@@ -12,6 +12,7 @@
 #include <execution>
 #include <iterator>
 #include <ranges>
+#include <thread>
 #include <vector>
 
 #if !defined(__cpp_lib_execution) && !defined(__cpp_lib_parallel_algorithm) && \
