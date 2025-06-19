@@ -17,8 +17,6 @@ namespace
 
 TEST_CASE("pool: job execution")
 {
-  auto pool = fho::pool<jobs_per_iteration>();
-
   bench::Bench b;
   b.warmup(1).relative(true).unit("job");
 
@@ -49,15 +47,39 @@ TEST_CASE("pool: job execution")
            });
   }
   {
+    auto pool = fho::pool<jobs_per_iteration>();
+
     auto& queue = pool.create(fho::execution_policy::parallel);
     b.batch(jobs_per_iteration)
-      .run("fho::pool",
+      .run("fho::pool (queues: 1)",
            [&]
            {
              fho::token_group group;
              for (std::size_t i = 0; i < jobs_per_iteration; ++i)
              {
                group += queue.push(job_t{});
+             }
+             group.wait();
+           });
+  }
+  {
+    auto pool = fho::pool<jobs_per_iteration>();
+
+    auto queues = std::vector<std::reference_wrapper<fho::queue<jobs_per_iteration>>>{
+      pool.create(fho::execution_policy::parallel), pool.create(fho::execution_policy::parallel),
+      pool.create(fho::execution_policy::parallel), pool.create(fho::execution_policy::parallel)};
+
+    b.batch(jobs_per_iteration)
+      .run("fho::pool (queues: 4)",
+           [&]
+           {
+             fho::token_group group;
+             for (std::size_t i = 0; i < jobs_per_iteration >> 2; ++i)
+             {
+               for (decltype(pool)::queue_t& queue : queues)
+               {
+                 group += queue.push(job_t{});
+               }
              }
              group.wait();
            });
