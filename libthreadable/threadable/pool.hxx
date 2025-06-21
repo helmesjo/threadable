@@ -22,7 +22,7 @@ namespace fho
   {
   public:
     executor(int coreId = -1)
-      : work_(execution_policy::sequential)
+      : work_(execution::sequential)
       , thread_(
           [this, coreId]
           {
@@ -183,7 +183,7 @@ namespace fho
     }
 
     [[nodiscard]] auto
-    create(execution_policy policy = execution_policy::parallel) noexcept -> queue_t&
+    create(execution policy = execution::parallel) noexcept -> queue_t&
     {
       return add(queue_t(policy));
     }
@@ -260,7 +260,7 @@ namespace fho
   }
 
   [[nodiscard]] inline auto
-  create(execution_policy policy = execution_policy::parallel) noexcept -> details::queue_t&
+  create(execution policy = execution::parallel) noexcept -> details::queue_t&
   {
     return details::pool().create(policy);
   }
@@ -271,7 +271,7 @@ namespace fho
     return details::pool().remove(std::move(queue));
   }
 
-  template<execution_policy policy = execution_policy::parallel, std::copy_constructible callable_t,
+  template<execution policy = execution::parallel, std::copy_constructible callable_t,
            typename... arg_ts>
   [[nodiscard]] inline auto
   push(callable_t&& func, arg_ts&&... args) noexcept

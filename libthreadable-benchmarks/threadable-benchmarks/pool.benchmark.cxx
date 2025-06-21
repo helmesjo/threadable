@@ -49,7 +49,7 @@ TEST_CASE("pool: job execution")
   {
     auto pool = fho::pool<jobs_per_iteration>();
 
-    auto& queue = pool.create(fho::execution_policy::parallel);
+    auto& queue = pool.create(fho::execution::parallel);
     b.batch(jobs_per_iteration)
       .run("fho::pool (queues: 1)",
            [&]
@@ -66,8 +66,8 @@ TEST_CASE("pool: job execution")
     auto pool = fho::pool<jobs_per_iteration>();
 
     auto queues = std::vector<std::reference_wrapper<fho::ring_buffer<jobs_per_iteration>>>{
-      pool.create(fho::execution_policy::parallel), pool.create(fho::execution_policy::parallel),
-      pool.create(fho::execution_policy::parallel), pool.create(fho::execution_policy::parallel)};
+      pool.create(fho::execution::parallel), pool.create(fho::execution::parallel),
+      pool.create(fho::execution::parallel), pool.create(fho::execution::parallel)};
 
     b.batch(jobs_per_iteration)
       .run("fho::pool (queues: 4)",

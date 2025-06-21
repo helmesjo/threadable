@@ -36,7 +36,7 @@ namespace fho
     constexpr std::size_t default_max_nr_of_jobs = 1 << 16;
   }
 
-  enum class execution_policy
+  enum class execution
   {
     sequential,
     parallel
@@ -73,7 +73,7 @@ namespace fho
     ring_buffer(ring_buffer const&) = delete;
     ~ring_buffer()                  = default;
 
-    ring_buffer(execution_policy policy = execution_policy::parallel) noexcept
+    ring_buffer(execution policy = execution::parallel) noexcept
       : policy_(policy)
     {}
 
@@ -224,7 +224,7 @@ namespace fho
 
       auto const b = std::begin(r);
       auto const e = std::end(r);
-      if (policy_ == execution_policy::parallel) [[likely]]
+      if (policy_ == execution::parallel) [[likely]]
       {
         std::for_each(std::execution::par, b, e,
                       [](job& job)
@@ -304,7 +304,7 @@ namespace fho
       |_|
     */
 
-    alignas(details::cache_line_size) execution_policy policy_ = execution_policy::parallel;
+    alignas(details::cache_line_size) execution policy_ = execution::parallel;
     alignas(details::cache_line_size) atomic_index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
     alignas(details::cache_line_size) atomic_index_t next_{0};

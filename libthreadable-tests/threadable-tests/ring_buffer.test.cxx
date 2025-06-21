@@ -262,7 +262,7 @@ SCENARIO("ring_buffer: execution order")
 {
   GIVEN("a sequential ring")
   {
-    auto ring = fho::ring_buffer<32>(fho::execution_policy::sequential);
+    auto ring = fho::ring_buffer<32>(fho::execution::sequential);
 
     auto order = std::vector<std::size_t>{};
     auto m     = std::mutex{};
