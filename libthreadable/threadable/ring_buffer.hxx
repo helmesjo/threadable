@@ -33,7 +33,7 @@ namespace fho
 {
   namespace details
   {
-    constexpr std::size_t default_max_nr_of_jobs = 1 << 16;
+    constexpr std::size_t default_capacity = 1 << 16;
   }
 
   enum class execution
@@ -42,21 +42,17 @@ namespace fho
     parallel
   };
 
-  template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
+  template<std::size_t capacity = details::default_capacity>
   class ring_buffer
   {
     using value_type                    = job;
     using atomic_index_t                = std::atomic_size_t;
     using index_t                       = typename atomic_index_t::value_type;
-    static constexpr auto index_mask    = max_nr_of_jobs - 1u;
+    static constexpr auto index_mask    = capacity - 1u;
     static constexpr auto null_callback = [](ring_buffer&) {};
 
-    static_assert(max_nr_of_jobs > 1, "number of jobs must be greater than 1");
-    static_assert((max_nr_of_jobs & index_mask) == 0, "number of jobs must be a power of 2");
-#ifdef __cpp_lib_constexpr_cmath
-    static_assert(max_nr_of_jobs <= std::pow(2, (8 * sizeof(index_t)) - 1),
-                  "number of jobs must be <= half the index range");
-#endif
+    static_assert(capacity > 1, "capacity must be greater than 1");
+    static_assert((capacity & index_mask) == 0, "capacity must be a power of 2");
 
   public:
     using iterator       = ring_iterator<value_type, index_mask>;       // NOLINT
@@ -68,8 +64,6 @@ namespace fho
     // Make sure iterator is valid for parallelization with the standard algorithms
     static_assert(std::random_access_iterator<iterator>);
     static_assert(std::contiguous_iterator<iterator>);
-
-    using function_t = function<details::job_buffer_size>;
 
     ring_buffer(ring_buffer const&) = delete;
     ~ring_buffer()                  = default;
@@ -83,7 +77,7 @@ namespace fho
       , tail_(rhs.tail_.load(std::memory_order::relaxed))
       , head_(rhs.head_.load(std::memory_order::relaxed))
       , next_(rhs.next_.load(std::memory_order::relaxed))
-      , jobs_(std::move(rhs.jobs_))
+      , elems_(std::move(rhs.elems_))
     {
       rhs.tail_.store(0, std::memory_order::relaxed);
       rhs.head_.store(0, std::memory_order::relaxed);
@@ -99,7 +93,7 @@ namespace fho
       head_   = rhs.head_.load(std::memory_order::relaxed);
       next_   = rhs.next_.load(std::memory_order::relaxed);
       policy_ = std::move(rhs.policy_);
-      jobs_   = std::move(rhs.jobs_);
+      elems_  = std::move(rhs.elems_);
       return *this;
     }
 
@@ -112,7 +106,7 @@ namespace fho
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_relaxed);
 
-      auto& elem = jobs_[iterator::mask(slot)];
+      auto& elem = elems_[iterator::mask(slot)];
       auto  exp  = job_state::empty;
       while (!elem.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release,
                                                std::memory_order_relaxed)) [[likely]]
@@ -180,12 +174,12 @@ namespace fho
     }
 
     auto
-    consume(std::size_t max = max_nr_of_jobs) noexcept -> std::ranges::subrange<iterator>
+    consume(std::size_t max = capacity) noexcept -> std::ranges::subrange<iterator>
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
-      auto       b    = iterator(jobs_.data(), tail);
-      auto       e    = iterator(jobs_.data(), head);
+      auto       b    = iterator(elems_.data(), tail);
+      auto       e    = iterator(elems_.data(), head);
       tail_.store(head, std::memory_order_release);
       // NOTE: Intentionally not notifying here since we
       //       use spin-locks for better performance.
@@ -208,7 +202,7 @@ namespace fho
     begin() const noexcept -> const_iterator
     {
       auto const tail = tail_.load(std::memory_order_acquire);
-      return const_iterator(jobs_.data(), tail);
+      return const_iterator(elems_.data(), tail);
     }
 
     auto
@@ -256,7 +250,7 @@ namespace fho
     }
 
     auto
-    execute(std::size_t max = max_nr_of_jobs) -> std::size_t
+    execute(std::size_t max = capacity) -> std::size_t
     {
       assert(max > 0);
       return execute(consume(max));
@@ -265,7 +259,7 @@ namespace fho
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
-      return max_nr_of_jobs - 1;
+      return capacity - 1;
     }
 
     auto
@@ -285,7 +279,7 @@ namespace fho
     auto
     data() const noexcept -> decltype(auto)
     {
-      return jobs_.data();
+      return elems_.data();
     }
 
   private:
@@ -311,8 +305,8 @@ namespace fho
     alignas(details::cache_line_size) atomic_index_t next_{0};
 
     alignas(details::cache_line_size)
-      std::vector<value_type, aligned_allocator<value_type, details::cache_line_size>> jobs_{
-        max_nr_of_jobs};
+      std::vector<value_type, aligned_allocator<value_type, details::cache_line_size>> elems_{
+        capacity};
   };
 }
 

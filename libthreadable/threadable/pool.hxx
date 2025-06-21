@@ -94,7 +94,7 @@ namespace fho
     std::thread      thread_;
   };
 
-  template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
+  template<std::size_t max_nr_of_jobs = details::default_capacity>
   class pool
   {
   public:
