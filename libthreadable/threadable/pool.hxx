@@ -1,5 +1,6 @@
 #pragma once
 
+#include <threadable/affinity.hxx>
 #include <threadable/function.hxx>
 #include <threadable/queue.hxx>
 #include <threadable/std_concepts.hxx>
@@ -20,11 +21,15 @@ namespace fho
   class executor
   {
   public:
-    executor()
+    executor(int coreId = -1)
       : work_(execution_policy::sequential)
       , thread_(
-          [this]
+          [this, coreId]
           {
+            if (coreId >= 0)
+            {
+              pin_to_core(coreId);
+            }
             run();
           })
     {}
@@ -108,15 +113,19 @@ namespace fho
     pool(unsigned int workers = std::thread::hardware_concurrency() - 1) noexcept
     {
       // start worker threads
-      for (std::size_t i = 0; i < workers; ++i)
+      for (int i = 0; i < workers; ++i)
       {
-        executors_.emplace_back(std::make_unique<executor>());
+        executors_.emplace_back(std::make_unique<executor>(i));
       }
 
       // start scheduler thread
       scheduler_ = std::thread(
         [this, workers]
         {
+          if (workers < std::thread::hardware_concurrency())
+          {
+            pin_to_core(static_cast<int>(workers + 1));
+          }
           auto const mt    = workers > 0;
           auto       rd    = std::random_device{};
           auto       gen   = std::mt19937(rd());
