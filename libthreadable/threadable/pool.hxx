@@ -97,17 +97,8 @@ namespace fho
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class pool
   {
-    using clk_t = std::chrono::high_resolution_clock;
-
   public:
-    using queue_t = queue<max_nr_of_jobs>;
-
-    struct alignas(details::cache_line_size) worker
-    {
-      std::thread thread;
-      queue_t     work;
-    };
-
+    using queue_t  = queue<max_nr_of_jobs>;
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
     pool(unsigned int workers = std::thread::hardware_concurrency() - 1) noexcept
@@ -286,7 +277,7 @@ namespace fho
   push(callable_t&& func, arg_ts&&... args) noexcept
     requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
   {
-    static auto& queue = create(policy); // NOLINT
+    static auto& queue = create(policy);
     return queue.push(FWD(func), FWD(args)...);
   }
 }
