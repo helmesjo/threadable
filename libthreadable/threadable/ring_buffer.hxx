@@ -123,11 +123,11 @@ namespace fho
       // 2. Assign `value_type`.
       if constexpr (std::invocable<callable_t, job_token&, arg_ts...>)
       {
-        elem.set(FWD(func), std::ref(token), FWD(args)...);
+        elem.assign(FWD(func), std::ref(token), FWD(args)...);
       }
       else
       {
-        elem.set(FWD(func), FWD(args)...);
+        elem.assign(FWD(func), FWD(args)...);
       }
 
       assert(elem);

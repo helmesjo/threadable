@@ -241,7 +241,7 @@ namespace fho
     template<std::size_t size>
       requires (size <= buffer_size)
     void
-    set(function<size> const& func) noexcept
+    assign(function<size> const& func) noexcept
     {
       (*this) = func.buffer();
     }
@@ -249,21 +249,21 @@ namespace fho
     template<std::size_t size>
       requires (size <= buffer_size)
     void
-    set(function<size>&& func) noexcept
+    assign(function<size>&& func) noexcept
     {
       (*this) = std::move(std::move(func).buffer());
     }
 
     template<typename func_t, typename... arg_ts>
     void
-    set(func_t&& func, arg_ts&&... args) noexcept
+    assign(func_t&& func, arg_ts&&... args) noexcept
       requires std::invocable<func_t&&, arg_ts&&...> && (sizeof...(args) > 0)
     {
       using func_value_t = std::remove_reference_t<decltype(func)>;
       if constexpr (std::is_function_v<func_value_t> ||
                     std::is_member_function_pointer_v<func_value_t>)
       {
-        set(
+        assign(
           [func, ... args = FWD(args)]() mutable
           {
             std::invoke(func, FWD(args)...);
@@ -271,19 +271,19 @@ namespace fho
       }
       else
       {
-        set(details::deferred_callable(FWD(func), FWD(args)...));
+        assign(details::deferred_callable(FWD(func), FWD(args)...));
       }
     }
 
     template<std::invocable callable_t,
              typename callable_value_t = std::remove_reference_t<callable_t>>
     void
-    set(callable_t&& callable) noexcept // NOLINT
-                                        // (bug in clang-tidy doesn't detect FWD incapture)
+    assign(callable_t&& callable) noexcept // NOLINT
+                                           // (bug in clang-tidy doesn't detect FWD incapture)
       requires (!is_function_v<callable_t>) &&
                (required_buffer_size_v<decltype(callable)> > buffer_size)
     {
-      set(
+      assign(
         [func = std::make_shared<std::remove_reference_t<decltype(callable)>>(FWD(callable))]
         {
           std::forward<callable_t> (*func)();
@@ -293,7 +293,7 @@ namespace fho
     template<std::invocable callable_t,
              typename callable_value_t = std::remove_reference_t<callable_t>>
     void
-    set(callable_t&& callable) noexcept
+    assign(callable_t&& callable) noexcept
       requires (!is_function_v<callable_t>) &&
                (required_buffer_size_v<decltype(callable)> <= buffer_size)
     {
@@ -337,10 +337,10 @@ namespace fho
     {}
 
     function_buffer(auto&& callable, auto&&... args) noexcept
-      requires requires { this->set(FWD(callable), FWD(args)...); }
+      requires requires { this->assign(FWD(callable), FWD(args)...); }
     {
       details::size(buffer_.data(), 0);
-      set(FWD(callable), FWD(args)...);
+      assign(FWD(callable), FWD(args)...);
     }
 
     ~function_buffer()
@@ -485,9 +485,9 @@ namespace fho
   // NOTE: On GCC (13.2.0) doing this inline with 'requires requires'
   //       triggers ICE (Internal Compiler Error).
   template<typename buffer_t, typename callable_t, typename... arg_ts>
-  concept settable = requires (buffer_t&& buf, callable_t&& callable, arg_ts&&... args) {
-                       buf.set(FWD(callable), FWD(args)...);
-                     };
+  concept assignable = requires (buffer_t&& buf, callable_t&& callable, arg_ts&&... args) {
+                         buf.assign(FWD(callable), FWD(args)...);
+                       };
 
   template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
   struct function
@@ -514,9 +514,9 @@ namespace fho
     template<typename... arg_ts>
     explicit function(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
       requires (!is_function_v<decltype(callable)>) &&
-               settable<buffer_t, decltype(callable), decltype(args)...>
+               assignable<buffer_t, decltype(callable), decltype(args)...>
     {
-      set(FWD(callable), FWD(args)...);
+      assign(FWD(callable), FWD(args)...);
     }
 
     ~function()
@@ -537,7 +537,7 @@ namespace fho
     operator=(std::invocable auto&& func) noexcept -> function&
       requires std::same_as<function, std::remove_cvref_t<decltype(func)>> || true
     {
-      set(FWD(func));
+      assign(FWD(func));
       return *this;
     }
 
@@ -574,10 +574,10 @@ namespace fho
 
     template<typename... arg_ts>
     void
-    set(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
-      requires settable<buffer_t, decltype(callable), decltype(args)...>
+    assign(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
+      requires assignable<buffer_t, decltype(callable), decltype(args)...>
     {
-      buffer_.set(FWD(callable), FWD(args)...);
+      buffer_.assign(FWD(callable), FWD(args)...);
     }
 
     inline void

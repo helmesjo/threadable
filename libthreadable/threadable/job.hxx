@@ -52,9 +52,9 @@ namespace fho
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
     auto
-    set(callable_t&& func, arg_ts&&... args) noexcept -> decltype(auto)
+    assign(callable_t&& func, arg_ts&&... args) noexcept -> decltype(auto)
     {
-      func_.set(FWD(func), FWD(args)...);
+      func_.assign(FWD(func), FWD(args)...);
       state.store(job_state::active, std::memory_order_relaxed);
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on by checking state active -> inactive.
@@ -66,7 +66,7 @@ namespace fho
     auto
     operator=(callable_t&& func) noexcept -> auto&
     {
-      set(FWD(func));
+      assign(FWD(func));
       return *this;
     }
 

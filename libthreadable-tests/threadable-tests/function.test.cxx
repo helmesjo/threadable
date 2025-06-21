@@ -181,7 +181,7 @@ SCENARIO("function_buffer")
       REQUIRE(called == 1);
     }
   }
-  WHEN("set with callable")
+  WHEN("assign with callable")
   {
     int  called = 0;
     auto lambda = [&called]
@@ -190,7 +190,7 @@ SCENARIO("function_buffer")
     };
     auto buffer = fho::function_buffer(lambda);
     buffer.reset();
-    buffer.set(lambda);
+    buffer.assign(lambda);
     THEN("it can be invoked")
     {
       fho::details::invoke(buffer.data());
@@ -224,7 +224,7 @@ SCENARIO("function_buffer")
       }
     }
   }
-  WHEN("set with fho::function")
+  WHEN("assign with fho::function")
   {
     int  called = 0;
     auto func   = fho::function(
@@ -236,7 +236,7 @@ SCENARIO("function_buffer")
     buffer.reset();
     AND_WHEN("by value")
     {
-      buffer.set(func);
+      buffer.assign(func);
       THEN("it can be invoked")
       {
         fho::details::invoke(buffer.data());
@@ -245,7 +245,7 @@ SCENARIO("function_buffer")
     }
     AND_WHEN("by r-value")
     {
-      buffer.set(std::move(func));
+      buffer.assign(std::move(func));
       THEN("it can be invoked")
       {
         fho::details::invoke(buffer.data());
@@ -375,13 +375,13 @@ SCENARIO("function_dyn")
     // important to trigger the obscure case,
     // so leave as-is.
     auto func = fho::function();
-    func.set(
+    func.assign(
       [obj = type{5}]
       {
         REQUIRE(*obj.val == 5);
       });
     auto funcDyn = fho::function_dyn(func);
-    func.set(
+    func.assign(
       [func = funcDyn]() mutable
       {
         func();
@@ -427,26 +427,26 @@ SCENARIO("function_dyn")
   }
 }
 
-SCENARIO("function: set/reset")
+SCENARIO("function: assign/reset")
 {
   auto func = fho::function{};
   GIVEN("is empty")
   {
-    THEN("function is unset")
+    THEN("function is unassigned")
     {
       REQUIRE_FALSE(func);
     }
-    WHEN("callable is set")
+    WHEN("callable is assigned")
     {
-      AND_WHEN("using set()")
+      AND_WHEN("using assign()")
       {
-        func.set([] {});
+        func.assign([] {});
         REQUIRE(func);
 
         AND_WHEN("function is reset")
         {
           func.reset();
-          THEN("function is unset")
+          THEN("function is unassigned")
           {
             REQUIRE_FALSE(func);
           }
@@ -454,7 +454,7 @@ SCENARIO("function: set/reset")
         AND_WHEN("function was invoked")
         {
           func();
-          THEN("function is set")
+          THEN("function is assigned")
           {
             REQUIRE(func);
           }
@@ -468,17 +468,17 @@ SCENARIO("function: set/reset")
         AND_WHEN("function is reset")
         {
           func = nullptr;
-          THEN("function is unset")
+          THEN("function is unassigned")
           {
             REQUIRE_FALSE(func);
           }
         }
       }
     }
-    WHEN("callable with argument is set")
+    WHEN("callable with argument is assigned")
     {
       int argReceived = 0;
-      func.set(
+      func.assign(
         [&argReceived](int arg)
         {
           argReceived = arg;
@@ -490,7 +490,7 @@ SCENARIO("function: set/reset")
         REQUIRE(argReceived == 5);
       }
     }
-    WHEN("recursive callable is set")
+    WHEN("recursive callable is assigned")
     {
       int  val      = 0;
       auto callable = [&val](auto self) -> void
@@ -499,9 +499,9 @@ SCENARIO("function: set/reset")
         static_assert(sizeof(self) == 8);
       };
       static_assert(sizeof(callable) == 8);
-      func.set(callable, callable);
+      func.assign(callable, callable);
     }
-    WHEN("non-trivially-copyable callable is set")
+    WHEN("non-trivially-copyable callable is assigned")
     {
       thread_local int destroyed = 0;
 
@@ -524,15 +524,15 @@ SCENARIO("function: set/reset")
         {}
       };
 
-      // add test to verify func.set(std::move(func)) doesn't first reset "self"
-      // dito for func.set(func) which should be no-op.A
+      // add test to verify func.assign(std::move(func)) doesn't first reset "self"
+      // dito for func.assign(func) which should be no-op.A
       // dito for function_dyn
 
       static_assert(!std::is_trivially_copyable_v<type>);
       static_assert(std::copy_constructible<type>);
       static_assert(std::is_destructible_v<type>);
 
-      func.set(type{});
+      func.assign(type{});
       AND_WHEN("function is reset")
       {
         destroyed = 0;
@@ -543,10 +543,10 @@ SCENARIO("function: set/reset")
           REQUIRE(destroyed == 1);
         }
       }
-      AND_WHEN("a new callable is set")
+      AND_WHEN("a new callable is assigned")
       {
         destroyed = 0;
-        func.set([] {});
+        func.assign([] {});
 
         THEN("destructor is invoked on previous callable")
         {
@@ -560,7 +560,7 @@ SCENARIO("function: set/reset")
 SCENARIO("function: execution")
 {
   auto func = fho::function{};
-  GIVEN("callable is set")
+  GIVEN("callable is assigned")
   {
     WHEN("callable with value member")
     {
@@ -575,7 +575,7 @@ SCENARIO("function: execution")
         int val = 0;
       } callable;
 
-      func.set(callable);
+      func.assign(callable);
       WHEN("it is invoked")
       {
         func();
@@ -600,7 +600,7 @@ SCENARIO("function: execution")
         int& val; // NOLINT
       } callable{val};
 
-      func.set(callable);
+      func.assign(callable);
       WHEN("it is invoked")
       {
         func();
@@ -633,7 +633,7 @@ SCENARIO("function: execution")
         int& const_val;    // NOLINT
       } const callable{.nonconst_val = nonconstVal, .const_val = constVal};
 
-      func.set(callable);
+      func.assign(callable);
       WHEN("it is invoked")
       {
         func();
@@ -647,7 +647,7 @@ SCENARIO("function: execution")
     int called = 0;
     WHEN("lambda")
     {
-      func.set(
+      func.assign(
         [&called]
         {
           ++called;
@@ -660,7 +660,7 @@ SCENARIO("function: execution")
     }
     WHEN("free function")
     {
-      func.set(free_func, std::ref(called));
+      func.assign(free_func, std::ref(called));
       THEN("it's invoked")
       {
         func();
@@ -678,7 +678,7 @@ SCENARIO("function: execution")
         }
       };
 
-      func.set(&type::func, type{}, std::ref(called));
+      func.assign(&type::func, type{}, std::ref(called));
       THEN("it's invoked")
       {
         func();
@@ -692,7 +692,7 @@ SCENARIO("function: Conversion")
 {
   static constexpr auto func_size = 64;
   auto                  func      = fho::function<func_size>{};
-  GIVEN("callable is set")
+  GIVEN("callable is assigned")
   {
     thread_local int called = 0;
 
@@ -713,7 +713,7 @@ SCENARIO("function: Conversion")
       }
     };
 
-    func.set(type{});
+    func.assign(type{});
     WHEN("function is converted to std::function")
     {
       std::function<void()> stdFunc = func;
@@ -751,7 +751,7 @@ SCENARIO("function: Conversion")
 
 SCENARIO("function_dyn")
 {
-  GIVEN("callable is set")
+  GIVEN("callable is assigned")
   {
     thread_local int called    = 0;
     thread_local int destroyed = 0;
