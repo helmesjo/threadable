@@ -45,6 +45,7 @@ namespace fho
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
   class ring_buffer
   {
+    using value_type                    = job;
     using atomic_index_t                = std::atomic_size_t;
     using index_t                       = typename atomic_index_t::value_type;
     static constexpr auto index_mask    = max_nr_of_jobs - 1u;
@@ -58,8 +59,8 @@ namespace fho
 #endif
 
   public:
-    using iterator       = ring_iterator<job, index_mask>;       // NOLINT
-    using const_iterator = ring_iterator<job const, index_mask>; // NOLINT
+    using iterator       = ring_iterator<value_type, index_mask>;       // NOLINT
+    using const_iterator = ring_iterator<value_type const, index_mask>; // NOLINT
     static_assert(std::is_const_v<typename const_iterator::value_type>);
     static_assert(std::is_const_v<std::remove_reference_t<typename const_iterator::reference>>);
     static_assert(std::is_const_v<std::remove_pointer_t<typename const_iterator::pointer>>);
@@ -111,33 +112,33 @@ namespace fho
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_relaxed);
 
-      auto& job = jobs_[iterator::mask(slot)];
-      auto  exp = job_state::empty;
-      while (!job.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release,
-                                              std::memory_order_relaxed)) [[likely]]
+      auto& elem = jobs_[iterator::mask(slot)];
+      auto  exp  = job_state::empty;
+      while (!elem.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release,
+                                               std::memory_order_relaxed)) [[likely]]
       {
         exp = job_state::empty;
       }
 
       // Wait if slot is occupied.
-      if (fho::details::test<job_state::active>(job.state)) [[unlikely]]
+      if (fho::details::test<job_state::active>(elem.state)) [[unlikely]]
       {
-        fho::details::wait<job_state::active, true>(job.state);
+        fho::details::wait<job_state::active, true>(elem.state);
       }
 
-      // 2. Assign job.
+      // 2. Assign `value_type`.
       if constexpr (std::invocable<callable_t, job_token&, arg_ts...>)
       {
-        job.set(FWD(func), std::ref(token), FWD(args)...);
+        elem.set(FWD(func), std::ref(token), FWD(args)...);
       }
       else
       {
-        job.set(FWD(func), FWD(args)...);
+        elem.set(FWD(func), FWD(args)...);
       }
 
-      assert(job);
+      assert(elem);
 
-      token.reassign(job.state);
+      token.reassign(elem.state);
 
       // Check if full before comitting.
       if (auto tail = tail_.load(std::memory_order_relaxed); iterator::mask(slot + 1 - tail) == 0)
@@ -197,9 +198,9 @@ namespace fho
     {
       auto range = consume();
       std::for_each(std::execution::par, std::begin(range), std::end(range),
-                    [](job& job)
+                    [](value_type& elem)
                     {
-                      job.reset();
+                      elem.reset();
                     });
     }
 
@@ -227,9 +228,9 @@ namespace fho
       if (policy_ == execution::parallel) [[likely]]
       {
         std::for_each(std::execution::par, b, e,
-                      [](job& job)
+                      [](value_type& elem)
                       {
-                        job();
+                        elem();
                       });
       }
       else [[unlikely]]
@@ -246,9 +247,9 @@ namespace fho
           fho::details::wait<job_state::active, true>(prev->state);
         }
         std::for_each(b, e,
-                      [](job& job)
+                      [](value_type& elem)
                       {
-                        job();
+                        elem();
                       });
       }
       return r.size();
@@ -289,7 +290,7 @@ namespace fho
 
   private:
     /*
-      Circular job buffer. When tail or head
+      Circular `value_type` buffer. When tail or head
       reaches the end they will wrap around:
        _
       |_|
@@ -299,7 +300,7 @@ namespace fho
       |_| │
       |_| │
       |_| │
-      |_| ┘→ head-1 (last job)  - consumer
+      |_| ┘→ head-1 (last elem) - consumer
       |_|  ← head   (next slot) - producer
       |_|
     */
@@ -310,7 +311,8 @@ namespace fho
     alignas(details::cache_line_size) atomic_index_t next_{0};
 
     alignas(details::cache_line_size)
-      std::vector<job, aligned_allocator<job, details::cache_line_size>> jobs_{max_nr_of_jobs};
+      std::vector<value_type, aligned_allocator<value_type, details::cache_line_size>> jobs_{
+        max_nr_of_jobs};
   };
 }
 
