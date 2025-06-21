@@ -65,7 +65,7 @@ TEST_CASE("pool: job execution")
   {
     auto pool = fho::pool<jobs_per_iteration>();
 
-    auto queues = std::vector<std::reference_wrapper<fho::queue<jobs_per_iteration>>>{
+    auto queues = std::vector<std::reference_wrapper<fho::ring_buffer<jobs_per_iteration>>>{
       pool.create(fho::execution_policy::parallel), pool.create(fho::execution_policy::parallel),
       pool.create(fho::execution_policy::parallel), pool.create(fho::execution_policy::parallel)};
 

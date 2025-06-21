@@ -2,8 +2,8 @@
 
 #include <threadable/allocator.hxx>
 #include <threadable/atomic.hxx>
-#include <threadable/circular_iterator.hxx>
 #include <threadable/job.hxx>
+#include <threadable/ring_iterator.hxx>
 
 #include <algorithm>
 #include <atomic>
@@ -12,7 +12,6 @@
 #include <execution>
 #include <iterator>
 #include <ranges>
-#include <thread>
 #include <vector>
 
 #if !defined(__cpp_lib_execution) && !defined(__cpp_lib_parallel_algorithm) && \
@@ -44,12 +43,12 @@ namespace fho
   };
 
   template<std::size_t max_nr_of_jobs = details::default_max_nr_of_jobs>
-  class queue
+  class ring_buffer
   {
     using atomic_index_t                = std::atomic_size_t;
     using index_t                       = typename atomic_index_t::value_type;
     static constexpr auto index_mask    = max_nr_of_jobs - 1u;
-    static constexpr auto null_callback = [](queue&) {};
+    static constexpr auto null_callback = [](ring_buffer&) {};
 
     static_assert(max_nr_of_jobs > 1, "number of jobs must be greater than 1");
     static_assert((max_nr_of_jobs & index_mask) == 0, "number of jobs must be a power of 2");
@@ -59,8 +58,8 @@ namespace fho
 #endif
 
   public:
-    using iterator       = circular_iterator<job, index_mask>;       // NOLINT
-    using const_iterator = circular_iterator<job const, index_mask>; // NOLINT
+    using iterator       = ring_iterator<job, index_mask>;       // NOLINT
+    using const_iterator = ring_iterator<job const, index_mask>; // NOLINT
     static_assert(std::is_const_v<typename const_iterator::value_type>);
     static_assert(std::is_const_v<std::remove_reference_t<typename const_iterator::reference>>);
     static_assert(std::is_const_v<std::remove_pointer_t<typename const_iterator::pointer>>);
@@ -71,14 +70,14 @@ namespace fho
 
     using function_t = function<details::job_buffer_size>;
 
-    queue(queue const&) = delete;
-    ~queue()            = default;
+    ring_buffer(ring_buffer const&) = delete;
+    ~ring_buffer()                  = default;
 
-    queue(execution_policy policy = execution_policy::parallel) noexcept
+    ring_buffer(execution_policy policy = execution_policy::parallel) noexcept
       : policy_(policy)
     {}
 
-    queue(queue&& rhs) noexcept
+    ring_buffer(ring_buffer&& rhs) noexcept
       : policy_(std::move(rhs.policy_))
       , tail_(rhs.tail_.load(std::memory_order::relaxed))
       , head_(rhs.head_.load(std::memory_order::relaxed))
@@ -90,10 +89,10 @@ namespace fho
       rhs.next_.store(0, std::memory_order::relaxed);
     }
 
-    auto operator=(queue const&) -> queue& = delete;
+    auto operator=(ring_buffer const&) -> ring_buffer& = delete;
 
     auto
-    operator=(queue&& rhs) noexcept -> queue&
+    operator=(ring_buffer&& rhs) noexcept -> ring_buffer&
     {
       tail_   = rhs.tail_.load(std::memory_order::relaxed);
       head_   = rhs.head_.load(std::memory_order::relaxed);
@@ -105,7 +104,7 @@ namespace fho
 
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...> ||
-                 std::invocable<callable_t, job_token&, arg_ts...>
+               std::invocable<callable_t, job_token&, arg_ts...>
     auto
     push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept -> job_token&
     {

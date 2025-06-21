@@ -6,7 +6,7 @@
 namespace fho
 {
   template<typename elem_t, size_t index_mask>
-  struct circular_iterator
+  struct ring_iterator
   {
     using iterator_category = std::random_access_iterator_tag;
     using iterator_concept  = std::contiguous_iterator_tag;
@@ -24,9 +24,9 @@ namespace fho
       return index & index_mask;
     }
 
-    circular_iterator() = default;
+    ring_iterator() = default;
 
-    explicit circular_iterator(pointer jobs, size_t index) noexcept
+    explicit ring_iterator(pointer jobs, size_t index) noexcept
       : jobs_(jobs)
       , current_(jobs + mask(index))
       , index_(index)
@@ -45,7 +45,7 @@ namespace fho
     }
 
     friend inline auto
-    operator*(circular_iterator const& it) -> reference
+    operator*(ring_iterator const& it) -> reference
     {
       return *it.current_;
     }
@@ -57,55 +57,55 @@ namespace fho
     }
 
     inline auto
-    operator<=>(circular_iterator const& rhs) const noexcept
+    operator<=>(ring_iterator const& rhs) const noexcept
     {
       return index_ <=> rhs.index_;
     }
 
     inline auto
-    operator==(circular_iterator const& rhs) const noexcept -> bool
+    operator==(ring_iterator const& rhs) const noexcept -> bool
     {
       return current_ == rhs.current_;
     }
 
     inline auto
-    operator+(circular_iterator const& rhs) const noexcept -> difference_type
+    operator+(ring_iterator const& rhs) const noexcept -> difference_type
     {
       return index_ + rhs.index_;
     }
 
     inline auto
-    operator-(circular_iterator const& rhs) const noexcept -> difference_type
+    operator-(ring_iterator const& rhs) const noexcept -> difference_type
     {
       return index_ - rhs.index_;
     }
 
     inline auto
-    operator+(difference_type rhs) const noexcept -> circular_iterator
+    operator+(difference_type rhs) const noexcept -> ring_iterator
     {
-      return circular_iterator(jobs_, index_ + rhs);
+      return ring_iterator(jobs_, index_ + rhs);
     }
 
     inline auto
-    operator-(difference_type rhs) const noexcept -> circular_iterator
+    operator-(difference_type rhs) const noexcept -> ring_iterator
     {
-      return circular_iterator(jobs_, index_ - rhs);
+      return ring_iterator(jobs_, index_ - rhs);
     }
 
     friend inline auto
-    operator+(difference_type lhs, circular_iterator const& rhs) noexcept -> circular_iterator
+    operator+(difference_type lhs, ring_iterator const& rhs) noexcept -> ring_iterator
     {
-      return circular_iterator(rhs.jobs_, lhs + rhs.index_);
+      return ring_iterator(rhs.jobs_, lhs + rhs.index_);
     }
 
     friend inline auto
-    operator-(difference_type lhs, circular_iterator const& rhs) noexcept -> circular_iterator
+    operator-(difference_type lhs, ring_iterator const& rhs) noexcept -> ring_iterator
     {
-      return circular_iterator(rhs.jobs_, lhs - rhs.index_);
+      return ring_iterator(rhs.jobs_, lhs - rhs.index_);
     }
 
     inline auto
-    operator+=(difference_type rhs) noexcept -> circular_iterator&
+    operator+=(difference_type rhs) noexcept -> ring_iterator&
     {
       index_ += rhs;
       current_ = jobs_ + mask(index_);
@@ -113,13 +113,13 @@ namespace fho
     }
 
     inline auto
-    operator-=(difference_type rhs) noexcept -> circular_iterator&
+    operator-=(difference_type rhs) noexcept -> ring_iterator&
     {
       return *this += -rhs;
     }
 
     inline auto
-    operator++() noexcept -> circular_iterator&
+    operator++() noexcept -> ring_iterator&
     {
       ++index_;
       if (++current_ > (jobs_ + buffer_size - 1)) [[unlikely]]
@@ -130,7 +130,7 @@ namespace fho
     }
 
     inline auto
-    operator++(int) noexcept -> circular_iterator
+    operator++(int) noexcept -> ring_iterator
     {
       auto prev = *this;
       ++(*this);
@@ -138,7 +138,7 @@ namespace fho
     }
 
     inline auto
-    operator--() noexcept -> circular_iterator&
+    operator--() noexcept -> ring_iterator&
     {
       --index_;
       if (--current_ < jobs_) [[unlikely]]
@@ -149,7 +149,7 @@ namespace fho
     }
 
     inline auto
-    operator--(int) noexcept -> circular_iterator
+    operator--(int) noexcept -> ring_iterator
     {
       auto prev = *this;
       --(*this);

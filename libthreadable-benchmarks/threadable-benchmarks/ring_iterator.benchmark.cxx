@@ -1,5 +1,5 @@
 #include <threadable-benchmarks/util.hxx>
-#include <threadable/circular_iterator.hxx>
+#include <threadable/ring_iterator.hxx>
 
 #include <vector>
 
@@ -13,10 +13,10 @@ namespace
 {
   constexpr auto buffer_size = 1 << 20;
   constexpr auto count       = buffer_size - 1u;
-  using iter_t               = fho::circular_iterator<int, buffer_size>;
+  using iter_t               = fho::ring_iterator<int, buffer_size>;
 }
 
-TEST_CASE("circular_iterator: dereference")
+TEST_CASE("ring_iterator: dereference")
 {
   bench::Bench b;
   b.warmup(10).relative(true);
@@ -36,7 +36,7 @@ TEST_CASE("circular_iterator: dereference")
   }
   {
     auto it = iter_t(buffer.data(), 0);
-    b.run("fho::circular_iterator",
+    b.run("fho::ring_iterator",
           [&]
           {
             bench::doNotOptimizeAway(*it);
@@ -62,7 +62,7 @@ TEST_CASE("circular_iterator: dereference")
   {
     auto it    = iter_t(buffer.data(), 0);
     auto index = iter_t::difference_type{0};
-    b.run("fho::circular_iterator",
+    b.run("fho::ring_iterator",
           [&]
           {
             bench::doNotOptimizeAway(it[++index]);
@@ -70,7 +70,7 @@ TEST_CASE("circular_iterator: dereference")
   }
 }
 
-TEST_CASE("circular_iterator: traversing")
+TEST_CASE("ring_iterator: traversing")
 {
   bench::Bench b;
   b.warmup(10).relative(true);
@@ -98,7 +98,7 @@ TEST_CASE("circular_iterator: traversing")
   }
   {
     auto it = iter_t(buffer.data(), 0);
-    b.run("fho::circular_iterator",
+    b.run("fho::ring_iterator",
           [&]
           {
             bench::doNotOptimizeAway(++it);
@@ -124,7 +124,7 @@ TEST_CASE("circular_iterator: traversing")
   }
   {
     auto it = iter_t(buffer.data(), buffer_size);
-    b.run("fho::circular_iterator",
+    b.run("fho::ring_iterator",
           [&]
           {
             bench::doNotOptimizeAway(--it);

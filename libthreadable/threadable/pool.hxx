@@ -2,7 +2,7 @@
 
 #include <threadable/affinity.hxx>
 #include <threadable/function.hxx>
-#include <threadable/queue.hxx>
+#include <threadable/ring_buffer.hxx>
 #include <threadable/std_concepts.hxx>
 
 #include <algorithm>
@@ -90,7 +90,7 @@ namespace fho
     }
 
     std::atomic_bool stop_{false};
-    queue<>          work_;
+    ring_buffer<>    work_;
     std::thread      thread_;
   };
 
@@ -98,7 +98,7 @@ namespace fho
   class pool
   {
   public:
-    using queue_t  = queue<max_nr_of_jobs>;
+    using queue_t  = ring_buffer<max_nr_of_jobs>;
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
     pool(unsigned int workers = std::thread::hardware_concurrency() - 1) noexcept

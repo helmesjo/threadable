@@ -1,13 +1,13 @@
 #include <threadable-tests/doctest_include.hxx>
-#include <threadable/circular_iterator.hxx>
+#include <threadable/ring_iterator.hxx>
 
-SCENARIO("circular_iterator")
+SCENARIO("ring_iterator")
 {
   static constexpr auto buf_size   = std::size_t{16};
   static constexpr auto max_size   = buf_size - 1u;
   static constexpr auto index_mask = buf_size - 1u;
   using buffer_t                   = std::array<int, buf_size>;
-  using iter_t                     = fho::circular_iterator<int, index_mask>;
+  using iter_t                     = fho::ring_iterator<int, index_mask>;
 
   static_assert((buf_size & index_mask) == 0, "number of jobs must be a power of 2");
   static_assert(buf_size == 16); // for comments to be accurate
