@@ -42,6 +42,22 @@ namespace fho
     parallel
   };
 
+  /// @brief A Multi-Producer Single-Consumer (MPSC) ring buffer for managing jobs in a threading
+  /// environment.
+  /// @details This class provides a lock-free ring buffer that allows multiple producers to add
+  /// jobs concurrently and a single consumer to consume & execute them. It uses atomic operations
+  /// to manage the buffer's state and supports both sequential and parallel execution of jobs based
+  /// on the specified policy. The buffer is templated on its capacity, which must be a power of 2
+  /// and greater than 1.
+  /// @tparam `capacity` The size of the ring buffer, must be a power of 2 and greater than 1.
+  /// Defaults to 65536 (`1 << 16`).
+  /// @example
+  /// ```cpp
+  /// auto buffer = fho::ring_buffer<>{fho::execution::parallel};
+  /// buffer.push([]() { cout << "Job executed!\n"; });
+  /// auto range = buffer.consume();
+  /// buffer.execute(range);
+  /// ```
   template<std::size_t capacity = details::default_capacity>
   class ring_buffer
   {
@@ -64,7 +80,11 @@ namespace fho
     // Make sure iterator is valid for parallelization with the standard algorithms
     static_assert(std::random_access_iterator<iterator>);
     static_assert(std::contiguous_iterator<iterator>);
-
+    /// @brief Default constructor.
+    /// @details Initializes the ring buffer with the specified execution policy. Defaults to
+    /// parallel execution.
+    /// @param `policy` The execution policy for job execution. Can be `execution::sequential` or
+    /// `execution::parallel`.
     ring_buffer(ring_buffer const&) = delete;
     ~ring_buffer()                  = default;
 
@@ -72,6 +92,9 @@ namespace fho
       : policy_(policy)
     {}
 
+    /// @brief Move constructor.
+    /// @details Moves the contents of another ring buffer into this one.
+    /// @param `rhs` The ring buffer to move from.
     ring_buffer(ring_buffer&& rhs) noexcept
       : policy_(std::move(rhs.policy_))
       , tail_(rhs.tail_.load(std::memory_order::relaxed))
@@ -86,6 +109,10 @@ namespace fho
 
     auto operator=(ring_buffer const&) -> ring_buffer& = delete;
 
+    /// @brief Move assignment operator.
+    /// @details Moves the contents of another ring buffer into this one.
+    /// @param `rhs` The ring buffer to move from.
+    /// @return A reference to this ring buffer.
     auto
     operator=(ring_buffer&& rhs) noexcept -> ring_buffer&
     {
@@ -97,6 +124,20 @@ namespace fho
       return *this;
     }
 
+    /// @brief Pushes a job into the ring buffer with a job token.
+    /// @details Adds a callable to the buffer, associating it with a job token for state
+    /// monitoring.
+    /// @tparam `callable_t` The type of the callable.
+    /// @tparam `arg_ts` The types of the arguments.
+    /// @param `token` The job token to associate with the job.
+    /// @param `func` The callable to add to the buffer.
+    /// @param `args` The arguments to pass to the callable.
+    /// @return A reference to the job token.
+    /// @example
+    /// ```cpp
+    /// auto token = fho::job_token{};
+    /// buffer.push(token, []() { cout << "Job executed!\n"; });
+    /// ```
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...> ||
                std::invocable<callable_t, job_token&, arg_ts...>
@@ -152,6 +193,17 @@ namespace fho
       return token;
     }
 
+    /// @brief Pushes a job into the ring buffer.
+    /// @details Adds a callable to the buffer and returns a new job token.
+    /// @tparam `callable_t` The type of the callable.
+    /// @tparam `arg_ts` The types of the arguments.
+    /// @param `func` The callable to add to the buffer.
+    /// @param `args` The arguments to pass to the callable.
+    /// @return A new job token for the added job.
+    /// @example
+    /// ```cpp
+    /// auto token = buffer.push([]() { cout << "Job executed!\n"; });
+    /// ```
     template<std::copy_constructible callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
     auto
@@ -162,6 +214,8 @@ namespace fho
       return token;
     }
 
+    /// @brief Waits until there are jobs available in the buffer.
+    /// @details Blocks until the buffer is not empty.
     void
     wait() const noexcept
     {
@@ -173,6 +227,10 @@ namespace fho
       }
     }
 
+    /// @brief Consumes jobs from the buffer.
+    /// @details Retrieves a range of jobs from the buffer for execution.
+    /// @param `max` The maximum number of jobs to consume. Defaults to the buffer capacity.
+    /// @return A subrange of iterators pointing to the consumed jobs.
     auto
     consume(std::size_t max = capacity) noexcept -> std::ranges::subrange<iterator>
     {
@@ -187,6 +245,8 @@ namespace fho
       return std::ranges::subrange(b, e);
     }
 
+    /// @brief Clears all jobs from the buffer.
+    /// @details Resets all jobs in the buffer to an empty state.
     void
     clear() noexcept
     {
@@ -198,6 +258,9 @@ namespace fho
                     });
     }
 
+    /// @brief Returns an iterator to the beginning (tail) of the buffer.
+    /// @details Provides access to the first job in the buffer.
+    /// @return A const iterator to the beginning of the buffer.
     auto
     begin() const noexcept -> const_iterator
     {
@@ -205,6 +268,9 @@ namespace fho
       return const_iterator(elems_.data(), tail);
     }
 
+    /// @brief Returns an iterator to the end (head) of the buffer.
+    /// @details Provides access to the position after the last job in the buffer.
+    /// @return A const iterator to the end of the buffer.
     auto
     end() const noexcept -> const_iterator
     {
@@ -212,6 +278,12 @@ namespace fho
       return begin() + head;
     }
 
+    /// @brief Executes a range of jobs.
+    /// @details Executes the jobs in the provided range, either sequentially or in parallel based
+    /// on the execution policy.
+    /// @tparam `R` The type of the range.
+    /// @param `r` The range of jobs to execute.
+    /// @return The number of jobs executed.
     auto
     execute(std::ranges::range auto r) const -> std::size_t
     {
@@ -249,6 +321,14 @@ namespace fho
       return r.size();
     }
 
+    /// @brief Executes up to a specified number of jobs.
+    /// @details Consumes and executes up to `max` jobs from the buffer.
+    /// @param max The maximum number of jobs to execute. Defaults to the buffer capacity.
+    /// @return The number of jobs executed.
+    /// @example
+    /// ```cpp
+    /// buffer.execute(10); // Execute up to 10 jobs
+    /// ```
     auto
     execute(std::size_t max = capacity) -> std::size_t
     {
@@ -256,12 +336,18 @@ namespace fho
       return execute(consume(max));
     }
 
+    /// @brief Returns the maximum size of the buffer.
+    /// @details The maximum number of jobs the buffer can hold, which is `capacity - 1`.
+    /// @return The maximum size of the buffer.
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
       return capacity - 1;
     }
 
+    /// @brief Returns the current number of jobs in the buffer.
+    /// @details Calculates the number of jobs currently in the buffer.
+    /// @return The number of jobs in the buffer.
     auto
     size() const noexcept -> std::size_t
     {
@@ -270,12 +356,18 @@ namespace fho
       return iterator::mask(head - tail); // circular distance
     }
 
+    /// @brief Checks if the buffer is empty.
+    /// @details Returns true if there are no jobs in the buffer, false otherwise.
+    /// @return True if the buffer is empty, false otherwise.
     auto
     empty() const noexcept -> bool
     {
       return size() == 0;
     }
 
+    /// @brief Returns a pointer to the underlying data.
+    /// @details Provides direct access to the buffer's data.
+    /// @return A pointer to the first element in the buffer.
     auto
     data() const noexcept -> decltype(auto)
     {
