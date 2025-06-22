@@ -170,7 +170,7 @@ namespace fho
           {
             // 1. Check if quit = true. If so, bail.
             // 2. Distribute queues' jobs to executors.
-            if (details::atomic_test(stop_, std::memory_order_acquire)) [[unlikely]]
+            if (stop_.load(std::memory_order_acquire)) [[unlikely]]
             {
               break;
             }
@@ -305,7 +305,7 @@ namespace fho
 
   private:
     alignas(details::cache_line_size) mutable std::mutex queueMutex_;
-    alignas(details::cache_line_size) details::atomic_flag_t stop_{false};
+    alignas(details::cache_line_size) std::atomic_bool stop_{false};
     alignas(details::cache_line_size) queues_t queues_;
     alignas(details::cache_line_size) std::thread scheduler_;
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;

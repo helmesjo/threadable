@@ -252,7 +252,7 @@ namespace fho
     void
     cancel() noexcept
     {
-      details::atomic_set(cancelled_, std::memory_order_release);
+      cancelled_.store(true, std::memory_order_release);
     }
 
     /// @brief Checks if the job has been cancelled.
@@ -260,7 +260,7 @@ namespace fho
     auto
     cancelled() const noexcept -> bool
     {
-      return details::atomic_test(cancelled_, std::memory_order_acquire);
+      return cancelled_.load(std::memory_order_acquire);
     }
 
     /// @brief Waits for the associated job to complete.
@@ -287,7 +287,7 @@ namespace fho
     }
 
   private:
-    details::atomic_flag_t       cancelled_ = false;
+    std::atomic_bool             cancelled_ = false;
     std::atomic<atomic_state_t*> state_     = nullptr;
   };
 
