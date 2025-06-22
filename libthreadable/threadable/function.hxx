@@ -46,7 +46,11 @@ namespace fho
     constexpr auto cache_line_size = std::size_t{64}; // Fallback for unknown architectures
   #endif
 #endif
-
+    /// @brief Invokes the callable object stored in the buffer.
+    /// @details This template function casts the buffer to the callable type and invokes it using
+    /// std::invoke. Used internally to execute stored callables.
+    /// @tparam `callable_t` The type of the callable object.
+    /// @param `buffer` Pointer to the buffer containing the callable object.
     template<typename callable_t>
     inline constexpr void
     invoke_func(void* buffer)
@@ -61,6 +65,13 @@ namespace fho
       dtor
     };
 
+    /// @brief Performs special operations on the callable object in the buffer.
+    /// @details Handles copy construction, move construction, or destruction based on the method.
+    /// Used internally for callable lifecycle management.
+    /// @tparam `callable_t` The type of the callable object.
+    /// @param `self` Pointer to the target buffer.
+    /// @param `m` The operation to perform: copy_ctor, move_ctor, or dtor.
+    /// @param `that` Pointer to the source buffer for copy/move, optional for destruction.
     template<typename callable_t>
     inline constexpr void
     invoke_special_func(void* self, method m, void* that)
@@ -99,36 +110,61 @@ namespace fho
     inline constexpr std::size_t  function_buffer_meta_size =
       details::header_size + (details::func_ptr_size * 2);
 
+    /// @brief Gets a reference to the buffer's size field.
+    /// @details Returns a reference to the first byte, storing the callable's size.
+    /// @param `buf` Pointer to the buffer.
+    /// @return Reference to the size field (`uint8_t`).
     inline auto
     size(std::byte* buf) noexcept -> std::uint8_t&
     {
       return reinterpret_cast<std::uint8_t&>(*buf); // NOLINT
     }
 
+    /// @brief Gets the buffer's size field value.
+    /// @details Returns the first byte's value, representing the callable's size.
+    /// @param `buf` Const pointer to the buffer.
+    /// @return The size field value (`uint8_t`).
     inline auto
     size(std::byte const* buf) noexcept -> std::uint8_t
     {
       return static_cast<std::uint8_t>(*buf);
     }
 
+    /// @brief Sets the buffer's size field.
+    /// @details Updates the first byte with the provided size value.
+    /// @param `buf` Pointer to the buffer.
+    /// @param `s` Size value to set.
     inline void
     size(std::byte* buf, std::uint8_t s) noexcept
     {
       size(buf) = s;
     }
 
+    /// @brief Gets a reference to the buffer's invoke function pointer.
+    /// @details Returns a reference to the invoke function pointer for calling the callable.
+    /// @param `buf` Pointer to the buffer.
+    /// @return Reference to the invoke function pointer (`invoke_func_t&`).
     inline auto
     invoke_ptr(std::byte* buf) noexcept -> invoke_func_t&
     {
       return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size)); // NOLINT
     }
 
+    /// @brief Sets the buffer's invoke function pointer.
+    /// @details Updates the invoke function pointer with the provided function.
+    /// @param `buf` Pointer to the buffer.
+    /// @param `func` Invoke function to set.
     inline void
     invoke_ptr(std::byte* buf, invoke_func_t func) noexcept
     {
       invoke_ptr(buf) = func;
     }
 
+    /// @brief Gets a reference to the buffer's special function pointer.
+    /// @details Returns a reference to the special function pointer for copy/move/destroy
+    /// operations.
+    /// @param `buf` Pointer to the buffer.
+    /// @return Reference to the special function pointer (`invoke_special_func_t&`).
     inline auto
     special_func_ptr(std::byte* buf) noexcept -> invoke_special_func_t&
     {
@@ -136,24 +172,41 @@ namespace fho
         static_cast<void*>(buf + header_size + func_ptr_size)); // NOLINT
     }
 
+    /// @brief Sets the buffer's special function pointer.
+    /// @details Updates the special function pointer with the provided function.
+    /// @param `buf` Pointer to the buffer.
+    /// @param `func` Special function to set.
     inline void
     special_func_ptr(std::byte* buf, invoke_special_func_t func) noexcept
     {
       special_func_ptr(buf) = func;
     }
 
+    /// @brief Gets a pointer to the buffer's callable body.
+    /// @details Returns a pointer to the callable's storage, after header and function pointers.
+    /// @param `buf` Pointer to the buffer.
+    /// @return Pointer to the callable body (`byte*`).
     inline auto
     body_ptr(std::byte* buf) noexcept -> std::byte*
     {
       return buf + header_size + func_ptr_size + func_ptr_size;
     }
 
+    /// @brief Invokes the callable stored in the buffer.
+    /// @details Calls the callable using the buffer's invoke function pointer.
+    /// @param `buf` Pointer to the buffer containing the callable.
     inline void
     invoke(std::byte* buf) noexcept
     {
       invoke_ptr(buf)(body_ptr(buf));
     }
 
+    /// @brief Invokes the buffer's special function.
+    /// @details Performs the specified operation (copy, move, destroy) using the special function
+    /// pointer.
+    /// @param `buf` Pointer to the buffer.
+    /// @param `m` Operation to perform: copy_ctor, move_ctor, or dtor.
+    /// @param `that` Pointer to the source buffer for copy/move, optional for destruction.
     inline void
     invoke_special_func(std::byte* buf, method m, std::byte* that = nullptr) noexcept
     {
