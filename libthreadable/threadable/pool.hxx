@@ -85,7 +85,7 @@ namespace fho
     /// @brief Submits a single job to be executed by the executor.
     /// @details This method pushes the given callable into the internal `ring_buffer`. The job will
     /// be executed by the executor thread.
-    /// @tparam `callable_t` The type of the callable, must be invocable.
+    /// @tparam `Func` The type of the callable, must be invocable.
     /// @param `work` The callable to be executed as a job.
     /// @return A `job_token` for the submitted job, which can be used to monitor its state.
     auto
@@ -135,11 +135,11 @@ namespace fho
   /// auto t = queue.push([]() { std::cout << "Job executed!\n"; });
   /// t.wait();
   /// ```
-  template<std::size_t max_nr_of_jobs = details::default_capacity>
+  template<std::size_t Capacity = details::default_capacity>
   class pool
   {
   public:
-    using queue_t  = ring_buffer<max_nr_of_jobs>;
+    using queue_t  = ring_buffer<Capacity>;
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
     /// @brief Constructor that initializes the thread pool with a specified number of worker
@@ -300,7 +300,7 @@ namespace fho
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
-      return max_nr_of_jobs;
+      return Capacity;
     }
 
   private:
@@ -342,19 +342,18 @@ namespace fho
   /// @brief Pushes a job into a new queue with the specified policy in the default thread pool.
   /// @details Creates a new queue with the given policy if needed and pushes the callable and
   /// arguments into it.
-  /// @tparam `policy` The execution policy for the queue, defaults to `execution::parallel`.
-  /// @tparam `callable_t` The type of the callable, must be copy-constructible and invocable.
-  /// @tparam `arg_ts` The types of the arguments.
+  /// @tparam `Policy` The execution policy for the queue, defaults to `execution::parallel`.
+  /// @tparam `Func` The type of the callable, must be copy-constructible and invocable.
+  /// @tparam `Args` The types of the arguments.
   /// @param `func` The callable to push.
   /// @param `args` The arguments to pass to the callable.
   /// @return A `job_token` for the submitted job.
-  template<execution policy = execution::parallel, std::copy_constructible callable_t,
-           typename... arg_ts>
+  template<execution Policy = execution::parallel, std::copy_constructible Func, typename... Args>
   [[nodiscard]] inline auto
-  push(callable_t&& func, arg_ts&&... args) noexcept
+  push(Func&& func, Args&&... args) noexcept
     requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
   {
-    static auto& queue = create(policy);
+    static auto& queue = create(Policy);
     return queue.push(FWD(func), FWD(args)...);
   }
 }

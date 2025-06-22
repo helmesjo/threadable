@@ -9,20 +9,20 @@ namespace fho
   /// @details This iterator provides random access and contiguous iteration capabilities for a ring
   /// buffer, allowing efficient traversal and manipulation of elements in a circular fashion. It is
   /// designed to work with the `ring_buffer` class.
-  /// @tparam `elem_t` The type of elements stored in the ring buffer.
-  /// @tparam `index_mask` A mask used to wrap indices around the buffer size.
-  template<typename elem_t, size_t index_mask>
+  /// @tparam `T` The type of elements stored in the ring buffer.
+  /// @tparam `Mask` A (capacity) mask used to wrap indices around the buffer size.
+  template<typename T, size_t Mask>
   struct ring_iterator
   {
     using iterator_category = std::random_access_iterator_tag;
     using iterator_concept  = std::contiguous_iterator_tag;
     using difference_type   = std::ptrdiff_t;
-    using value_type        = elem_t;
+    using value_type        = T;
     using pointer           = value_type*;
     using reference         = value_type&;
     using element_type      = value_type;
 
-    inline static constexpr size_t buffer_size = index_mask + 1;
+    inline static constexpr size_t buffer_size = Mask + 1;
 
     /// @brief Masks an index to wrap around the buffer size.
     /// @param `index` The index to mask.
@@ -30,7 +30,7 @@ namespace fho
     inline static constexpr auto
     mask(size_t index) noexcept
     {
-      return index & index_mask;
+      return index & Mask;
     }
 
     ring_iterator() = default;

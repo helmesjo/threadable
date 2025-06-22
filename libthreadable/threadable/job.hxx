@@ -72,15 +72,15 @@ namespace fho
 
     /// @brief Assigns a callable to the job.
     /// @details Stores the callable and its arguments, setting the job state to active.
-    /// @tparam `callable_t` The type of the callable.
-    /// @tparam `arg_ts` The types of the arguments.
+    /// @tparam `Func` The type of the callable.
+    /// @tparam `Args` The types of the arguments.
     /// @param `func` The callable to store.
     /// @param `args` The arguments to bind to the callable.
     /// @return A reference to this job.
-    template<typename callable_t, typename... arg_ts>
-      requires std::invocable<callable_t, arg_ts...>
+    template<typename Func, typename... Args>
+      requires std::invocable<Func, Args...>
     auto
-    assign(callable_t&& func, arg_ts&&... args) noexcept -> decltype(auto)
+    assign(Func&& func, Args&&... args) noexcept -> decltype(auto)
     {
       func_.assign(FWD(func), FWD(args)...);
       state.store(job_state::active, std::memory_order_relaxed);
@@ -91,13 +91,13 @@ namespace fho
 
     /// @brief Assigns a callable to the job.
     /// @details Stores the callable, setting the job state to active.
-    /// @tparam `callable_t` The type of the callable.
+    /// @tparam `Func` The type of the callable.
     /// @param `func` The callable to store.
     /// @return A reference to this job.
-    template<typename callable_t>
-      requires std::invocable<callable_t>
+    template<typename Func>
+      requires std::invocable<Func>
     auto
-    operator=(callable_t&& func) noexcept -> auto&
+    operator=(Func&& func) noexcept -> auto&
     {
       assign(FWD(func));
       return *this;

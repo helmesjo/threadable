@@ -49,7 +49,7 @@ namespace fho
   /// to manage the buffer's state and supports both sequential and parallel execution of jobs based
   /// on the specified policy. The buffer is templated on its capacity, which must be a power of 2
   /// and greater than 1.
-  /// @tparam `capacity` The size of the ring buffer, must be a power of 2 and greater than 1.
+  /// @tparam `Capacity` The size of the ring buffer, must be a power of 2 and greater than 1.
   /// Defaults to 65536 (`1 << 16`).
   /// @example
   /// ```cpp
@@ -58,17 +58,17 @@ namespace fho
   /// auto range = buffer.consume();
   /// buffer.execute(range);
   /// ```
-  template<std::size_t capacity = details::default_capacity>
+  template<std::size_t Capacity = details::default_capacity>
   class ring_buffer
   {
     using value_type                    = job;
     using atomic_index_t                = std::atomic_size_t;
     using index_t                       = typename atomic_index_t::value_type;
-    static constexpr auto index_mask    = capacity - 1u;
+    static constexpr auto index_mask    = Capacity - 1u;
     static constexpr auto null_callback = [](ring_buffer&) {};
 
-    static_assert(capacity > 1, "capacity must be greater than 1");
-    static_assert((capacity & index_mask) == 0, "capacity must be a power of 2");
+    static_assert(Capacity > 1, "capacity must be greater than 1");
+    static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
 
   public:
     using iterator       = ring_iterator<value_type, index_mask>;       // NOLINT
@@ -127,8 +127,8 @@ namespace fho
     /// @brief Pushes a job into the ring buffer with a job token.
     /// @details Adds a callable to the buffer, associating it with a job token for state
     /// monitoring.
-    /// @tparam `callable_t` The type of the callable.
-    /// @tparam `arg_ts` The types of the arguments.
+    /// @tparam `Func` The type of the callable.
+    /// @tparam `Args` The types of the arguments.
     /// @param `token` The job token to associate with the job.
     /// @param `func` The callable to add to the buffer.
     /// @param `args` The arguments to pass to the callable.
@@ -138,11 +138,10 @@ namespace fho
     /// auto token = fho::job_token{};
     /// buffer.push(token, []() { cout << "Job executed!\n"; });
     /// ```
-    template<std::copy_constructible callable_t, typename... arg_ts>
-      requires std::invocable<callable_t, arg_ts...> ||
-               std::invocable<callable_t, job_token&, arg_ts...>
+    template<std::copy_constructible Func, typename... Args>
+      requires std::invocable<Func, Args...> || std::invocable<Func, job_token&, Args...>
     auto
-    push(job_token& token, callable_t&& func, arg_ts&&... args) noexcept -> job_token&
+    push(job_token& token, Func&& func, Args&&... args) noexcept -> job_token&
     {
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_relaxed);
@@ -162,7 +161,7 @@ namespace fho
       }
 
       // 2. Assign `value_type`.
-      if constexpr (std::invocable<callable_t, job_token&, arg_ts...>)
+      if constexpr (std::invocable<Func, job_token&, Args...>)
       {
         elem.assign(FWD(func), std::ref(token), FWD(args)...);
       }
@@ -195,8 +194,8 @@ namespace fho
 
     /// @brief Pushes a job into the ring buffer.
     /// @details Adds a callable to the buffer and returns a new job token.
-    /// @tparam `callable_t` The type of the callable.
-    /// @tparam `arg_ts` The types of the arguments.
+    /// @tparam `Func` The type of the callable.
+    /// @tparam `Args` The types of the arguments.
     /// @param `func` The callable to add to the buffer.
     /// @param `args` The arguments to pass to the callable.
     /// @return A new job token for the added job.
@@ -204,10 +203,10 @@ namespace fho
     /// ```cpp
     /// auto token = buffer.push([]() { cout << "Job executed!\n"; });
     /// ```
-    template<std::copy_constructible callable_t, typename... arg_ts>
-      requires std::invocable<callable_t, arg_ts...>
+    template<std::copy_constructible Func, typename... Args>
+      requires std::invocable<Func, Args...>
     auto
-    push(callable_t&& func, arg_ts&&... args) noexcept -> job_token
+    push(Func&& func, Args&&... args) noexcept -> job_token
     {
       job_token token;
       push(token, FWD(func), FWD(args)...);
@@ -232,7 +231,7 @@ namespace fho
     /// @param `max` The maximum number of jobs to consume. Defaults to the buffer capacity.
     /// @return A subrange of iterators pointing to the consumed jobs.
     auto
-    consume(std::size_t max = capacity) noexcept -> std::ranges::subrange<iterator>
+    consume(std::size_t max = Capacity) noexcept -> std::ranges::subrange<iterator>
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
@@ -329,7 +328,7 @@ namespace fho
     /// buffer.execute(10); // Execute up to 10 jobs
     /// ```
     auto
-    execute(std::size_t max = capacity) -> std::size_t
+    execute(std::size_t max = Capacity) -> std::size_t
     {
       assert(max > 0);
       return execute(consume(max));
@@ -341,7 +340,7 @@ namespace fho
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
-      return capacity - 1;
+      return Capacity - 1;
     }
 
     /// @brief Returns the current number of jobs in the buffer.
@@ -397,7 +396,7 @@ namespace fho
 
     alignas(details::cache_line_size)
       std::vector<value_type, aligned_allocator<value_type, details::cache_line_size>> elems_{
-        capacity};
+        Capacity};
   };
 }
 

@@ -34,19 +34,17 @@ CheckOptions:
   - key:             readability-identifier-naming.ParameterCase
     value:           camelBack
   - key:             readability-identifier-naming.TemplateParameterCase
-    value:           lower_case
-  - key:             readability-identifier-naming.TemplateParameterSuffix
-    value:           "_t"
+    value:           CamelCase
   - key:             readability-identifier-naming.TemplateParameterIgnoredRegexp
-    value:           "([A-Z]|[a-z_]+|expr-type)"
+    value:           "([A-Z]|expr-type|[A-Za-z]+_)"
   - key:             readability-identifier-naming.TemplateTemplateParameterCase
-    value:           lower_case
+    value:           CamelCase
   - key:             readability-identifier-naming.TypeAliasCase
     value:           lower_case
   - key:             readability-identifier-naming.TypeAliasSuffix
     value:           _t
   - key:             readability-identifier-naming.TypeAliasIgnoredRegexp
-    value:           "[A-Z]|(iterator_category|iterator_concept|difference_type|value_type|pointer|reference|element_type|promise_type|size_type|other)"
+    value:           "[A-Z]|([a-z_]*type|[a-z_]+types|iterator_category|iterator_concept|difference_type|pointer|reference|other)"
   - key:             readability-identifier-naming.UnionCase
     value:           lower_case
   - key:             readability-identifier-naming.VariableCase
