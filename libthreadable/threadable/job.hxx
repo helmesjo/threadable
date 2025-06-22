@@ -33,12 +33,27 @@ namespace fho
       cache_line_size - sizeof(job_base) - sizeof(function<0>);
   }
 
+  /// @brief A class representing a job that can be executed, with state management.
+  /// @details The `job` class encapsulates a callable object and its state, allowing for execution,
+  /// state checking, and reset. It is designed to be used in a threading context, where jobs can be
+  /// queued and executed by threads. The class ensures thread-safe operations and is aligned to
+  /// cache line boundaries for performance.
+  /// @example
+  /// ```cpp
+  /// auto j = fho::job{};
+  /// j.assign([]() { cout << "Job executed!\n"; });
+  /// j();  // Executes the job
+  /// ```
   struct alignas(details::cache_line_size) job final : details::job_base
   {
     using function_t = function<details::job_buffer_size>;
 
+    /// @brief Default constructor.
+    /// @details Initializes the job with an empty state.
     job() = default;
 
+    /// @brief Destructor.
+    /// @details Resets the job to ensure proper cleanup.
     ~job()
     {
       reset();
@@ -49,6 +64,13 @@ namespace fho
     auto operator=(job&&) -> auto&      = delete;
     auto operator=(job const&) -> auto& = delete;
 
+    /// @brief Assigns a callable to the job.
+    /// @details Stores the callable and its arguments, setting the job state to active.
+    /// @tparam `callable_t` The type of the callable.
+    /// @tparam `arg_ts` The types of the arguments.
+    /// @param `func` The callable to store.
+    /// @param `args` The arguments to bind to the callable.
+    /// @return A reference to this job.
     template<typename callable_t, typename... arg_ts>
       requires std::invocable<callable_t, arg_ts...>
     auto
@@ -61,6 +83,11 @@ namespace fho
       // details::atomic_notify_all(active);
     }
 
+    /// @brief Assigns a callable to the job.
+    /// @details Stores the callable, setting the job state to active.
+    /// @tparam `callable_t` The type of the callable.
+    /// @param `func` The callable to store.
+    /// @return A reference to this job.
     template<typename callable_t>
       requires std::invocable<callable_t>
     auto
@@ -70,6 +97,9 @@ namespace fho
       return *this;
     }
 
+    /// @brief Resets the job to an empty state.
+    /// @details Clears the stored callable and sets the state to empty.
+    /// @return A reference to this job.
     auto
     operator=(std::nullptr_t) noexcept -> auto&
     {
@@ -77,6 +107,8 @@ namespace fho
       return *this;
     }
 
+    /// @brief Executes the stored callable.
+    /// @details Invokes the callable, resets the job & notifies waiting threads if successful.
     void
     operator()() noexcept
     {
@@ -90,11 +122,16 @@ namespace fho
       }
     }
 
+    /// @brief Checks if the job is active.
+    /// @details Returns true if the job state is active, false otherwise.
     operator bool() const noexcept
     {
       return !done();
     }
 
+    /// @brief Resets the job to an empty state.
+    /// @details Clears the stored callable and sets the state to empty.
+    /// @return The previous state of the job.
     auto
     reset() noexcept -> job_state
     {
@@ -102,12 +139,17 @@ namespace fho
       return state.exchange(job_state::empty, std::memory_order_release);
     }
 
+    /// @brief Checks if the job is done.
+    /// @details Returns true if the job state is not active.
     auto
     done() const noexcept -> bool
     {
       return state.load(std::memory_order_acquire) != job_state::active;
     }
 
+    /// @brief Gets the internal function object.
+    /// @details Provides access to the stored callable for inspection or modification.
+    /// @return A reference to the internal function object.
     auto
     get() noexcept -> auto&
     {
