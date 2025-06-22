@@ -492,61 +492,111 @@ namespace fho
   function_buffer(callable_t&&, arg_ts&&...)
     -> function_buffer<required_buffer_size_v<callable_t, arg_ts...>>;
 
+  /// @brief A dynamic function wrapper that can store callables of any size.
+  /// @details The `function_dyn` class is designed to store and invoke callable objects of
+  /// arbitrary size by dynamically allocating memory on the heap. It is suitable for scenarios
+  /// where the size of the callable is unknown or exceeds the fixed buffer size of `fho::function`.
+  /// It provides similar functionality to `std::function` but with custom optimizations and
+  /// constraints.
+  /// @example
+  /// ```cpp
+  /// auto lambda = []() { std::cout << "Hello, World!\n"; };
+  /// auto dyn_func = fho::function_dyn(lambda);
+  /// dyn_func(); // Invokes the lambda
+  /// ```
   struct function_dyn
   {
     auto operator=(function_dyn const&) -> function_dyn& = delete;
     auto operator=(function_dyn&&) -> function_dyn&      = delete;
 
+    /// @brief Copy constructor.
+    /// @details Creates a new `function_dyn` by copying the contents of another `function_dyn`.
+    /// This involves dynamically allocating new memory and copying the stored callable.
+    /// @param `that` The `function_dyn` to copy from.
     function_dyn(function_dyn const& that)
     {
       copy_buffer({that.buffer_, that.size()});
     }
 
+    /// @brief Move constructor.
+    /// @details Creates a new `function_dyn` by moving the contents from another `function_dyn`.
+    /// This transfers ownership of the dynamically allocated buffer.
+    /// @param `that` The `function_dyn` to move from.
     function_dyn(function_dyn&& that) noexcept
       : buffer_(that.buffer_)
     {
       that.buffer_ = nullptr;
     }
 
-    template<std::size_t buffer_size>
-    explicit function_dyn(function_buffer<buffer_size> const& buffer)
+    /// @brief Constructor that takes a `function_buffer`.
+    /// @details Initializes the `function_dyn` with the contents of a `function_buffer`, copying
+    /// the stored callable.
+    /// @tparam `size` The size of the `function_buffer`.
+    /// @param `buffer` The `function_buffer` to copy from.
+    template<std::size_t size>
+    explicit function_dyn(function_buffer<size> const& buffer)
     {
       copy_buffer({buffer.data(), buffer.size()});
     }
 
+    /// @brief Constructor that takes a `function<size>`.
+    /// @details Initializes the `function_dyn` with the contents of a `function<size>`, copying the
+    /// stored callable.
+    /// @tparam `size` The size of the `function`.
+    /// @param `func` The `function<size>` to copy from.
     template<std::size_t size>
     function_dyn(function<size> const& func) noexcept
       : function_dyn(func.buffer())
     {}
 
+    /// @brief Constructor that takes a callable.
+    /// @details Initializes the `function_dyn` with the provided callable, storing it dynamically.
+    /// @tparam `callable_t` The type of the callable.
+    /// @param `callable` The callable to store.
+    /// @requires `std::invocable<callable_t&&>` and not `fho::is_function<callable_t>` and not
+    /// `fho::is_function_dyn<callable_t>`
     function_dyn(std::invocable auto&& callable) noexcept
       requires (!is_function_v<decltype(callable)> && !is_function_dyn_v<decltype(callable)>)
       : function_dyn(function_buffer(FWD(callable)))
     {}
 
+    /// @brief Destructor.
+    /// @details Frees the dynamically allocated memory and destroys the stored callable if one
+    /// exists.
     ~function_dyn()
     {
       reset();
     }
 
+    /// @brief Invokes the stored callable.
+    /// @details Calls the stored callable with no arguments.
     inline void
     operator()()
     {
       details::invoke(buffer_);
     }
 
+    /// @brief Conversion to bool.
+    /// @details Returns true if the `function_dyn` contains a valid callable, false otherwise.
     inline
     operator bool() const noexcept
     {
       return size() != 0;
     }
 
+    /// @brief Gets the size of the stored callable.
+    /// @details Returns the number of bytes used by the stored callable, or 0 if no callable is
+    /// stored.
+    /// @return The size of the stored callable in bytes.
     [[nodiscard]] inline auto
     size() const noexcept -> std::uint8_t
     {
       return buffer_ ? details::size(buffer_) : 0;
     }
 
+    /// @brief Resets the `function_dyn`.
+    /// @details Frees the dynamically allocated memory and sets the `function_dyn` to an empty
+    /// state.
     inline void
     reset() noexcept
     {
