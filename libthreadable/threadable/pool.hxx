@@ -318,18 +318,36 @@ namespace fho
     using queue_t = pool_t::queue_t;
   }
 
+  /// @brief Creates a new job queue in the default thread pool with the specified execution policy.
+  /// @details This function is a convenience wrapper around `details::pool().create(policy)`.
+  /// @param `policy` The execution policy for the new queue. Defaults to `execution::parallel`.
+  /// @return A reference to the newly created queue.
   [[nodiscard]] inline auto
   create(execution policy = execution::parallel) noexcept -> details::queue_t&
   {
     return details::pool().create(policy);
   }
 
+  /// @brief Removes a queue from the default thread pool.
+  /// @details This function is a convenience wrapper around
+  /// `details::pool().remove(std::move(queue))`.
+  /// @param `queue` The queue to remove, moved into the function.
+  /// @return True if the queue was found and removed, false otherwise.
   inline auto
   remove(details::queue_t&& queue) noexcept -> bool
   {
     return details::pool().remove(std::move(queue));
   }
 
+  /// @brief Pushes a job into a new queue with the specified policy in the default thread pool.
+  /// @details Creates a new queue with the given policy if needed and pushes the callable and
+  /// arguments into it.
+  /// @tparam `policy` The execution policy for the queue, defaults to `execution::parallel`.
+  /// @tparam `callable_t` The type of the callable, must be copy-constructible and invocable.
+  /// @tparam `arg_ts` The types of the arguments.
+  /// @param `func` The callable to push.
+  /// @param `args` The arguments to pass to the callable.
+  /// @return A `job_token` for the submitted job.
   template<execution policy = execution::parallel, std::copy_constructible callable_t,
            typename... arg_ts>
   [[nodiscard]] inline auto
