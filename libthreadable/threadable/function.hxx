@@ -629,6 +629,17 @@ namespace fho
                          buf.assign(FWD(callable), FWD(args)...);
                        };
 
+  /// @brief A type-erased function wrapper with a fixed-size buffer.
+  /// @details The `function` class template provides a way to store and invoke callable objects
+  /// (such as functions, lambdas, or functors) within a fixed-size buffer. It is designed to be
+  /// efficient for small callables by storing them on the stack, while larger callables are handled
+  /// dynamically. The buffer size can be specified at compile time, defaulting to the CPU cache
+  /// line size minus the size of a function pointer.
+  /// @example
+  /// ```cpp
+  /// fho::function<> f = []() { std::cout << "Hello, World!\n"; };
+  /// f();
+  /// ```
   template<std::size_t buffer_size = details::cache_line_size - sizeof(details::invoke_func_t)>
   struct function
   {
@@ -637,20 +648,39 @@ namespace fho
     buffer_t buffer_;
 
   public:
+    /// @brief Default constructor.
+    /// @details Initializes an empty `function` object with no stored callable.
     function() = default;
 
+    /// @brief Constructor that takes a `buffer_t`.
+    /// @details Initializes the `function` with the provided `buffer_t`, which is a
+    /// `function_buffer`.
+    /// @param `buffer` The `buffer_t` to initialize with.
     function(buffer_t buffer)
       : buffer_(std::move(buffer))
     {}
 
+    /// @brief Copy constructor.
+    /// @details Creates a new `function` by copying the contents of another `function`.
+    /// @param `func` The `function` to copy from.
     function(function const& func)
       : buffer_(func.buffer_)
     {}
 
+    /// @brief Move constructor.
+    /// @details Creates a new `function` by moving the contents from another `function`.
+    /// @param func The `function` to move from.
     function(function&& func) noexcept
       : buffer_(std::move(func.buffer_))
     {}
 
+    /// @brief Constructor that takes a callable and its arguments.
+    /// @details Initializes the `function` with the provided callable and its arguments, storing
+    /// them for later invocation.
+    /// @tparam `arg_ts` The types of the arguments.
+    /// @param `callable` The callable to store.
+    /// @param `args` The arguments to bind to the callable.
+    /// @requires `std::invocable<callable_t&&, arg_ts&&...>`
     template<typename... arg_ts>
     explicit function(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
       requires (!is_function_v<decltype(callable)>) &&
@@ -659,13 +689,23 @@ namespace fho
       assign(FWD(callable), FWD(args)...);
     }
 
+    /// @brief Destructor.
+    /// @details Calls `reset()` to properly destroy the stored callable if one exists.
     ~function()
     {
       reset();
     }
 
+    /// @brief Copy assignment operator.
+    /// @details Assigns the contents of another `function` to this one.
+    /// @param `func` The `function` to copy from.
+    /// @return A reference to this `function`.
     auto operator=(function const& func) noexcept -> function& = default;
 
+    /// @brief Move assignment operator.
+    /// @details Moves the contents from another `function` to this one.
+    /// @param `func` The `function` to move from.
+    /// @return A reference to this `function`.
     auto
     operator=(function&& func) noexcept -> function&
     {
@@ -673,6 +713,10 @@ namespace fho
       return *this;
     }
 
+    /// @brief Assignment operator for invocable objects.
+    /// @details Assigns a new callable to this `function`.
+    /// @param `func` The callable to assign.
+    /// @return A reference to this `function`.
     auto
     operator=(std::invocable auto&& func) noexcept -> function&
       requires std::same_as<function, std::remove_cvref_t<decltype(func)>> || true
@@ -681,6 +725,10 @@ namespace fho
       return *this;
     }
 
+    /// @brief Assignment operator for nullptr.
+    /// @details Resets the `function` to an empty state.
+    /// @param `nullptr_t` The nullptr value.
+    /// @return A reference to this `function`.
     auto
     operator=(std::nullptr_t) noexcept -> auto&
     {
@@ -688,30 +736,46 @@ namespace fho
       return *this;
     }
 
+    /// @brief Invokes the stored callable.
+    /// @details Calls the stored callable with no arguments.
     inline void
     operator()()
     {
       details::invoke(buffer_.data());
     }
 
+    /// @brief Conversion to bool.
+    /// @details Returns true if the `function` contains a valid callable, false otherwise.
     inline
     operator bool() const noexcept
     {
       return buffer_.size() != 0;
     }
 
+    /// @brief Gets the internal buffer.
+    /// @details Returns a const reference to the internal `buffer_t`.
+    /// @return A const reference to the internal buffer.
     auto
     buffer() const noexcept -> buffer_t const&
     {
       return buffer_;
     }
 
+    /// @brief Gets the internal buffer.
+    /// @details Returns a reference to the internal `buffer_t`.
+    /// @return A reference to the internal buffer.
     auto
     buffer() noexcept -> buffer_t&
     {
       return buffer_;
     }
 
+    /// @brief Assigns a new callable to the function.
+    /// @details Stores the provided callable and its arguments in the function.
+    /// @tparam `arg_ts` The types of the arguments.
+    /// @param `callable` The callable to store.
+    /// @param `args` The arguments to bind to the callable.
+    /// @requires `std::invocable<callable_t&&, arg_ts&&...>`
     template<typename... arg_ts>
     void
     assign(std::invocable<arg_ts...> auto&& callable, arg_ts&&... args) noexcept
@@ -720,12 +784,17 @@ namespace fho
       buffer_.assign(FWD(callable), FWD(args)...);
     }
 
+    /// @brief Resets the function.
+    /// @details Clears the stored callable, setting the function to an empty state.
     inline void
     reset() noexcept
     {
       buffer_.reset();
     }
 
+    /// @brief Gets the size of the stored callable.
+    /// @details Returns the number of bytes used by the stored callable.
+    /// @return The size of the stored callable in bytes.
     [[nodiscard]] inline auto
     size() const noexcept -> std::uint8_t
     {
