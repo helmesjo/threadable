@@ -80,14 +80,15 @@ namespace fho
     // Make sure iterator is valid for parallelization with the standard algorithms
     static_assert(std::random_access_iterator<iterator>);
     static_assert(std::contiguous_iterator<iterator>);
+
+    ring_buffer(ring_buffer const&) = delete;
+    ~ring_buffer()                  = default;
+
     /// @brief Default constructor.
     /// @details Initializes the ring buffer with the specified execution policy. Defaults to
     /// parallel execution.
     /// @param `policy` The execution policy for job execution. Can be `execution::sequential` or
     /// `execution::parallel`.
-    ring_buffer(ring_buffer const&) = delete;
-    ~ring_buffer()                  = default;
-
     ring_buffer(execution policy = execution::parallel) noexcept
       : policy_(policy)
     {}
