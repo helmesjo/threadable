@@ -1,82 +1,88 @@
 #pragma once
 
 #include <atomic>
-#include <cstdint>
 #include <utility>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
-namespace fho::details
+namespace fho
 {
-  template<typename width_t>
-  using atomic_bitfield_t = std::atomic<width_t>;
-
-  template<auto mask, typename width_t>
-  inline auto
-  test(atomic_bitfield_t<width_t> const& field, std::memory_order order = std::memory_order_relaxed)
-    -> bool
-    requires (sizeof(mask) <= sizeof(width_t))
+  template<typename T>
+  class atomic_bitfield final : std::atomic<T>
   {
-    return mask & field.load(order);
-  }
+  public:
+    using std::atomic<T>::atomic;
+    using std::atomic<T>::operator=;
+    using std::atomic<T>::load;
+    using std::atomic<T>::store;
+    using std::atomic<T>::exchange;
+    using std::atomic<T>::compare_exchange_weak;
+    using std::atomic<T>::compare_exchange_strong;
+    using std::atomic<T>::wait;
+    using std::atomic<T>::notify_one;
+    using std::atomic<T>::notify_all;
 
-  template<auto mask, bool value, typename width_t>
-    requires (mask < sizeof(width_t) * 8)
-  inline auto
-  test_and_set(atomic_bitfield_t<width_t>& field,
-               std::memory_order           order = std::memory_order_relaxed) -> bool
-  {
-    if constexpr (value)
+    template<T mask>
+    [[nodiscard]] inline auto
+    test(std::memory_order order = std::memory_order_relaxed) const noexcept -> bool
     {
-      // Set the bit
-      return mask & field.fetch_or(mask, order);
+      return mask & this->load(order);
     }
-    else
+
+    template<T mask, bool value>
+    inline auto
+    test_and_set(std::memory_order order = std::memory_order_relaxed) noexcept -> bool
     {
-      // Clear the bit
-      return mask & field.fetch_and(static_cast<width_t>(~mask), order);
+      if constexpr (value)
+      {
+        // Set the bit
+        return mask & this->fetch_or(mask, order);
+      }
+      else
+      {
+        // Clear the bit
+        return mask & this->fetch_and(static_cast<T>(~mask), order);
+      }
     }
-  }
 
-  template<auto mask, bool value, typename width_t>
-    requires (sizeof(mask) <= sizeof(width_t))
-  inline void
-  set(atomic_bitfield_t<width_t>& field, std::memory_order order = std::memory_order_relaxed)
-  {
-    (void)test_and_set<mask, value>(field, order);
-  }
-
-  template<auto mask, typename width_t>
-    requires (sizeof(mask) <= sizeof(width_t))
-  inline auto
-  reset(atomic_bitfield_t<width_t>& field, std::memory_order order = std::memory_order_relaxed)
-    -> bool
-  {
-    return test_and_set<mask, false>(field, order);
-  }
-
-  template<typename width_t>
-  inline void
-  clear(atomic_bitfield_t<width_t>& field, std::memory_order order = std::memory_order_relaxed)
-  {
-    field.store(0, order);
-  }
-
-  template<auto mask, bool old, typename width_t>
-    requires (sizeof(mask) <= sizeof(width_t))
-  inline void
-  wait(atomic_bitfield_t<width_t> const& field, std::memory_order order = std::memory_order_relaxed)
-  {
-    auto current = field.load(order);
-    while (static_cast<bool>(current & mask) == old)
+    template<T mask, bool value>
+    inline void
+    set(std::memory_order order = std::memory_order_relaxed) noexcept
     {
-      // Wait for any change in atomicVar
-      field.wait(current, order);
-
-      // Reload the current value
-      current = field.load(order);
+      (void)test_and_set<mask, value>(order);
     }
-  }
+
+    template<T mask>
+    inline auto
+    reset(std::memory_order order = std::memory_order_relaxed) noexcept -> bool
+    {
+      return test_and_set<mask, false>(order);
+    }
+
+    inline void
+    clear(std::memory_order order = std::memory_order_relaxed) noexcept
+    {
+      this->store(0, order);
+    }
+
+    template<T mask, bool old>
+    inline void
+    wait(std::memory_order order = std::memory_order_relaxed) const noexcept
+    {
+      auto current = this->load(order);
+      while (static_cast<bool>(current & mask) == old)
+      {
+        // Wait for any change in atomicVar
+        this->wait(current, order);
+
+        // Reload the current value
+        current = this->load(order);
+      }
+    }
+  };
+
+  static_assert(sizeof(atomic_bitfield<std::uint8_t>) == sizeof(std::atomic<std::uint8_t>));
+  static_assert(alignof(atomic_bitfield<std::uint8_t>) == alignof(std::atomic<std::uint8_t>));
 }
 
 #if 0 // __cpp_lib_atomic_flag_test >= 201907 // a bunch of compilers define this without supporting

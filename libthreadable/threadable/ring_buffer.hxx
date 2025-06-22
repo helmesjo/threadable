@@ -156,9 +156,9 @@ namespace fho
       }
 
       // Wait if slot is occupied.
-      if (fho::details::test<job_state::active>(elem.state)) [[unlikely]]
+      if (elem.state.template test<job_state::active>()) [[unlikely]]
       {
-        fho::details::wait<job_state::active, true>(elem.state);
+        elem.state.template wait<job_state::active, true>();
       }
 
       // 2. Assign `value_type`.
@@ -306,11 +306,10 @@ namespace fho
         // already consumed but being processed by another
         // thread.
         auto const prev = b - 1;
-        if ((prev != e) &&
-            fho::details::test<job_state::active>(prev->state, std::memory_order_relaxed))
+        if ((prev != e) && prev->state.template test<job_state::active>(std::memory_order_relaxed))
           [[unlikely]]
         {
-          fho::details::wait<job_state::active, true>(prev->state);
+          prev->state.template wait<job_state::active, true>();
         }
         std::for_each(b, e,
                       [](value_type& elem)

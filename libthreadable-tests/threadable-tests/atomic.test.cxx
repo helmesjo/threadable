@@ -1,11 +1,9 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/atomic.hxx>
 
-#include <bitset>
-
 SCENARIO("atomic_bitfield")
 {
-  using bitfield_t = fho::details::atomic_bitfield_t<std::size_t>;
+  using bitfield_t = fho::atomic_bitfield<std::uint8_t>;
   GIVEN("a bitfield set to 0")
   {
     auto field = bitfield_t{0};
@@ -13,10 +11,10 @@ SCENARIO("atomic_bitfield")
     {
       THEN("new value is assigned and old is returned")
       {
-        REQUIRE_FALSE(fho::details::test_and_set<1 << 5, true>(field));
-        REQUIRE(fho::details::test<1 << 5>(field));
-        REQUIRE(field.load() == std::bitset<8>("00100000").to_ulong());
-        fho::details::wait<1 << 5, false>(field);
+        REQUIRE_FALSE(field.test_and_set<(1 << 5), true>());
+        REQUIRE(field.test<(1 << 5)>());
+        REQUIRE(field.load() == 0b00100000);
+        field.wait<(1 << 5), false>();
       }
     }
   }
@@ -27,9 +25,9 @@ SCENARIO("atomic_bitfield")
     {
       THEN("new value is assigned and old is returned")
       {
-        REQUIRE(fho::details::test_and_set<1 << 2, false>(field));
-        REQUIRE(field.load() == std::bitset<8>("11111011").to_ulong());
-        fho::details::wait<1 << 2, true>(field);
+        REQUIRE(field.test_and_set<(1 << 2), false>());
+        REQUIRE(field.load() == 0b11111011);
+        field.wait<(1 << 2), true>();
       }
     }
   }

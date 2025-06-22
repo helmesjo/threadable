@@ -26,7 +26,7 @@ namespace fho
 
   static_assert(sizeof(job_state) == 1);
 
-  using atomic_state_t = std::atomic<job_state>;
+  using atomic_state_t = fho::atomic_bitfield<job_state>;
 
   namespace details
   {
