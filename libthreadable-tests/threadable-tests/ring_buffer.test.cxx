@@ -1,4 +1,5 @@
 #include <threadable-tests/doctest_include.hxx>
+#include <threadable/execution.hxx>
 #include <threadable/ring_buffer.hxx>
 
 #include <algorithm>
@@ -51,8 +52,7 @@ SCENARIO("ring_buffer: push & claim")
           REQUIRE_NOTHROW(ring.consume());
           REQUIRE(ring.size() == 0);
           REQUIRE(ring.empty());
-          REQUIRE(ring.execute() == 0);
-          REQUIRE(ring.execute() == 0);
+          REQUIRE(fho::execute(ring.consume()) == 0);
           REQUIRE_NOTHROW(ring.clear());
         }
       }
@@ -148,7 +148,7 @@ SCENARIO("ring_buffer: push & claim")
       THEN("the token will be passed when the job is executed")
       {
         token.cancel();
-        REQUIRE(ring.execute() == 1);
+        REQUIRE(fho::execute(ring.consume()) == 1);
         REQUIRE(wasCancelled);
       }
     }
@@ -171,7 +171,7 @@ SCENARIO("ring_buffer: push & claim")
         // NOLINTEND
 
         REQUIRE(ring.size() == 1);
-        REQUIRE(ring.execute() == 1);
+        REQUIRE(fho::execute(ring.consume()) == 1);
         REQUIRE(called == 16);
       }
     }
@@ -258,38 +258,6 @@ SCENARIO("ring_buffer: alignment")
   }
 }
 
-SCENARIO("ring_buffer: execution order")
-{
-  GIVEN("a sequential ring")
-  {
-    auto ring = fho::ring_buffer<fho::job, 32>(fho::execution::sequential);
-
-    auto order = std::vector<std::size_t>{};
-    auto m     = std::mutex{};
-    for (std::size_t i = 0; i < ring.max_size(); ++i)
-    {
-      ring.push(
-        [&order, &m, i]
-        {
-          auto _ = std::scoped_lock{m};
-          order.push_back(i);
-        });
-    }
-    WHEN("ring & execute jobs")
-    {
-      REQUIRE(ring.execute() == ring.max_size());
-      THEN("jobs are executed FIFO")
-      {
-        REQUIRE(order.size() == ring.max_size());
-        for (std::size_t i = 0; i < ring.max_size(); ++i)
-        {
-          REQUIRE(order[i] == i);
-        }
-      }
-    }
-  }
-}
-
 SCENARIO("ring_buffer: completion token")
 {
   auto ring = fho::ring_buffer{};
@@ -310,7 +278,7 @@ SCENARIO("ring_buffer: completion token")
     }
     THEN("token is done after job was invoked")
     {
-      REQUIRE(ring.execute() == 1);
+      REQUIRE(fho::execute(ring.consume()) == 1);
       REQUIRE(token.done());
     }
     WHEN("token is cancelled")
@@ -364,7 +332,7 @@ SCENARIO("ring_buffer: stress-test")
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       auto token = ring.push([] {});
-      REQUIRE(ring.execute() == 1);
+      REQUIRE(fho::execute(ring.consume()) == 1);
       ++jobsExecuted;
       REQUIRE(token.done());
     }
@@ -403,7 +371,7 @@ SCENARIO("ring_buffer: stress-test")
           {
             while (producer.joinable() || !ring.empty())
             {
-              ring.execute();
+              fho::execute(ring.consume());
             }
           });
 
@@ -458,7 +426,7 @@ SCENARIO("ring_buffer: stress-test")
                                      }) ||
                  !ring.empty())
           {
-            ring.execute();
+            fho::execute(ring.consume());
           }
         });
 

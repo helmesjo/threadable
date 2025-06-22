@@ -9,6 +9,56 @@
 
 namespace fho
 {
+  enum class execution
+  {
+    sequential,
+    parallel
+  };
+
+  /// @brief Executes a range of jobs.
+  /// @details Invokes the callables in the provided range, either sequentially or in parallel based
+  /// on the execution policy.
+  /// @tparam `R` The type of the range.
+  /// @param `r` The range of jobs to execute.
+  /// @param `policy` Execution policy.
+  /// @return The number of jobs executed.
+  template<typename R>
+  inline auto
+  execute(std::ranges::subrange<R> r, execution policy = execution::parallel)
+    requires std::invocable<std::ranges::range_value_t<decltype(r)>>
+  {
+    using value_t = std::ranges::range_value_t<decltype(r)>;
+    auto const b  = std::begin(r);
+    auto const e  = std::end(r);
+    if (policy == execution::parallel) [[likely]]
+    {
+      std::for_each(std::execution::par, b, e,
+                    [](value_t& elem)
+                    {
+                      elem();
+                    });
+    }
+    else [[unlikely]]
+    {
+      // Make sure previous job has been executed, where
+      // `b-1` is `e` if `r` wraps around, or active if it's
+      // already consumed but being processed by another
+      // thread.
+      auto const prev = b - 1;
+      if ((prev != e) && prev->state.template test<job_state::active>(std::memory_order_relaxed))
+        [[unlikely]]
+      {
+        prev->state.template wait<job_state::active, true>();
+      }
+      std::for_each(b, e,
+                    [](value_t& elem)
+                    {
+                      elem();
+                    });
+    }
+    return r.size();
+  }
+
   /// @brief A class that manages a single thread for executing jobs.
   /// @details The `executor` class encapsulates a single thread that continuously executes jobs
   /// submitted to it via the `submit` method. It uses a sequential `ring_buffer` to store and
@@ -28,8 +78,7 @@ namespace fho
     /// @details Initializes the executor and starts a new thread that runs the `run` method, which
     /// is responsible for executing jobs from the internal `ring_buffer`.
     executor()
-      : work_(execution::sequential)
-      , thread_(
+      : thread_(
           [this]
           {
             run();
@@ -61,7 +110,7 @@ namespace fho
     /// @return A `job_token` for the submitted job, which represents the entire range.
     template<typename T>
     auto
-    submit(std::ranges::subrange<T> range) noexcept
+    submit(std::ranges::subrange<T> range, execution policy = execution::parallel) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
       return work_.push(
@@ -102,7 +151,7 @@ namespace fho
     {
       while (!stop_.load(std::memory_order_relaxed)) [[likely]]
       {
-        if (auto c = work_.execute(); c == 0) [[unlikely]]
+        if (auto r = work_.consume(); fho::execute(r, execution::sequential) == 0) [[unlikely]]
         {
           std::this_thread::sleep_for(std::chrono::nanoseconds{1});
         }

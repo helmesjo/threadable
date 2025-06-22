@@ -36,19 +36,12 @@ namespace fho
     constexpr std::size_t default_capacity = 1 << 16;
   }
 
-  enum class execution
-  {
-    sequential,
-    parallel
-  };
-
-  /// @brief A Multi-Producer Single-Consumer (MPSC) ring buffer for managing jobs in a threading
-  /// environment.
+  /// @brief A Multi-Producer Single-Consumer (MPSC) ring buffer for managing objects in a
+  /// threading environment.
   /// @details This class provides a lock-free ring buffer that allows multiple producers to add
-  /// jobs concurrently and a single consumer to consume & execute them. It uses atomic operations
-  /// to manage the buffer's state and supports both sequential and parallel execution of jobs based
-  /// on the specified policy. The buffer is templated on its capacity, which must be a power of 2
-  /// and greater than 1.
+  /// objects concurrently and a single consumer to consume. It uses atomic
+  /// operations to manage the buffer's state. The buffer is templated on its capacity, which must
+  /// be a power of 2 and greater than 1.
   /// @tparam `Capacity` The size of the ring buffer, must be a power of 2 and greater than 1.
   /// Defaults to 65536 (`1 << 16`).
   /// @example
@@ -56,7 +49,7 @@ namespace fho
   /// auto buffer = fho::ring_buffer<>{fho::execution::parallel};
   /// buffer.push([]() { cout << "Job executed!\n"; });
   /// auto range = buffer.consume();
-  /// buffer.execute(range);
+  /// fho::execute(range);
   /// ```
   template<typename T = job, std::size_t Capacity = details::default_capacity>
   class ring_buffer
@@ -82,23 +75,17 @@ namespace fho
     static_assert(std::contiguous_iterator<iterator>);
 
     ring_buffer(ring_buffer const&) = delete;
-    ~ring_buffer()                  = default;
 
     /// @brief Default constructor.
-    /// @details Initializes the ring buffer with the specified execution policy. Defaults to
-    /// parallel execution.
-    /// @param `policy` The execution policy for job execution. Can be `execution::sequential` or
-    /// `execution::parallel`.
-    ring_buffer(execution policy = execution::parallel) noexcept
-      : policy_(policy)
-    {}
+    /// @details Initializes the (pre-allocated) ring buffer.
+    ring_buffer() noexcept = default;
+    ~ring_buffer()         = default;
 
     /// @brief Move constructor.
     /// @details Moves the contents of another ring buffer into this one.
     /// @param `rhs` The ring buffer to move from.
     ring_buffer(ring_buffer&& rhs) noexcept
-      : policy_(std::move(rhs.policy_))
-      , tail_(rhs.tail_.load(std::memory_order::relaxed))
+      : tail_(rhs.tail_.load(std::memory_order::relaxed))
       , head_(rhs.head_.load(std::memory_order::relaxed))
       , next_(rhs.next_.load(std::memory_order::relaxed))
       , elems_(std::move(rhs.elems_))
@@ -117,11 +104,10 @@ namespace fho
     auto
     operator=(ring_buffer&& rhs) noexcept -> ring_buffer&
     {
-      tail_   = rhs.tail_.load(std::memory_order::relaxed);
-      head_   = rhs.head_.load(std::memory_order::relaxed);
-      next_   = rhs.next_.load(std::memory_order::relaxed);
-      policy_ = std::move(rhs.policy_);
-      elems_  = std::move(rhs.elems_);
+      tail_  = rhs.tail_.load(std::memory_order::relaxed);
+      head_  = rhs.head_.load(std::memory_order::relaxed);
+      next_  = rhs.next_.load(std::memory_order::relaxed);
+      elems_ = std::move(rhs.elems_);
       return *this;
     }
 
@@ -278,63 +264,6 @@ namespace fho
       return begin() + head;
     }
 
-    /// @brief Executes a range of jobs.
-    /// @details Executes the jobs in the provided range, either sequentially or in parallel based
-    /// on the execution policy.
-    /// @tparam `R` The type of the range.
-    /// @param `r` The range of jobs to execute.
-    /// @return The number of jobs executed.
-    auto
-    execute(std::ranges::range auto r) const -> std::size_t
-    {
-      assert(r.data() >= jobs_.data() && r.data() <= jobs_.data() + jobs_.size());
-
-      auto const b = std::begin(r);
-      auto const e = std::end(r);
-      if (policy_ == execution::parallel) [[likely]]
-      {
-        std::for_each(std::execution::par, b, e,
-                      [](value_type& elem)
-                      {
-                        elem();
-                      });
-      }
-      else [[unlikely]]
-      {
-        // Make sure previous job has been executed, where
-        // `b-1` is `e` if `r` wraps around, or active if it's
-        // already consumed but being processed by another
-        // thread.
-        auto const prev = b - 1;
-        if ((prev != e) && prev->state.template test<job_state::active>(std::memory_order_relaxed))
-          [[unlikely]]
-        {
-          prev->state.template wait<job_state::active, true>();
-        }
-        std::for_each(b, e,
-                      [](value_type& elem)
-                      {
-                        elem();
-                      });
-      }
-      return r.size();
-    }
-
-    /// @brief Executes up to a specified number of jobs.
-    /// @details Consumes and executes up to `max` jobs from the buffer.
-    /// @param max The maximum number of jobs to execute. Defaults to the buffer capacity.
-    /// @return The number of jobs executed.
-    /// @example
-    /// ```cpp
-    /// buffer.execute(10); // Execute up to 10 jobs
-    /// ```
-    auto
-    execute(std::size_t max = Capacity) -> std::size_t
-    {
-      assert(max > 0);
-      return execute(consume(max));
-    }
-
     /// @brief Returns the maximum size of the buffer.
     /// @details The maximum number of jobs the buffer can hold, which is `capacity - 1`.
     /// @return The maximum size of the buffer.
@@ -390,7 +319,6 @@ namespace fho
       |_|
     */
 
-    alignas(details::cache_line_size) execution policy_ = execution::parallel;
     alignas(details::cache_line_size) atomic_index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
     alignas(details::cache_line_size) atomic_index_t next_{0};

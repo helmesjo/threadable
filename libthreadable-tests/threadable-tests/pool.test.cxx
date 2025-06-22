@@ -6,6 +6,8 @@
 #include <thread>
 #include <vector>
 
+#include "threadable/ring_buffer.hxx"
+
 using namespace std::chrono_literals;
 
 SCENARIO("pool: create/remove queues")
@@ -52,7 +54,7 @@ SCENARIO("pool: create/remove queues")
     auto queue = decltype(pool)::queue_t();
     WHEN("added (without jobs) to pool")
     {
-      auto& q = pool.add(std::move(queue));
+      auto& q = pool.add(std::move(queue), fho::execution::parallel);
       AND_WHEN("job is pushed")
       {
         int  called = 0;
@@ -80,7 +82,7 @@ SCENARIO("pool: create/remove queues")
         {
           ++called;
         });
-      (void)pool.add(std::move(queue));
+      (void)pool.add(std::move(queue), fho::execution::parallel);
       THEN("existing jobs are executed")
       {
         token.wait();

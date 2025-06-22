@@ -33,8 +33,15 @@ namespace fho
   class pool
   {
   public:
-    using queue_t  = ring_buffer<job, Capacity>;
-    using queues_t = std::vector<std::shared_ptr<queue_t>>;
+    using queue_t = ring_buffer<job, Capacity>;
+
+    struct job_queue
+    {
+      alignas(details::cache_line_size) execution policy;
+      alignas(details::cache_line_size) queue_t buffer;
+    };
+
+    using queues_t = std::vector<std::shared_ptr<job_queue>>;
 
     /// @brief Constructor that initializes the thread pool with a specified number of worker
     /// threads.
@@ -77,7 +84,8 @@ namespace fho
 
             for (auto& queue : queues)
             {
-              if (auto range = queue->consume(); !range.empty()) [[likely]]
+              auto& [policy, buffer] = *queue;
+              if (auto range = buffer.consume(); !range.empty()) [[likely]]
               {
                 if (mt) [[likely]]
                 {
@@ -85,7 +93,7 @@ namespace fho
                   // @TODO: Implement a proper load balancer, both
                   //        for range size & executor selection.
                   executor& e = *executors_[distr(gen)];
-                  e.submit(std::move(range));
+                  e.submit(std::move(range), policy);
                 }
                 else [[unlikely]]
                 {
@@ -130,7 +138,7 @@ namespace fho
     [[nodiscard]] auto
     create(execution policy = execution::parallel) noexcept -> queue_t&
     {
-      return add(queue_t(policy));
+      return add(queue_t{}, policy);
     }
 
     /// @brief Adds an existing queue to the pool.
@@ -139,15 +147,15 @@ namespace fho
     /// @param `q` The queue to add, moved into the pool.
     /// @return A reference to the added queue.
     [[nodiscard]] auto
-    add(queue_t&& q) -> queue_t&
+    add(queue_t&& q, execution policy) -> queue_t&
     {
-      queue_t* queue = nullptr;
+      job_queue* queue = nullptr;
       {
         auto _ = std::scoped_lock{queueMutex_};
-        queue  = queues_.emplace_back(std::make_unique<queue_t>(std::move(q))).get();
+        queue  = queues_.emplace_back(std::make_unique<job_queue>(policy, std::move(q))).get();
       }
 
-      return *queue;
+      return queue->buffer;
     }
 
     /// @brief Removes a queue from the pool.
@@ -161,7 +169,7 @@ namespace fho
       if (auto itr = std::find_if(std::begin(queues_), std::end(queues_),
                                   [&queue](auto const& q)
                                   {
-                                    return q.get() == &queue;
+                                    return &q->buffer == &queue;
                                   });
           itr != std::end(queues_))
       {
