@@ -164,16 +164,41 @@ namespace fho
   static_assert(alignof(job) == details::cache_line_size,
                 "job must be aligned to cache line boundaries");
 
+  /// @brief A token representing a claim on a job's state.
+  /// @details The `job_token` class allows for monitoring and controlling the state of a job,
+  /// including waiting for completion, cancelling, and checking if it's done or cancelled. It is
+  /// move-only to ensure exclusive ownership.
+  /// @example
+  /// ```cpp
+  /// auto j = fho::job{};
+  /// auto t = fho::job_token(my_job.state);
+  /// j.assign([]() { /* job work */ });
+  /// t.wait(); // Waits for the job to complete
+  /// ```
   struct job_token
   {
-    job_token()                 = default;
-    job_token(job_token const&) = delete;
-    ~job_token()                = default;
+    /// @brief Default constructor.
+    /// @details Initializes the token with no associated job.
+    job_token() = default;
 
+    /// @brief Deleted copy constructor.
+    /// @details Tokens cannot be copied.
+    job_token(job_token const&) = delete;
+
+    /// @brief Destructor.
+    /// @details Releases any resources held by the token.
+    ~job_token() = default;
+
+    /// @brief Constructor from atomic state.
+    /// @details Initializes the token with the given job state.
+    /// @param `state` The atomic state of the job.
     job_token(atomic_state_t& state)
       : state_(&state)
     {}
 
+    /// @brief Move constructor.
+    /// @details Transfers ownership of the token's state.
+    /// @param `rhs` The token to move from.
     job_token(job_token&& rhs) noexcept
       : cancelled_(rhs.cancelled_.load(std::memory_order_relaxed))
       , state_(rhs.state_.load(std::memory_order_relaxed))
@@ -181,8 +206,14 @@ namespace fho
       rhs.state_.store(nullptr, std::memory_order_relaxed);
     }
 
+    /// @brief Deleted copy assignment.
+    /// @details Tokens cannot be copied.
     auto operator=(job_token const&) -> job_token& = delete;
 
+    /// @brief Move assignment.
+    /// @details Transfers ownership of the token's state.
+    /// @param `rhs` The token to move from.
+    /// @return A reference to this token.
     auto
     operator=(job_token&& rhs) noexcept -> auto&
     {
@@ -192,12 +223,17 @@ namespace fho
       return *this;
     }
 
+    /// @brief Reassigns the token to a different job state.
+    /// @details Updates the internal state pointer.
+    /// @param `state` The new atomic state of the job.
     void
     reassign(atomic_state_t& state) noexcept
     {
       state_.store(&state, std::memory_order_release);
     }
 
+    /// @brief Checks if the associated job is done.
+    /// @details Returns true if the job state is not active or if no job is associated.
     auto
     done() const noexcept -> bool
     {
@@ -205,18 +241,24 @@ namespace fho
       return !state || state->load(std::memory_order_acquire) != 1;
     }
 
+    /// @brief Cancels the associated job.
+    /// @details Sets the cancellation flag.
     void
     cancel() noexcept
     {
       details::atomic_set(cancelled_, std::memory_order_release);
     }
 
+    /// @brief Checks if the job has been cancelled.
+    /// @details Returns the cancellation flag status.
     auto
     cancelled() const noexcept -> bool
     {
       return details::atomic_test(cancelled_, std::memory_order_acquire);
     }
 
+    /// @brief Waits for the associated job to complete.
+    /// @details Blocks until the job state changes from active.
     void
     wait() noexcept
     {
