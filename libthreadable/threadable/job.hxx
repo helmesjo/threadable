@@ -11,10 +11,16 @@
 namespace fho
 {
 
+  /// @brief Defines possible states for a job in the threading library.
+  /// @details Represents job lifecycle states: empty (no callable), active (ready or running), and
+  /// claimed (reserved or in progress). States may combine via bitwise operations.
   enum job_state : std::uint8_t
   {
-    empty   = 0,
-    active  = 1 << 0,
+    /// @brief Job is empty, with no callable assigned.
+    empty = 0,
+    /// @brief Job is active, with a callable ready or executing.
+    active = 1 << 0,
+    /// @brief Job is claimed, reserved or being processed.
     claimed = 1 << 1
   };
 
