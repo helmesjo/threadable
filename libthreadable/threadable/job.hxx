@@ -288,20 +288,53 @@ namespace fho
   static_assert(std::move_constructible<job_token>);
   static_assert(std::is_move_assignable_v<job_token>);
 
+  /// @brief A group of job tokens, allowing collective operations on multiple jobs.
+  /// @details The `token_group` class manages a collection of `job_token` objects, providing
+  /// methods to check if all jobs are done, cancel all jobs, or wait for all jobs to complete.
+  /// @example
+  /// ```cpp
+  /// auto group = fho::token_group{};
+  /// group += std::move(token1);
+  /// group += std::move(token2);
+  /// group.wait(); // Waits for both jobs to complete
+  /// ```
   struct token_group
   {
-    token_group()  = default;
+    /// @brief Default constructor.
+    /// @details Initializes an empty token group.
+    token_group() = default;
+
+    /// @brief Destructor.
+    /// @details Releases any resources held by the group.
     ~token_group() = default;
 
-    token_group(token_group const&)                    = default;
-    token_group(token_group&&)                         = default;
-    auto operator=(token_group const&) -> token_group& = default;
-    auto operator=(token_group&&) -> token_group&      = default;
+    /// @brief Copy constructor.
+    /// @details Creates a copy of the token group.
+    token_group(token_group const&) = default;
 
+    /// @brief Move constructor.
+    /// @details Moves the contents of another token group into this one.
+    token_group(token_group&&) = default;
+
+    /// @brief Copy assignment.
+    /// @details Assigns the contents of another token group to this one.
+    auto operator=(token_group const&) -> token_group& = default;
+
+    /// @brief Move assignment.
+    /// @details Moves the contents of another token group into this one.
+    auto operator=(token_group&&) -> token_group& = default;
+
+    /// @brief Constructor with capacity.
+    /// @details Initializes the token group with the specified capacity.
+    /// @param `capacity` The initial capacity of the group.
     token_group(std::size_t capacity)
       : tokens_(capacity)
     {}
 
+    /// @brief Adds a job token to the group.
+    /// @details Appends the token to the internal vector.
+    /// @param `token` The job token to add.
+    /// @return A reference to this token group.
     auto
     operator+=(job_token&& token) noexcept -> token_group&
     {
@@ -309,6 +342,8 @@ namespace fho
       return *this;
     }
 
+    /// @brief Checks if all jobs in the group are done.
+    /// @details Returns true if every token in the group reports that its job is done.
     [[nodiscard]] auto
     done() const noexcept -> bool
     {
@@ -319,6 +354,8 @@ namespace fho
                                  });
     }
 
+    /// @brief Cancels all jobs in the group.
+    /// @details Calls `cancel` on each token in the group.
     void
     cancel() noexcept
     {
@@ -328,6 +365,8 @@ namespace fho
       }
     }
 
+    /// @brief Waits for all jobs in the group to complete.
+    /// @details Calls `wait` on each token in the group.
     void
     wait() noexcept
     {
