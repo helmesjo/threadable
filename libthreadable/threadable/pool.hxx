@@ -33,7 +33,7 @@ namespace fho
   class pool
   {
   public:
-    using queue_t  = ring_buffer<Capacity>;
+    using queue_t  = ring_buffer<job, Capacity>;
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
     /// @brief Constructor that initializes the thread pool with a specified number of worker

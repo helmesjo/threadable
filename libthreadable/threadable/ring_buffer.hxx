@@ -58,10 +58,10 @@ namespace fho
   /// auto range = buffer.consume();
   /// buffer.execute(range);
   /// ```
-  template<std::size_t Capacity = details::default_capacity>
+  template<typename T = job, std::size_t Capacity = details::default_capacity>
   class ring_buffer
   {
-    using value_type                    = job;
+    using value_type                    = T;
     using atomic_index_t                = std::atomic_size_t;
     using index_t                       = typename atomic_index_t::value_type;
     static constexpr auto index_mask    = Capacity - 1u;

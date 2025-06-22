@@ -43,7 +43,7 @@ TEST_CASE("ring: push")
   }
   b.title("ring: push");
   {
-    auto ring  = fho::ring_buffer<jobs_per_iteration>();
+    auto ring  = fho::ring_buffer<fho::job, jobs_per_iteration>();
     auto token = fho::job_token{};
 
     b.run("fho::ring_buffer",
@@ -83,7 +83,7 @@ TEST_CASE("ring: iterate (sequential)")
           });
   }
   {
-    auto ring = fho::ring_buffer<jobs_per_iteration>();
+    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -126,7 +126,7 @@ TEST_CASE("ring: iterate (parallel)")
           });
   }
   {
-    auto ring = fho::ring_buffer<jobs_per_iteration>();
+    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -169,7 +169,7 @@ TEST_CASE("ring: execute (sequential)")
           });
   }
   {
-    auto ring = fho::ring_buffer<jobs_per_iteration>();
+    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -213,7 +213,7 @@ TEST_CASE("ring: execute (parallel)")
           });
   }
   {
-    auto ring = fho::ring_buffer<jobs_per_iteration>();
+    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});

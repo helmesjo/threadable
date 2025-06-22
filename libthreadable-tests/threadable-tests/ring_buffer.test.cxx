@@ -25,7 +25,7 @@ SCENARIO("ring_buffer: push & claim")
 {
   GIVEN("ring with capacity 2 (max size 1)")
   {
-    auto ring = fho::ring_buffer<2>{};
+    auto ring = fho::ring_buffer<fho::job, 2>{};
     REQUIRE(ring.size() == 0);
     REQUIRE(ring.max_size() == 1);
 
@@ -92,7 +92,7 @@ SCENARIO("ring_buffer: push & claim")
       AND_WHEN("ring is destroyed")
       {
         {
-          auto ring2 = fho::ring_buffer<2>{};
+          auto ring2 = fho::ring_buffer<fho::job, 2>{};
           ring2.push(type{});
           called    = 0;
           destroyed = 0;
@@ -179,7 +179,7 @@ SCENARIO("ring_buffer: push & claim")
   GIVEN("ring with capacity 128")
   {
     static constexpr auto ring_capacity = 128;
-    auto                  ring          = fho::ring_buffer<ring_capacity>{};
+    auto                  ring          = fho::ring_buffer<fho::job, ring_capacity>{};
     REQUIRE(ring.size() == 0);
 
     WHEN("push all")
@@ -241,7 +241,7 @@ SCENARIO("ring_buffer: push & claim")
 SCENARIO("ring_buffer: alignment")
 {
   static constexpr auto ring_capacity = 128;
-  auto                  ring          = fho::ring_buffer<ring_capacity>{};
+  auto                  ring          = fho::ring_buffer<fho::job, ring_capacity>{};
   GIVEN("a ring of 128 items")
   {
     for (std::size_t i = 0; i < ring.max_size(); ++i)
@@ -262,7 +262,7 @@ SCENARIO("ring_buffer: execution order")
 {
   GIVEN("a sequential ring")
   {
-    auto ring = fho::ring_buffer<32>(fho::execution::sequential);
+    auto ring = fho::ring_buffer<fho::job, 32>(fho::execution::sequential);
 
     auto order = std::vector<std::size_t>{};
     auto m     = std::mutex{};
@@ -356,7 +356,7 @@ SCENARIO("ring_buffer: stress-test")
   {
     static constexpr auto ring_capacity = std::size_t{1 << 8};
 
-    auto ring = fho::ring_buffer<ring_capacity>();
+    auto ring = fho::ring_buffer<fho::job, ring_capacity>();
 
     static constexpr auto nr_of_jobs   = ring.max_size() * 2;
     std::size_t           jobsExecuted = 0;
@@ -378,7 +378,7 @@ SCENARIO("ring_buffer: stress-test")
   {
     static constexpr auto ring_capacity = std::size_t{1 << 8};
 
-    auto ring = fho::ring_buffer<ring_capacity>();
+    auto ring = fho::ring_buffer<fho::job, ring_capacity>();
 
     THEN("there are no race conditions")
     {
@@ -418,7 +418,7 @@ SCENARIO("ring_buffer: stress-test")
     static constexpr auto ring_capacity = std::size_t{1 << 20};
     static constexpr auto nr_producers  = std::size_t{5};
 
-    auto ring    = fho::ring_buffer<ring_capacity>();
+    auto ring    = fho::ring_buffer<fho::job, ring_capacity>();
     auto barrier = std::barrier{nr_producers};
 
     THEN("there are no race conditions")
@@ -478,7 +478,7 @@ SCENARIO("ring_buffer: standard algorithms")
   GIVEN("ring with capacity of 1M")
   {
     static constexpr auto ring_capacity = 1 << 20;
-    auto                  ring          = fho::ring_buffer<ring_capacity>{};
+    auto                  ring          = fho::ring_buffer<fho::job, ring_capacity>{};
     REQUIRE(ring.size() == 0);
 
     auto jobsExecuted = std::atomic_size_t{0};
