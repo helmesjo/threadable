@@ -122,6 +122,19 @@ namespace fho
     std::thread      thread_;
   };
 
+  /// @brief A thread pool class that manages multiple executors and job queues.
+  /// @details The `pool` class manages a collection of `executor` instances and multiple job queues
+  /// (instances of `ring_buffer`). It includes a scheduler thread that distributes jobs from the
+  /// queues to the executors. The number of worker threads (executors) is by default set as the
+  /// number of hardware threads minus one. The pool can create new queues, add existing queues &
+  /// remove queues.
+  /// @example
+  /// ```cpp
+  /// auto pool = fho::pool();
+  /// auto& queue = pool.create();
+  /// auto t = queue.push([]() { std::cout << "Job executed!\n"; });
+  /// t.wait();
+  /// ```
   template<std::size_t max_nr_of_jobs = details::default_capacity>
   class pool
   {
@@ -129,27 +142,34 @@ namespace fho
     using queue_t  = ring_buffer<max_nr_of_jobs>;
     using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
-    pool(unsigned int workers = std::thread::hardware_concurrency() - 1) noexcept
+    /// @brief Constructor that initializes the thread pool with a specified number of worker
+    /// threads.
+    /// @details Creates the specified number of `executor` instances and starts a scheduler thread
+    /// that distributes jobs from the queues to these executors. If no number is specified, it
+    /// defaults to the number of hardware threads minus one (the scheduler).
+    /// @param `threads` The number of worker threads (executors) to create. Defaults to
+    /// `std::thread::hardware_concurrency() - 1`.
+    pool(unsigned int threads = std::thread::hardware_concurrency() - 1) noexcept
     {
       // start worker threads
-      for (std::size_t i = 0; i < workers; ++i)
+      for (std::size_t i = 0; i < threads; ++i)
       {
         executors_.emplace_back(std::make_unique<executor>());
       }
 
       // start scheduler thread
       scheduler_ = std::thread(
-        [this, workers]
+        [this, threads]
         {
-          auto const mt    = workers > 0;
+          auto const mt    = threads > 0;
           auto       rd    = std::random_device{};
           auto       gen   = std::mt19937(rd());
-          auto       distr = std::uniform_int_distribution<std::size_t>(0, mt ? workers - 1 : 0);
+          auto       distr = std::uniform_int_distribution<std::size_t>(0, mt ? threads - 1 : 0);
 
           while (true)
           {
             // 1. Check if quit = true. If so, bail.
-            // 2. Distribute queues to workers.
+            // 2. Distribute queues' jobs to executors.
             if (details::atomic_test(stop_, std::memory_order_acquire)) [[unlikely]]
             {
               break;
@@ -193,6 +213,8 @@ namespace fho
     auto operator=(pool const&) -> pool& = delete;
     auto operator=(pool&&) -> pool&      = delete;
 
+    /// @brief Destructor that stops the thread pool and joins all threads.
+    /// @details Sets the stop flag, joins the scheduler thread, and stops & joins all executors.
     ~pool()
     {
       stop_.store(true, std::memory_order_release);
@@ -206,12 +228,22 @@ namespace fho
       }
     }
 
+    /// @brief Creates a new job queue with the specified execution policy.
+    /// @details Adds a new `ring_buffer` to the pool with the given execution policy (sequential or
+    /// parallel).
+    /// @param `policy` The execution policy for the new queue. Defaults to `execution::parallel`.
+    /// @return A reference to the newly created queue.
     [[nodiscard]] auto
     create(execution policy = execution::parallel) noexcept -> queue_t&
     {
       return add(queue_t(policy));
     }
 
+    /// @brief Adds an existing queue to the pool.
+    /// @details Appends the given queue to the pool's list of queues, making it available for the
+    /// scheduler to distribute jobs from.
+    /// @param `q` The queue to add, moved into the pool.
+    /// @return A reference to the added queue.
     [[nodiscard]] auto
     add(queue_t&& q) -> queue_t&
     {
@@ -224,6 +256,10 @@ namespace fho
       return *queue;
     }
 
+    /// @brief Removes a queue from the pool.
+    /// @details Searches for the given queue in the pool's list and removes it if found.
+    /// @param `queue` The queue to remove, moved into the function.
+    /// @return True if the queue was found and removed, false otherwise.
     [[nodiscard]] auto
     remove(queue_t&& queue) noexcept -> bool // NOLINT
     {
@@ -244,24 +280,23 @@ namespace fho
       }
     }
 
-    [[nodiscard]] auto
-    queues() const noexcept -> std::size_t
-    {
-      auto _ = std::scoped_lock{queueMutex_};
-      return queues_.size();
-    }
-
+    /// @brief Returns the number of queues that have at least one job.
+    /// @details Counts how many queues in the pool currently have jobs (i.e., their size is greater
+    /// than zero).
+    /// @return The number of non-empty queues.
     [[nodiscard]] auto
     size() const noexcept -> std::size_t
     {
-      auto _ = std::scoped_lock{queueMutex_};
       return std::ranges::count(queues_,
                                 [](auto const& queue)
                                 {
-                                  return queue.size();
+                                  return !queue.empty();
                                 });
     }
 
+    /// @brief Returns the maximum number of jobs that can be held in each queue.
+    /// @details Since each queue is a `ring_buffer<max_nr_of_jobs>`, this returns `max_nr_of_jobs`.
+    /// @return The maximum size per queue.
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
