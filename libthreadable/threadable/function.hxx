@@ -231,6 +231,20 @@ namespace fho
     details::required_buffer_size<std::remove_cvref_t<callable_t>,
                                   std::remove_cvref_t<arg_ts>...>::value;
 
+  /// @brief A fixed-size buffer for storing callable objects.
+  /// @details The `function_buffer` class provides a way to store callable objects (such as
+  /// functions, lambdas, or functors) within a fixed-size buffer. It is designed to be used as a
+  /// building block for higher-level function objects like `fho::function` and `fho::function_dyn`.
+  /// The buffer size is specified at compile time, and the class handles the storage, copying,
+  /// moving, and destruction of the callable objects. If the callable object exceeds the buffer
+  /// size, it is stored on the heap using a `std::shared_ptr`.
+  /// @example
+  /// ```cpp
+  /// auto buffer = fho::function_buffer<128>{};
+  /// auto value = 10;
+  /// buffer.assign([](int val) { cout << format("val: {}\n", val); }, value);
+  /// details::invoke(buffer.data()); // but typically through fho::function or fho::function_dyn
+  /// ```
   template<std::size_t buffer_size>
   struct function_buffer
   {
@@ -238,6 +252,11 @@ namespace fho
                   "Buffer size must be <= 255");
     using buffer_t = std::array<std::byte, buffer_size>;
 
+    /// @brief Assigns a `function<size>` object to the buffer.
+    /// @details Copies the provided `function<size>` object into the buffer.
+    /// @tparam `size` The size of the function.
+    /// @param `func` The `function<size>` object to assign.
+    /// @requires `size <= buffer_size`
     template<std::size_t size>
       requires (size <= buffer_size)
     void
@@ -246,6 +265,11 @@ namespace fho
       (*this) = func.buffer();
     }
 
+    /// @brief Assigns a moved `function<size>` object to the buffer.
+    /// @details Moves the provided `function<size>` object into the buffer.
+    /// @tparam `size` The size of the function.
+    /// @param `func` The `function<size>` object to move.
+    /// @requires `size <= buffer_size`
     template<std::size_t size>
       requires (size <= buffer_size)
     void
@@ -254,6 +278,14 @@ namespace fho
       (*this) = std::move(std::move(func).buffer());
     }
 
+    /// @brief Assigns a callable and its arguments to the buffer.
+    /// @details Stores the callable and its arguments, potentially wrapping them in a
+    /// `deferred_callable`.
+    /// @tparam `func_t` The type of the callable.
+    /// @tparam `arg_ts` The types of the arguments.
+    /// @param `func` The callable to store.
+    /// @param `args` The arguments to bind to the callable.
+    /// @requires `std::invocable<func_t&&, arg_ts&&...>`
     template<typename func_t, typename... arg_ts>
     void
     assign(func_t&& func, arg_ts&&... args) noexcept
@@ -275,11 +307,17 @@ namespace fho
       }
     }
 
+    /// @brief Assigns a callable that does not fit within the buffer size.
+    /// @details Stores the callable on the heap using a `std::shared_ptr` and creates a lambda to
+    /// invoke it.
+    /// @tparam `callable_t` The type of the callable.
+    /// @param `callable` The callable to store.
+    /// @requires `required_buffer_size_v<decltype(callable)> > buffer_size`
     template<std::invocable callable_t,
              typename callable_value_t = std::remove_reference_t<callable_t>>
     void
     assign(callable_t&& callable) noexcept // NOLINT
-                                           // (bug in clang-tidy doesn't detect FWD incapture)
+                                           // (bug in clang-tidy doesn't detect FWD in capture)
       requires (!is_function_v<callable_t>) &&
                (required_buffer_size_v<decltype(callable)> > buffer_size)
     {
@@ -290,6 +328,11 @@ namespace fho
         });
     }
 
+    /// @brief Assigns a callable that fits within the buffer size.
+    /// @details Directly constructs the callable in the buffer.
+    /// @tparam `callable_t` The type of the callable.
+    /// @param `callable` The callable to store.
+    /// @requires `required_buffer_size_v<decltype(callable)> <= buffer_size`
     template<std::invocable callable_t,
              typename callable_value_t = std::remove_reference_t<callable_t>>
     void
@@ -316,26 +359,50 @@ namespace fho
                         FWD(callable));
     }
 
+    /// @brief Default constructor.
+    /// @details Initializes the buffer with a size of 0, indicating no callable is stored.
     function_buffer()
     {
       details::size(buffer_.data(), 0);
     }
 
+    /// @brief Copy constructor.
+    /// @details Creates a new `function_buffer` by copying the contents of another
+    /// `function_buffer`. This involves copying the stored callable if one exists.
+    /// @param `buffer` The `function_buffer` to copy from.
     function_buffer(function_buffer const& buffer)
     {
       *this = buffer;
     }
 
+    /// @brief Move constructor.
+    /// @details Creates a new `function_buffer` by moving the contents from another
+    /// `function_buffer`. This transfers ownership of the stored callable.
+    /// @param `buffer` The `function_buffer` to move from.
     function_buffer(function_buffer&& buffer) noexcept
     {
       *this = std::move(buffer);
     }
 
+    /// @brief Constructor that takes a `function<size>` object.
+    /// @details Initializes the buffer with the provided `function<size>` object, which must fit
+    /// within the buffer size.
+    /// @tparam `size` The size of the function.
+    /// @param `func` The `function<size>` object to store.
+    /// @requires `size` <= buffer_size
     template<std::size_t size>
     explicit function_buffer(function<size> const& func) noexcept
       : function_buffer<size>(func.buffer())
     {}
 
+    /// @brief Constructor that takes a callable and its arguments.
+    /// @details Initializes the buffer with a callable and its arguments, potentially wrapping them
+    /// in a `deferred_callable`.
+    /// @tparam `func_t` The type of the callable.
+    /// @tparam `arg_ts` The types of the arguments.
+    /// @param `func` The callable to store.
+    /// @param `args` The arguments to bind to the callable.
+    /// @requires `std::invocable<func_t&&, arg_ts&&...>`
     function_buffer(auto&& callable, auto&&... args) noexcept
       requires requires { this->assign(FWD(callable), FWD(args)...); }
     {
@@ -343,11 +410,18 @@ namespace fho
       assign(FWD(callable), FWD(args)...);
     }
 
+    /// @brief Destructor.
+    /// @details Calls `reset()` to properly destroy the stored callable if one exists.
     ~function_buffer()
     {
       reset();
     }
 
+    /// @brief Copy assignment operator.
+    /// @details Assigns the contents of another `function_buffer` to this one, copying the stored
+    /// callable if one exists.
+    /// @param `buffer` The `function_buffer` to copy from.
+    /// @return A reference to this `function_buffer`.
     auto
     operator=(function_buffer const& buffer) -> auto&
     {
@@ -357,6 +431,11 @@ namespace fho
       return *this;
     }
 
+    /// @brief Move assignment operator.
+    /// @details Moves the contents from another `function_buffer` to this one, transferring
+    /// ownership of the stored callable.
+    /// @param `buffer` The `function_buffer` to move from.
+    /// @return A reference to this `function_buffer`.
     auto
     operator=(function_buffer&& buffer) noexcept -> auto&
     {
@@ -366,6 +445,8 @@ namespace fho
       return *this;
     }
 
+    /// @brief Resets the buffer.
+    /// @details Destroys the stored callable if one exists and sets the buffer size to 0.
     inline void
     reset() noexcept
     {
@@ -376,18 +457,27 @@ namespace fho
       }
     }
 
+    /// @brief Gets the current size of the buffer.
+    /// @details Returns the number of bytes currently used by the stored callable.
+    /// @return The size of the stored callable in bytes.
     [[nodiscard]] inline auto
     size() const noexcept -> std::uint8_t
     {
       return details::size(data());
     }
 
+    /// @brief Gets a pointer to the buffer data.
+    /// @details Returns a pointer to the internal buffer where the callable is stored.
+    /// @return A pointer to the buffer data.
     inline auto
     data() noexcept -> std::byte*
     {
       return buffer_.data();
     }
 
+    /// @brief Gets a const pointer to the buffer data.
+    /// @details Returns a const pointer to the internal buffer.
+    /// @return A const pointer to the buffer data.
     [[nodiscard]] inline auto
     data() const noexcept -> std::byte const*
     {
