@@ -17,9 +17,24 @@
 
 namespace fho
 {
+  /// @brief A class that manages a single thread for executing jobs.
+  /// @details The `executor` class encapsulates a single thread that continuously executes jobs
+  /// submitted to it via the `submit` method. It uses a sequential `ring_buffer` to store and
+  /// manage the jobs. The executor can be stopped using the `stop` method, which sets a flag to
+  /// halt the execution loop and clears any remaining jobs in the buffer.
+  /// @example
+  /// ```cpp
+  /// auto exec = fho::executor();
+  /// auto range = queue.consume();
+  /// auto t = exec.submit(range);
+  /// t.wait();
+  /// ```
   class executor
   {
   public:
+    /// @brief Default constructor that starts the executor thread.
+    /// @details Initializes the executor and starts a new thread that runs the `run` method, which
+    /// is responsible for executing jobs from the internal `ring_buffer`.
     executor()
       : work_(execution::sequential)
       , thread_(
@@ -29,6 +44,9 @@ namespace fho
           })
     {}
 
+    /// @brief Destructor that stops the executor and joins the thread.
+    /// @details Calls `stop()` to halt the execution loop and then joins the executor thread to
+    /// ensure all jobs are completed before destruction.
     ~executor()
     {
       stop();
@@ -43,6 +61,12 @@ namespace fho
     auto operator=(executor const&) -> executor& = delete;
     auto operator=(executor&&) -> executor&      = delete;
 
+    /// @brief Submits a range of jobs to be executed as a single job by the executor.
+    /// @details This method creates a new job that, when executed, will run all the jobs in the
+    /// provided range sequentially. This new job is then pushed into the internal `ring_buffer`.
+    /// @tparam `T` The type of the range, must be a subrange of jobs.
+    /// @param `range` The range of jobs to be executed together as a single job.
+    /// @return A `job_token` for the submitted job, which represents the entire range.
     template<typename T>
     auto
     submit(std::ranges::subrange<T> range) noexcept
@@ -58,12 +82,21 @@ namespace fho
         });
     }
 
+    /// @brief Submits a single job to be executed by the executor.
+    /// @details This method pushes the given callable into the internal `ring_buffer`. The job will
+    /// be executed by the executor thread.
+    /// @tparam `callable_t` The type of the callable, must be invocable.
+    /// @param `work` The callable to be executed as a job.
+    /// @return A `job_token` for the submitted job, which can be used to monitor its state.
     auto
     submit(std::invocable auto&& work) noexcept
     {
       return work_.push(FWD(work));
     }
 
+    /// @brief Stops the executor from accepting new jobs and consumes any remaining jobs.
+    /// @details Sets the stop flag to true and consumes all remaining jobs in the internal
+    /// `ring_buffer`, effectively clearing the queue.
     void
     stop() noexcept
     {
