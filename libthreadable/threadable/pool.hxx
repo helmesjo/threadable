@@ -136,7 +136,7 @@ namespace fho
     /// @param `policy` The execution policy for the new queue. Defaults to `execution::parallel`.
     /// @return A reference to the newly created queue.
     [[nodiscard]] auto
-    create(execution policy = execution::parallel) noexcept -> queue_t&
+    create(execution policy = execution::par) noexcept -> queue_t&
     {
       return add(queue_t{}, policy);
     }
@@ -225,7 +225,7 @@ namespace fho
   /// @param `policy` The execution policy for the new queue. Defaults to `execution::parallel`.
   /// @return A reference to the newly created queue.
   [[nodiscard]] inline auto
-  create(execution policy = execution::parallel) noexcept -> details::queue_t&
+  create(execution policy = execution::par) noexcept -> details::queue_t&
   {
     return details::pool().create(policy);
   }
@@ -250,7 +250,7 @@ namespace fho
   /// @param `func` The callable to push.
   /// @param `args` The arguments to pass to the callable.
   /// @return A `job_token` for the submitted job.
-  template<execution Policy = execution::parallel, std::copy_constructible Func, typename... Args>
+  template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
   [[nodiscard]] inline auto
   push(Func&& func, Args&&... args) noexcept
     requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }

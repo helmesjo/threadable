@@ -21,7 +21,7 @@ SCENARIO("ring_buffer: execution order")
     }
     WHEN("executing jobs sequentially")
     {
-      REQUIRE(fho::execute(ring.consume(), fho::execution::sequential) == ring.max_size());
+      REQUIRE(fho::execute(ring.consume(), fho::execution::seq) == ring.max_size());
       THEN("jobs are executed FIFO")
       {
         REQUIRE(order.size() == ring.max_size());

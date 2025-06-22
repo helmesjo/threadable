@@ -11,8 +11,8 @@ namespace fho
 {
   enum class execution
   {
-    sequential,
-    parallel
+    seq,
+    par
   };
 
   /// @brief Executes a range of jobs.
@@ -24,13 +24,13 @@ namespace fho
   /// @return The number of jobs executed.
   template<typename R>
   inline auto
-  execute(std::ranges::subrange<R> r, execution policy = execution::parallel)
+  execute(std::ranges::subrange<R> r, execution policy = execution::par)
     requires std::invocable<std::ranges::range_value_t<decltype(r)>>
   {
     using value_t = std::ranges::range_value_t<decltype(r)>;
     auto const b  = std::begin(r);
     auto const e  = std::end(r);
-    if (policy == execution::parallel) [[likely]]
+    if (policy == execution::par) [[likely]]
     {
       std::for_each(std::execution::par, b, e,
                     [](value_t& elem)
@@ -110,7 +110,7 @@ namespace fho
     /// @return A `job_token` for the submitted job, which represents the entire range.
     template<typename T>
     auto
-    submit(std::ranges::subrange<T> range, execution policy = execution::parallel) noexcept
+    submit(std::ranges::subrange<T> range, execution policy = execution::par) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
       return work_.push(
@@ -151,7 +151,7 @@ namespace fho
     {
       while (!stop_.load(std::memory_order_relaxed)) [[likely]]
       {
-        if (auto r = work_.consume(); fho::execute(r, execution::sequential) == 0) [[unlikely]]
+        if (auto r = work_.consume(); fho::execute(r, execution::seq) == 0) [[unlikely]]
         {
           std::this_thread::sleep_for(std::chrono::nanoseconds{1});
         }
