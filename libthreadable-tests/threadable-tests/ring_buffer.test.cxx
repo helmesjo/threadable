@@ -118,14 +118,14 @@ SCENARIO("ring_buffer: push & claim")
       }
       AND_WHEN("consume and execute jobs")
       {
-        auto [begin, end] = ring.consume();
-        REQUIRE(begin != end);
+        auto r = ring.consume();
+        REQUIRE(r.begin() != r.end());
         REQUIRE(ring.size() == 0);
-        std::for_each(begin, end,
-                      [](auto& job)
-                      {
-                        job();
-                      });
+        std::ranges::for_each(r,
+                              [](auto& job)
+                              {
+                                job();
+                              });
         THEN("1 valid job executed")
         {
           REQUIRE(called == 1);
@@ -459,14 +459,14 @@ SCENARIO("ring_buffer: standard algorithms")
             ++jobsExecuted;
           });
       }
-      auto [b, e] = ring.consume();
+      auto r = ring.consume();
       AND_WHEN("std::for_each")
       {
-        std::for_each(b, e,
-                      [](auto& job)
-                      {
-                        job();
-                      });
+        std::ranges::for_each(r,
+                              [](auto& job)
+                              {
+                                job();
+                              });
         THEN("all jobs executed")
         {
           REQUIRE(jobsExecuted.load() == ring.max_size());
@@ -475,7 +475,7 @@ SCENARIO("ring_buffer: standard algorithms")
       }
       AND_WHEN("std::for_each (parallel)")
       {
-        std::for_each(std::execution::par, b, e,
+        std::for_each(std::execution::par, r.begin(), r.end(),
                       [](auto& job)
                       {
                         job();
