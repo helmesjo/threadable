@@ -229,11 +229,11 @@ namespace fho
       return *this;
     }
 
-    /// @brief Reassigns the token to a different job state.
+    /// @brief Assigns the token to a different job state.
     /// @details Updates the internal state pointer.
     /// @param `state` The new atomic state of the job.
     void
-    reassign(atomic_state_t& state) noexcept
+    assign(atomic_state_t& state) noexcept
     {
       state_.store(&state, std::memory_order_release);
     }

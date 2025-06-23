@@ -159,7 +159,7 @@ namespace fho
 
       assert(elem);
 
-      token.reassign(elem.state);
+      token.assign(elem.state);
 
       // Check if full before comitting.
       if (auto tail = tail_.load(std::memory_order_relaxed); iterator::mask(slot + 1 - tail) == 0)
