@@ -7,6 +7,8 @@
 #include <ranges>
 #include <thread>
 
+#define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
+
 namespace fho
 {
   enum class execution
@@ -22,9 +24,8 @@ namespace fho
   /// @param `r` The range of jobs to execute.
   /// @param `policy` Execution policy.
   /// @return The number of jobs executed.
-  template<typename R>
   inline auto
-  execute(std::ranges::subrange<R> r, execution policy = execution::par)
+  execute(std::ranges::range auto&& r, execution policy = execution::par)
     requires std::invocable<std::ranges::range_value_t<decltype(r)>>
   {
     using value_t = std::ranges::range_value_t<decltype(r)>;
@@ -44,12 +45,12 @@ namespace fho
       // `b-1` is `e` if `r` wraps around, or active if it's
       // already consumed but being processed by another
       // thread.
-      auto const prev = b - 1;
-      if ((prev != e) && prev->state.template test<job_state::active>(std::memory_order_relaxed))
-        [[unlikely]]
-      {
-        prev->state.template wait<job_state::active, true>();
-      }
+      // auto const prev = b - 1;
+      // if ((prev != e) && prev->state.template test<job_state::active>(std::memory_order_relaxed))
+      //   [[unlikely]]
+      // {
+      //   prev->state.template wait<job_state::active, true>();
+      // }
       std::for_each(b, e,
                     [](value_t& elem)
                     {
@@ -108,13 +109,12 @@ namespace fho
     /// @tparam `T` The type of the range, must be a subrange of jobs.
     /// @param `range` The range of jobs to be executed together as a single job.
     /// @return A `job_token` for the submitted job, which represents the entire range.
-    template<typename T>
     auto
-    submit(std::ranges::subrange<T> range, execution policy = execution::par) noexcept
+    submit(std::ranges::range auto&& range, execution policy = execution::par) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
       return work_.push(
-        [r = std::move(range)]
+        [r = FWD(range)]
         {
           for (auto& j : r)
           {
@@ -163,3 +163,5 @@ namespace fho
     std::thread      thread_;
   };
 }
+
+#undef FWD

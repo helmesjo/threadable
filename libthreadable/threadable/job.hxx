@@ -122,10 +122,10 @@ namespace fho
       assert(!done());
 
       func_();
-      if (reset() != job_state::empty) [[likely]]
-      {
-        state.notify_all();
-      }
+      // if (reset() != job_state::empty) [[likely]]
+      // {
+      //   state.notify_all();
+      // }
     }
 
     /// @brief Checks if the job is active.

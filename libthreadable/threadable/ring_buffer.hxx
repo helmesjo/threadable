@@ -2,6 +2,8 @@
 
 #include <threadable/allocator.hxx>
 #include <threadable/atomic.hxx>
+#include <threadable/function.hxx>
+#include <threadable/indirect_iterator.hxx>
 #include <threadable/job.hxx>
 #include <threadable/ring_iterator.hxx>
 
@@ -10,6 +12,8 @@
 #include <cassert>
 #include <cstddef>
 #include <execution>
+#include <format>
+#include <iostream>
 #include <iterator>
 #include <ranges>
 #include <vector>
@@ -33,6 +37,14 @@ namespace fho
 {
   namespace details
   {
+    // struct slot_state
+    // {
+    //   fho::atomic_state_t state;
+    // };
+
+    static constexpr auto slot_buffer_size =
+      cache_line_size - sizeof(fho::atomic_state_t) - sizeof(function<0>);
+
     constexpr std::size_t default_capacity = 1 << 16;
   }
 
@@ -60,19 +72,172 @@ namespace fho
     static constexpr auto index_mask    = Capacity - 1u;
     static constexpr auto null_callback = [](ring_buffer&) {};
 
+    struct alignas(details::cache_line_size) buf_slot
+    {
+      fho::atomic_state_t state;
+      value_type          value;
+
+      inline
+      operator value_type&() noexcept
+      {
+        return value;
+      }
+
+      inline
+      operator value_type const&() const noexcept
+      {
+        return value;
+      }
+
+      inline void
+      acquire() noexcept
+      {
+        auto exp = job_state::empty;
+        while (!state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release,
+                                            std::memory_order_relaxed)) [[likely]]
+        {
+          exp = job_state::empty;
+        }
+        // Wait if slot is occupied.
+        if (state.template test<job_state::active>()) [[unlikely]]
+        {
+          state.template wait<job_state::active, true>();
+        }
+      }
+
+      inline auto
+      release() noexcept -> job_state
+      {
+        return state.exchange(job_state::empty, std::memory_order_release);
+      }
+
+      inline auto
+      assign(auto&&... args) noexcept -> decltype(auto)
+      {
+        value.assign(FWD(args)...);
+        state.store(job_state::active, std::memory_order_relaxed);
+        // NOTE: Intentionally not notifying here since that is redundant (and costly),
+        //       it is designed to be waited on by checking state active -> inactive.
+        // details::atomic_notify_all(active);
+      }
+
+      inline auto
+      token(job_token& t) noexcept -> job_token&
+      {
+        t.assign(state);
+        return t;
+      }
+
+      [[nodiscard]] inline auto
+      token() noexcept -> job_token
+      {
+        auto t = job_token{};
+        return token(t);
+      }
+    };
+
+    static_assert(sizeof(buf_slot) % details::cache_line_size == 0,
+                  "Buffer slot size must be a multiple of the cache line size");
+
+    // static_assert(sizeof(buf_slot) - sizeof(buf_slot::state) - sizeof(buf_slot::value) == 0);
+
+    // static constexpr auto slot_buffer_size =
+    //   sizeof(buf_slot) - sizeof(function<0>);
+
+    //     static_assert(sizeof(T) <= details::slot_buffer_size,
+    // #if __cpp_static_assert >= 202306L
+    //                   std::format("T (size: {}) does not fit ring buffer slot (free: {})",
+    //                   sizeof(T),
+    //                               details::slot_buffer_size));
+    // #else
+    //                   "T does not fit ring buffer slot");
+    // #endif
+
     static_assert(Capacity > 1, "capacity must be greater than 1");
     static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
 
   public:
-    using iterator       = ring_iterator<value_type, index_mask>;       // NOLINT
-    using const_iterator = ring_iterator<value_type const, index_mask>; // NOLINT
+    using iterator       = ring_iterator<T, index_mask>;       // NOLINT
+    using const_iterator = ring_iterator<T const, index_mask>; // NOLINT
     static_assert(std::is_const_v<typename const_iterator::value_type>);
     static_assert(std::is_const_v<std::remove_reference_t<typename const_iterator::reference>>);
     static_assert(std::is_const_v<std::remove_pointer_t<typename const_iterator::pointer>>);
 
-    // Make sure iterator is valid for parallelization with the standard algorithms
-    static_assert(std::random_access_iterator<iterator>);
-    static_assert(std::contiguous_iterator<iterator>);
+    struct active_subrange final : std::ranges::subrange<iterator>
+    {
+      using base_t = std::ranges::subrange<iterator>;
+
+      using iterator        = typename ring_buffer::iterator; // NOLINT
+      using value_type      = typename iterator::value_type;
+      using reference       = typename iterator::reference;
+      using difference_type = typename iterator::difference_type;
+      using pointer         = typename iterator::pointer;
+
+      using base_t::base_t;
+
+      using base_t::advance;
+      using base_t::back;
+      using base_t::begin;
+      using base_t::empty;
+      using base_t::end;
+      using base_t::front;
+      using base_t::next;
+      using base_t::prev;
+      using base_t::size;
+
+      active_subrange(active_subrange const&) = default;
+
+      active_subrange(active_subrange&& that) noexcept
+        : base_t(std::move(that))
+      {
+        // std::cout << std::format("MOVED FROM ({}-{}]\n", iterator::mask(begin().index()),
+        //                          iterator::mask(end().index()))
+        //           << std::flush;
+        that.advance(that.size());
+      }
+
+      active_subrange(base_t&& that) noexcept
+        : base_t(std::move(that))
+      {
+        // std::cout << std::format("MOVED FROM ({}-{}]\n", iterator::mask(begin().index()),
+        //                          iterator::mask(end().index()))
+        //           << std::flush;
+        that.advance(that.size());
+      }
+
+      auto operator=(active_subrange const&) -> active_subrange& = default;
+
+      auto
+      operator=(active_subrange&& that) noexcept -> active_subrange&
+      {
+        base_t::operator=(std::move(that));
+        that.advance(that.size());
+        return *this;
+      }
+
+      ~active_subrange() = default;
+
+    private:
+      std::shared_ptr<int> resetter_ =
+        std::shared_ptr<int>(new int(0),
+                             [this](int* p)
+                             {
+                               std::for_each(begin(), end(),
+                                             [](auto& e)
+                                             {
+                                               if (e.reset() != job_state::empty) [[likely]]
+                                               {
+                                                 e.state.notify_all();
+                                               }
+                                             });
+                               // std::cout
+                               //   << std::format("RESET ({}-{}]\n",
+                               //   iterator::mask(begin().index()),
+                               //                  iterator::mask(end().index()))
+                               //   << std::flush;
+                               delete p; // NOLINT
+                             });
+    };
 
     ring_buffer(ring_buffer const&) = delete;
 
@@ -125,7 +290,7 @@ namespace fho
     /// auto token = fho::job_token{};
     /// buffer.push(token, []() { cout << "Job executed!\n"; });
     /// ```
-    template<std::copy_constructible Func, typename... Args>
+    template<std::move_constructible Func, typename... Args>
       requires std::invocable<Func, Args...> || std::invocable<Func, job_token&, Args...>
     auto
     push(job_token& token, Func&& func, Args&&... args) noexcept -> job_token&
@@ -190,7 +355,7 @@ namespace fho
     /// ```cpp
     /// auto token = buffer.push([]() { cout << "Job executed!\n"; });
     /// ```
-    template<std::copy_constructible Func, typename... Args>
+    template<std::move_constructible Func, typename... Args>
       requires std::invocable<Func, Args...>
     auto
     push(Func&& func, Args&&... args) noexcept -> job_token
@@ -218,7 +383,7 @@ namespace fho
     /// @param `max` The maximum number of jobs to consume. Defaults to the buffer capacity.
     /// @return A subrange of iterators pointing to the consumed jobs.
     auto
-    consume(std::size_t max = Capacity) noexcept -> std::ranges::subrange<iterator>
+    consume(std::size_t max = Capacity) noexcept
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
@@ -228,7 +393,12 @@ namespace fho
       // NOTE: Intentionally not notifying here since we
       //       use spin-locks for better performance.
       // tail_.notify_all();
-      return std::ranges::subrange(b, e);
+      return active_subrange(b, e) | std::views::transform(
+                                       [](auto&& e) -> decltype(auto)
+                                       {
+                                         return FWD(e);
+                                       });
+      // return std::ranges::subrange(b, e);
     }
 
     /// @brief Clears all jobs from the buffer.
@@ -236,12 +406,12 @@ namespace fho
     void
     clear() noexcept
     {
-      auto range = consume();
-      std::for_each(std::execution::par, std::begin(range), std::end(range),
-                    [](value_type& elem)
-                    {
-                      elem.reset();
-                    });
+      std::ignore = consume();
+      // std::for_each(std::execution::par, std::begin(range), std::end(range),
+      //               [](auto& elem)
+      //               {
+      //                 elem.reset();
+      //               });
     }
 
     /// @brief Returns an iterator to the beginning (tail) of the buffer.
@@ -324,8 +494,7 @@ namespace fho
     alignas(details::cache_line_size) atomic_index_t next_{0};
 
     alignas(details::cache_line_size)
-      std::vector<value_type, aligned_allocator<value_type, details::cache_line_size>> elems_{
-        Capacity};
+      std::vector<T, aligned_allocator<T, details::cache_line_size>> elems_{Capacity};
   };
 }
 

@@ -238,7 +238,7 @@ namespace fho
 
     /// @brief Returns the current index of the iterator.
     /// @return The current index.
-    inline auto
+    [[nodiscard]] inline auto
     index() const
     {
       return index_;
@@ -249,4 +249,8 @@ namespace fho
     pointer current_ = nullptr;
     size_t  index_   = 0;
   };
+
+  // Make sure iterator is valid for parallelization with the standard algorithms
+  static_assert(std::random_access_iterator<ring_iterator<int, 1024>>);
+  static_assert(std::contiguous_iterator<ring_iterator<int, 1024>>);
 }
