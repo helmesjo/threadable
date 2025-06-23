@@ -32,7 +32,7 @@ namespace fho
   {
     struct job_base
     {
-      fho::atomic_state_t state;
+      // fho::atomic_state_t state;
     };
 
     static constexpr auto job_buffer_size =
@@ -83,7 +83,7 @@ namespace fho
     assign(Func&& func, Args&&... args) noexcept -> decltype(auto)
     {
       func_.assign(FWD(func), FWD(args)...);
-      state.store(job_state::active, std::memory_order_relaxed);
+      // state.store(job_state::active, std::memory_order_relaxed);
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on by checking state active -> inactive.
       // details::atomic_notify_all(active);
@@ -119,7 +119,7 @@ namespace fho
     operator()() noexcept
     {
       assert(func_);
-      assert(!done());
+      // assert(!done());
 
       func_();
       // if (reset() != job_state::empty) [[likely]]
@@ -130,28 +130,28 @@ namespace fho
 
     /// @brief Checks if the job is active.
     /// @details Returns true if the job state is active, false otherwise.
-    operator bool() const noexcept
-    {
-      return !done();
-    }
+    // operator bool() const noexcept
+    // {
+    //   return !done();
+    // }
 
     /// @brief Resets the job to an empty state.
     /// @details Clears the stored callable and sets the state to empty.
     /// @return The previous state of the job.
-    auto
-    reset() noexcept -> job_state
+    void
+    reset() noexcept
     {
       func_.reset();
-      return state.exchange(job_state::empty, std::memory_order_release);
+      // return state.exchange(job_state::empty, std::memory_order_release);
     }
 
     /// @brief Checks if the job is done.
     /// @details Returns true if the job state is not active.
-    auto
-    done() const noexcept -> bool
-    {
-      return state.load(std::memory_order_acquire) != job_state::active;
-    }
+    // auto
+    // done() const noexcept -> bool
+    // {
+    //   return state.load(std::memory_order_acquire) != job_state::active;
+    // }
 
     /// @brief Gets the internal function object.
     /// @details Provides access to the stored callable for inspection or modification.
@@ -244,7 +244,7 @@ namespace fho
     done() const noexcept -> bool
     {
       auto state = state_.load(std::memory_order_acquire);
-      return !state || state->load(std::memory_order_acquire) != 1;
+      return !state || !state->test<job_state::active>();
     }
 
     /// @brief Cancels the associated job.
@@ -273,7 +273,7 @@ namespace fho
       auto state = state_.load(std::memory_order_acquire);
       while (state)
       {
-        state->wait(job_state::active, std::memory_order_acquire);
+        state->wait<job_state::active, true>(std::memory_order_acquire);
 
         if (auto next = state_.load(std::memory_order_acquire); next == state) [[likely]]
         {

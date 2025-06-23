@@ -25,17 +25,21 @@ namespace fho
     requires (std::integral<T> || std::integral<std::underlying_type_t<T>>)
   class atomic_bitfield final : std::atomic<T>
   {
+    using atomic_t = std::atomic<T>;
+
   public:
-    using std::atomic<T>::atomic;
-    using std::atomic<T>::operator=;
-    using std::atomic<T>::load;
-    using std::atomic<T>::store;
-    using std::atomic<T>::exchange;
-    using std::atomic<T>::compare_exchange_weak;
-    using std::atomic<T>::compare_exchange_strong;
-    using std::atomic<T>::wait;
-    using std::atomic<T>::notify_one;
-    using std::atomic<T>::notify_all;
+    using atomic_t::atomic;
+    using atomic_t::operator=;
+    using atomic_t::load;
+    using atomic_t::store;
+    // using atomic_t::fetch_and;
+    // using atomic_t::fetch_or;
+    using atomic_t::compare_exchange_strong;
+    using atomic_t::compare_exchange_weak;
+    using atomic_t::exchange;
+    using atomic_t::notify_all;
+    using atomic_t::notify_one;
+    using atomic_t::wait;
 
     /// @brief Tests if the bits specified by the mask are set.
     /// @details This method checks if any of the bits specified by the template parameter `Mask`
@@ -63,15 +67,22 @@ namespace fho
     inline auto
     test_and_set(std::memory_order order = std::memory_order_relaxed) noexcept -> bool
     {
-      if constexpr (Value)
+      if constexpr (std::is_enum_v<T>)
       {
-        // Set the bit
-        return Mask & this->fetch_or(Mask, order);
+        return test_and_set<static_cast<std::underlying_type_t<T>>(Mask), Value>(order);
       }
       else
       {
-        // Clear the bit
-        return Mask & this->fetch_and(static_cast<T>(~Mask), order);
+        if constexpr (Value)
+        {
+          // Set the bit
+          return Mask & this->fetch_or(Mask, order);
+        }
+        else
+        {
+          // Clear the bit
+          return Mask & this->fetch_and(static_cast<T>(~Mask), order);
+        }
       }
     }
 

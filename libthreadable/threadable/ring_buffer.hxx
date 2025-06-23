@@ -11,6 +11,7 @@
 #include <cassert>
 #include <cstddef>
 #include <ranges>
+#include <type_traits>
 #include <vector>
 
 #if !defined(__cpp_lib_execution) && !defined(__cpp_lib_parallel_algorithm) && \
@@ -100,10 +101,15 @@ namespace fho
         }
       }
 
-      inline auto
-      reset() noexcept -> job_state
+      inline void
+      release() noexcept
       {
-        return state.exchange(job_state::empty, std::memory_order_release);
+        auto prev = state.test_and_set<job_state::active, false>(std::memory_order_release);
+        if (prev) [[likely]]
+        {
+          state.notify_all();
+        }
+        // return prev;
       }
 
       inline auto
@@ -127,7 +133,7 @@ namespace fho
       token() noexcept -> job_token
       {
         auto t = job_token{};
-        return token(t);
+        return std::move(token(t));
       }
     };
 
@@ -209,28 +215,27 @@ namespace fho
                                  std::for_each(begin(), end(),
                                                [](auto& e)
                                                {
-                                                 if (e.reset() != job_state::empty) [[likely]]
-                                                 {
-                                                   e.state.notify_all();
-                                                 }
+                                                 e.release();
                                                });
                                }
                                delete p; // NOLINT
                              });
     };
 
-    inline static constexpr auto value_accessor = [](auto&& a) -> decltype(auto)
+    inline static constexpr auto value_accessor =
+      [](auto&& a) -> std::add_lvalue_reference_t<value_type>
     {
-      return FWD(a);
+      return FWD(a).value;
     };
 
-    inline static constexpr auto const_value_accessor = [](auto&& a) -> T const&
+    inline static constexpr auto const_value_accessor =
+      [](auto&& a) -> std::add_lvalue_reference_t<std::add_const_t<value_type>>
     {
-      return FWD(a);
+      return FWD(a).value;
     };
 
-    using ring_iterator_t       = ring_iterator<T, index_mask>;
-    using const_ring_iterator_t = ring_iterator<T const, index_mask>;
+    using ring_iterator_t       = ring_iterator<buf_slot, index_mask>;
+    using const_ring_iterator_t = ring_iterator<buf_slot const, index_mask>;
 
     using transform_type =
       std::ranges::transform_view<std::ranges::subrange<ring_iterator_t>, decltype(value_accessor)>;
@@ -247,7 +252,8 @@ namespace fho
     using iterator       = std::ranges::iterator_t<transform_type>;       // NOLINT
     using const_iterator = std::ranges::iterator_t<const_transform_type>; // NOLINT
 
-    static_assert(!std::is_const_v<std::remove_reference_t<decltype(*std::declval<iterator>())>>);
+    static_assert(
+      std::is_same_v<value_type, std::remove_reference_t<decltype(*std::declval<iterator>())>>);
     static_assert(
       std::is_const_v<std::remove_reference_t<decltype(*std::declval<const_iterator>())>>);
 
@@ -311,18 +317,20 @@ namespace fho
       auto const slot = next_.fetch_add(1, std::memory_order_relaxed);
 
       auto& elem = elems_[ring_iterator_t::mask(slot)];
-      auto  exp  = job_state::empty;
-      while (!elem.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release,
-                                               std::memory_order_relaxed)) [[likely]]
-      {
-        exp = job_state::empty;
-      }
+      elem.acquire();
+      // auto  exp  = job_state::empty;
+      // while (!elem.state.compare_exchange_weak(exp, job_state::claimed,
+      // std::memory_order_release,
+      //                                          std::memory_order_relaxed)) [[likely]]
+      // {
+      //   exp = job_state::empty;
+      // }
 
-      // Wait if slot is occupied.
-      if (elem.state.template test<job_state::active>()) [[unlikely]]
-      {
-        elem.state.template wait<job_state::active, true>();
-      }
+      // // Wait if slot is occupied.
+      // if (elem.state.template test<job_state::active>()) [[unlikely]]
+      // {
+      //   elem.state.template wait<job_state::active, true>();
+      // }
 
       // 2. Assign `value_type`.
       if constexpr (std::invocable<Func, job_token&, Args...>)
@@ -334,9 +342,10 @@ namespace fho
         elem.assign(FWD(func), FWD(args)...);
       }
 
-      assert(elem);
+      // assert(elem);
 
-      token.assign(elem.state);
+      // token.assign(elem.state);
+      token = elem.token();
 
       // Check if full before comitting.
       if (auto tail = tail_.load(std::memory_order_relaxed);
@@ -499,7 +508,7 @@ namespace fho
     alignas(details::cache_line_size) atomic_index_t next_{0};
 
     alignas(details::cache_line_size)
-      std::vector<T, aligned_allocator<T, details::cache_line_size>> elems_{Capacity};
+      std::vector<buf_slot, aligned_allocator<buf_slot, details::cache_line_size>> elems_{Capacity};
   };
 }
 
