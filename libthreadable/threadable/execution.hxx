@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <execution>
 #include <ranges>
 #include <thread>
 

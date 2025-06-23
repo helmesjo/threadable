@@ -2,6 +2,7 @@
 #include <threadable/ring_buffer.hxx>
 
 #include <algorithm>
+#include <execution>
 #include <functional>
 #include <vector>
 

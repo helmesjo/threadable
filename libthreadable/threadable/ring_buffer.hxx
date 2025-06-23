@@ -3,7 +3,6 @@
 #include <threadable/allocator.hxx>
 #include <threadable/atomic.hxx>
 #include <threadable/function.hxx>
-#include <threadable/indirect_iterator.hxx>
 #include <threadable/job.hxx>
 #include <threadable/ring_iterator.hxx>
 
@@ -11,10 +10,6 @@
 #include <atomic>
 #include <cassert>
 #include <cstddef>
-#include <execution>
-#include <format>
-#include <iostream>
-#include <iterator>
 #include <ranges>
 #include <vector>
 
@@ -106,7 +101,7 @@ namespace fho
       }
 
       inline auto
-      release() noexcept -> job_state
+      reset() noexcept -> job_state
       {
         return state.exchange(job_state::empty, std::memory_order_release);
       }
@@ -157,21 +152,14 @@ namespace fho
     static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
 
   public:
-    using iterator       = ring_iterator<T, index_mask>;       // NOLINT
-    using const_iterator = ring_iterator<T const, index_mask>; // NOLINT
-    static_assert(std::is_const_v<typename const_iterator::value_type>);
-    static_assert(std::is_const_v<std::remove_reference_t<typename const_iterator::reference>>);
-    static_assert(std::is_const_v<std::remove_pointer_t<typename const_iterator::pointer>>);
-
-    struct active_subrange final : std::ranges::subrange<iterator>
+    template<typename Iterator>
+    struct active_subrange final : std::ranges::subrange<Iterator>
     {
-      using base_t = std::ranges::subrange<iterator>;
+      using base_t = std::ranges::subrange<Iterator>;
 
-      using iterator        = typename ring_buffer::iterator; // NOLINT
+      using iterator        = Iterator; // NOLINT
       using value_type      = typename iterator::value_type;
-      using reference       = typename iterator::reference;
       using difference_type = typename iterator::difference_type;
-      using pointer         = typename iterator::pointer;
 
       using base_t::base_t;
 
@@ -190,18 +178,12 @@ namespace fho
       active_subrange(active_subrange&& that) noexcept
         : base_t(std::move(that))
       {
-        // std::cout << std::format("MOVED FROM ({}-{}]\n", iterator::mask(begin().index()),
-        //                          iterator::mask(end().index()))
-        //           << std::flush;
         that.advance(that.size());
       }
 
       active_subrange(base_t&& that) noexcept
         : base_t(std::move(that))
       {
-        // std::cout << std::format("MOVED FROM ({}-{}]\n", iterator::mask(begin().index()),
-        //                          iterator::mask(end().index()))
-        //           << std::flush;
         that.advance(that.size());
       }
 
@@ -222,22 +204,52 @@ namespace fho
         std::shared_ptr<int>(new int(0),
                              [this](int* p)
                              {
-                               std::for_each(begin(), end(),
-                                             [](auto& e)
-                                             {
-                                               if (e.reset() != job_state::empty) [[likely]]
+                               if constexpr (!std::is_const_v<value_type>)
+                               {
+                                 std::for_each(begin(), end(),
+                                               [](auto& e)
                                                {
-                                                 e.state.notify_all();
-                                               }
-                                             });
-                               // std::cout
-                               //   << std::format("RESET ({}-{}]\n",
-                               //   iterator::mask(begin().index()),
-                               //                  iterator::mask(end().index()))
-                               //   << std::flush;
+                                                 if (e.reset() != job_state::empty) [[likely]]
+                                                 {
+                                                   e.state.notify_all();
+                                                 }
+                                               });
+                               }
                                delete p; // NOLINT
                              });
     };
+
+    inline static constexpr auto value_accessor = [](auto&& a) -> decltype(auto)
+    {
+      return FWD(a);
+    };
+
+    inline static constexpr auto const_value_accessor = [](auto&& a) -> T const&
+    {
+      return FWD(a);
+    };
+
+    using ring_iterator_t       = ring_iterator<T, index_mask>;
+    using const_ring_iterator_t = ring_iterator<T const, index_mask>;
+
+    using transform_type =
+      std::ranges::transform_view<std::ranges::subrange<ring_iterator_t>, decltype(value_accessor)>;
+    using const_transform_type =
+      std::ranges::transform_view<std::ranges::subrange<const_ring_iterator_t>,
+                                  decltype(const_value_accessor)>;
+
+    using subrange_type =
+      decltype(active_subrange<ring_iterator_t>() | std::views::transform(value_accessor));
+
+    using const_subrange_type = decltype(active_subrange<const_ring_iterator_t>() |
+                                         std::views::transform(const_value_accessor));
+
+    using iterator       = std::ranges::iterator_t<transform_type>;       // NOLINT
+    using const_iterator = std::ranges::iterator_t<const_transform_type>; // NOLINT
+
+    static_assert(!std::is_const_v<std::remove_reference_t<decltype(*std::declval<iterator>())>>);
+    static_assert(
+      std::is_const_v<std::remove_reference_t<decltype(*std::declval<const_iterator>())>>);
 
     ring_buffer(ring_buffer const&) = delete;
 
@@ -298,7 +310,7 @@ namespace fho
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_relaxed);
 
-      auto& elem = elems_[iterator::mask(slot)];
+      auto& elem = elems_[ring_iterator_t::mask(slot)];
       auto  exp  = job_state::empty;
       while (!elem.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release,
                                                std::memory_order_relaxed)) [[likely]]
@@ -327,8 +339,8 @@ namespace fho
       token.assign(elem.state);
 
       // Check if full before comitting.
-      if (auto tail = tail_.load(std::memory_order_relaxed); iterator::mask(slot + 1 - tail) == 0)
-        [[unlikely]]
+      if (auto tail = tail_.load(std::memory_order_relaxed);
+          ring_iterator_t::mask(slot + 1 - tail) == 0) [[unlikely]]
       {
         tail_.wait(tail, std::memory_order_relaxed);
       }
@@ -372,7 +384,7 @@ namespace fho
     {
       auto const tail = tail_.load(std::memory_order_relaxed);
       auto const head = head_.load(std::memory_order_relaxed);
-      if (iterator::mask(head - tail) == 0) [[unlikely]]
+      if (ring_iterator_t::mask(head - tail) == 0) [[unlikely]]
       {
         head_.wait(head, std::memory_order_relaxed);
       }
@@ -387,48 +399,41 @@ namespace fho
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
-      auto       b    = iterator(elems_.data(), tail);
-      auto       e    = iterator(elems_.data(), head);
+      auto       b    = ring_iterator_t(elems_.data(), tail);
+      auto       e    = ring_iterator_t(elems_.data(), head);
       tail_.store(head, std::memory_order_release);
       // NOTE: Intentionally not notifying here since we
       //       use spin-locks for better performance.
       // tail_.notify_all();
-      return active_subrange(b, e) | std::views::transform(
-                                       [](auto&& e) -> decltype(auto)
-                                       {
-                                         return FWD(e);
-                                       });
-      // return std::ranges::subrange(b, e);
+      return subrange_type(std::ranges::subrange(b, e), value_accessor);
     }
 
     /// @brief Clears all jobs from the buffer.
     /// @details Resets all jobs in the buffer to an empty state.
-    void
-    clear() noexcept
+    auto
+    clear() noexcept -> std::size_t
     {
-      std::ignore = consume();
-      // std::for_each(std::execution::par, std::begin(range), std::end(range),
-      //               [](auto& elem)
-      //               {
-      //                 elem.reset();
-      //               });
+      auto r = consume();
+      return r.size();
     }
 
     /// @brief Returns an iterator to the beginning (tail) of the buffer.
     /// @details Provides access to the first job in the buffer.
     /// @return A const iterator to the beginning of the buffer.
     auto
-    begin() const noexcept -> const_iterator
+    begin() const noexcept
     {
       auto const tail = tail_.load(std::memory_order_acquire);
-      return const_iterator(elems_.data(), tail);
+      auto       b    = const_ring_iterator_t(elems_.data(), tail);
+
+      return const_transform_type(std::ranges::subrange(b, b), const_value_accessor).begin();
     }
 
     /// @brief Returns an iterator to the end (head) of the buffer.
     /// @details Provides access to the position after the last job in the buffer.
     /// @return A const iterator to the end of the buffer.
     auto
-    end() const noexcept -> const_iterator
+    end() const noexcept
     {
       auto const head = head_.load(std::memory_order_acquire);
       return begin() + head;
@@ -451,7 +456,7 @@ namespace fho
     {
       auto const tail = tail_.load(std::memory_order_relaxed);
       auto const head = head_.load(std::memory_order_relaxed);
-      return iterator::mask(head - tail); // circular distance
+      return ring_iterator_t::mask(head - tail); // circular distance
     }
 
     /// @brief Checks if the buffer is empty.
