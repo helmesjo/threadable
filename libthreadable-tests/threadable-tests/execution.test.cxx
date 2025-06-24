@@ -1,12 +1,18 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/execution.hxx>
+#include <threadable/function.hxx>
 #include <threadable/ring_buffer.hxx>
+
+namespace
+{
+  using func_t = fho::function<fho::details::slot_size>;
+}
 
 SCENARIO("ring_buffer: execution order")
 {
   GIVEN("a ring buffer")
   {
-    auto ring = fho::ring_buffer<fho::job, 32>();
+    auto ring = fho::ring_buffer<func_t, 32>();
 
     auto order = std::vector<std::size_t>{};
     auto m     = std::mutex{};

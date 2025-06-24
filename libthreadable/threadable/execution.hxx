@@ -47,10 +47,11 @@ namespace fho
       // already consumed but being processed by another
       // thread.
       // auto const prev = b - 1;
-      // if ((prev != e) && prev->state.template test<job_state::active>(std::memory_order_relaxed))
+      // if ((prev != e) && prev->state.template
+      // test<slot_state::active>(std::memory_order_relaxed))
       //   [[unlikely]]
       // {
-      //   prev->state.template wait<job_state::active, true>();
+      //   prev->state.template wait<slot_state::active, true>();
       // }
       std::for_each(b, e,
                     [](value_t& elem)

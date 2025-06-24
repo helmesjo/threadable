@@ -240,8 +240,8 @@ namespace fho
     };
 
     template<typename Func, typename... Args>
-    deferred_callable(Func&& callable, Args&&... args)
-      -> deferred_callable<decltype(callable), decltype(args)...>;
+    deferred_callable(Func&& callable,
+                      Args&&... args) -> deferred_callable<decltype(callable), decltype(args)...>;
 
     template<typename T>
     struct is_function : std::false_type
@@ -685,7 +685,7 @@ namespace fho
   /// f();
   /// ```
   template<std::size_t Size = details::cache_line_size - sizeof(details::invoke_func_t)>
-  struct function
+  struct alignas(details::cache_line_size) function
   {
   private:
     using buffer_t = function_buffer<Size>;

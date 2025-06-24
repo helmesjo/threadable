@@ -21,6 +21,11 @@
 
 namespace fho
 {
+  namespace details
+  {
+    using job_t = function<details::slot_size>;
+  }
+
   /// @brief A thread pool class that manages multiple executors and job queues.
   /// @details The `pool` class manages a collection of `executor` instances and multiple job queues
   /// (instances of `ring_buffer`). It includes a scheduler thread that distributes jobs from the
@@ -38,7 +43,7 @@ namespace fho
   class pool
   {
   public:
-    using queue_t = ring_buffer<job, Capacity>;
+    using queue_t = ring_buffer<details::job_t, Capacity>;
 
     struct job_queue
     {

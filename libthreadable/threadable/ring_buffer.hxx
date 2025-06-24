@@ -3,8 +3,8 @@
 #include <threadable/allocator.hxx>
 #include <threadable/atomic.hxx>
 #include <threadable/function.hxx>
-#include <threadable/job.hxx>
 #include <threadable/ring_iterator.hxx>
+#include <threadable/token.hxx>
 
 #include <algorithm>
 #include <atomic>
@@ -38,13 +38,8 @@ namespace fho
 {
   namespace details
   {
-    // struct slot_state
-    // {
-    //   fho::atomic_state_t state;
-    // };
 
-    static constexpr auto slot_buffer_size =
-      cache_line_size - sizeof(fho::atomic_state_t) - sizeof(function<0>);
+    static constexpr auto slot_size = cache_line_size - sizeof(fho::atomic_state_t);
 
     constexpr std::size_t default_capacity = 1 << 16;
   }
@@ -60,11 +55,11 @@ namespace fho
   /// @example
   /// ```cpp
   /// auto buffer = fho::ring_buffer<>{fho::execution::parallel};
-  /// buffer.push([]() { cout << "Job executed!\n"; });
+  /// buffer.push(value);
   /// auto range = buffer.consume();
-  /// fho::execute(range);
   /// ```
-  template<typename T = job, std::size_t Capacity = details::default_capacity>
+  template<typename T           = function<details::slot_size>,
+           std::size_t Capacity = details::default_capacity>
   class ring_buffer
   {
     using value_type                    = T;
@@ -93,16 +88,16 @@ namespace fho
       inline void
       acquire() noexcept
       {
-        auto exp = job_state::empty;
-        while (!state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release,
+        auto exp = slot_state::empty;
+        while (!state.compare_exchange_weak(exp, slot_state::claimed, std::memory_order_release,
                                             std::memory_order_relaxed)) [[likely]]
         {
-          exp = job_state::empty;
+          exp = slot_state::empty;
         }
         // Wait if slot is occupied.
-        if (state.template test<job_state::active>()) [[unlikely]]
+        if (state.template test<slot_state::active>()) [[unlikely]]
         {
-          state.template wait<job_state::active, true>();
+          state.template wait<slot_state::active, true>();
         }
       }
 
@@ -114,7 +109,7 @@ namespace fho
           // Free up slot for re-use.
           value.~T();
         }
-        auto prev = state.test_and_set<job_state::active, false>(std::memory_order_release);
+        auto prev = state.test_and_set<slot_state::active, false>(std::memory_order_release);
         if (prev) [[likely]]
         {
           state.notify_all();
@@ -126,7 +121,7 @@ namespace fho
       assign(auto&&... args) noexcept -> decltype(auto)
       {
         value.assign(FWD(args)...);
-        state.store(job_state::active, std::memory_order_relaxed);
+        state.store(slot_state::active, std::memory_order_relaxed);
         // NOTE: Intentionally not notifying here since that is redundant (and costly),
         //       it is designed to be waited on by checking state active -> inactive.
         // details::atomic_notify_all(active);
@@ -297,19 +292,19 @@ namespace fho
       return *this;
     }
 
-    /// @brief Pushes a job into the ring buffer with a job token.
-    /// @details Adds a callable to the buffer, associating it with a job token for state
+    /// @brief Pushes a value into the ring buffer with a token.
+    /// @details Adds a callable to the buffer, associating it with a token for state
     /// monitoring.
     /// @tparam `Func` The type of the callable.
     /// @tparam `Args` The types of the arguments.
-    /// @param `token` The job token to associate with the job.
+    /// @param `token` The token to associate with the slot.
     /// @param `func` The callable to add to the buffer.
     /// @param `args` The arguments to pass to the callable.
-    /// @return A reference to the job token.
+    /// @return A reference to the token.
     /// @example
     /// ```cpp
     /// auto token = fho::job_token{};
-    /// buffer.push(token, []() { cout << "Job executed!\n"; });
+    /// buffer.push(token, val);
     /// ```
     template<std::move_constructible Func, typename... Args>
       requires std::invocable<Func, Args...> || std::invocable<Func, job_token&, Args...>
@@ -321,19 +316,6 @@ namespace fho
 
       auto& elem = elems_[ring_iterator_t::mask(slot)];
       elem.acquire();
-      // auto  exp  = job_state::empty;
-      // while (!elem.state.compare_exchange_weak(exp, job_state::claimed,
-      // std::memory_order_release,
-      //                                          std::memory_order_relaxed)) [[likely]]
-      // {
-      //   exp = job_state::empty;
-      // }
-
-      // // Wait if slot is occupied.
-      // if (elem.state.template test<job_state::active>()) [[unlikely]]
-      // {
-      //   elem.state.template wait<job_state::active, true>();
-      // }
 
       // 2. Assign `value_type`.
       if constexpr (std::invocable<Func, job_token&, Args...>)
@@ -365,16 +347,16 @@ namespace fho
       return token;
     }
 
-    /// @brief Pushes a job into the ring buffer.
-    /// @details Adds a callable to the buffer and returns a new job token.
+    /// @brief Pushes a value into the ring buffer.
+    /// @details Adds a callable to the buffer and returns a new token.
     /// @tparam `Func` The type of the callable.
     /// @tparam `Args` The types of the arguments.
     /// @param `func` The callable to add to the buffer.
     /// @param `args` The arguments to pass to the callable.
-    /// @return A new job token for the added job.
+    /// @return A new token for the acquired slot.
     /// @example
     /// ```cpp
-    /// auto token = buffer.push([]() { cout << "Job executed!\n"; });
+    /// auto token = buffer.push(val);
     /// ```
     template<std::move_constructible Func, typename... Args>
       requires std::invocable<Func, Args...>
@@ -386,7 +368,7 @@ namespace fho
       return token;
     }
 
-    /// @brief Waits until there are jobs available in the buffer.
+    /// @brief Waits until there are values available in the buffer.
     /// @details Blocks until the buffer is not empty.
     void
     wait() const noexcept
@@ -399,10 +381,10 @@ namespace fho
       }
     }
 
-    /// @brief Consumes jobs from the buffer.
-    /// @details Retrieves a range of jobs from the buffer for execution.
-    /// @param `max` The maximum number of jobs to consume. Defaults to the buffer capacity.
-    /// @return A subrange of iterators pointing to the consumed jobs.
+    /// @brief Consumes values from the buffer.
+    /// @details Retrieves a range of values from the buffer for execution.
+    /// @param `max` The maximum number of values to consume. Defaults to the buffer capacity.
+    /// @return A subrange pointing to the consumed values.
     auto
     consume() noexcept
     {
@@ -417,8 +399,8 @@ namespace fho
       return subrange_type(std::ranges::subrange(b, e), value_accessor);
     }
 
-    /// @brief Clears all jobs from the buffer.
-    /// @details Resets all jobs in the buffer to an empty state.
+    /// @brief Clears all values from the buffer.
+    /// @details Resets all values in the buffer to an empty state.
     auto
     clear() noexcept -> std::size_t
     {
@@ -427,7 +409,7 @@ namespace fho
     }
 
     /// @brief Returns an iterator to the beginning (tail) of the buffer.
-    /// @details Provides access to the first job in the buffer.
+    /// @details Provides access to the first value in the buffer.
     /// @return A const iterator to the beginning of the buffer.
     auto
     begin() const noexcept
@@ -437,7 +419,7 @@ namespace fho
     }
 
     /// @brief Returns an iterator to the end (head) of the buffer.
-    /// @details Provides access to the position after the last job in the buffer.
+    /// @details Provides access to the position after the last value in the buffer.
     /// @return A const iterator to the end of the buffer.
     auto
     end() const noexcept
@@ -447,7 +429,7 @@ namespace fho
     }
 
     /// @brief Returns the maximum size of the buffer.
-    /// @details The maximum number of jobs the buffer can hold, which is `capacity - 1`.
+    /// @details The maximum number of values the buffer can hold, which is `capacity - 1`.
     /// @return The maximum size of the buffer.
     static constexpr auto
     max_size() noexcept -> std::size_t
@@ -455,9 +437,9 @@ namespace fho
       return Capacity - 1;
     }
 
-    /// @brief Returns the current number of jobs in the buffer.
-    /// @details Calculates the number of jobs currently in the buffer.
-    /// @return The number of jobs in the buffer.
+    /// @brief Returns the current number of values in the buffer.
+    /// @details Calculates the number of values currently in the buffer.
+    /// @return The number of values in the buffer.
     auto
     size() const noexcept -> std::size_t
     {
@@ -467,7 +449,7 @@ namespace fho
     }
 
     /// @brief Checks if the buffer is empty.
-    /// @details Returns true if there are no jobs in the buffer, false otherwise.
+    /// @details Returns true if there are no values in the buffer, false otherwise.
     /// @return True if the buffer is empty, false otherwise.
     auto
     empty() const noexcept -> bool

@@ -4,208 +4,57 @@
 #include <threadable/function.hxx>
 
 #include <algorithm>
-#include <atomic>
-
-#define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
 namespace fho
 {
-
-  /// @brief Defines possible states for a job in the threading library.
-  /// @details Represents job lifecycle states: empty (no callable), active (ready or running), and
-  /// claimed (reserved or in progress). States may combine via bitwise operations.
-  enum job_state : std::uint8_t
+  enum slot_state : std::uint8_t
   {
-    /// @brief Job is empty, with no callable assigned.
+    /// @brief empty, with no value assigned.
     empty = 0,
-    /// @brief Job is active, with a callable ready or executing.
+    /// @brief active, with a value ready or being processed.
     active = 1 << 0,
-    /// @brief Job is claimed, reserved or being processed.
+    /// @brief claimed, reserved or being processed.
     claimed = 1 << 1
   };
 
-  static_assert(sizeof(job_state) == 1);
-
-  using atomic_state_t = fho::atomic_bitfield<job_state>;
-
-  namespace details
-  {
-    struct job_base
-    {
-      // fho::atomic_state_t state;
-    };
-
-    static constexpr auto job_buffer_size =
-      cache_line_size - sizeof(job_base) - sizeof(function<0>);
-  }
-
-  /// @brief A class representing a job that can be executed, with state management.
-  /// @details The `job` class encapsulates a callable object and its state, allowing for execution,
-  /// state checking, and reset. It is designed to be used in a threading context, where jobs can be
-  /// queued and executed by threads. The class ensures thread-safe operations and is aligned to
-  /// cache line boundaries for performance.
-  /// @example
-  /// ```cpp
-  /// auto j = fho::job{};
-  /// j.assign([]() { cout << "Job executed!\n"; });
-  /// j();  // Executes the job
-  /// ```
-  struct alignas(details::cache_line_size) job final : details::job_base
-  {
-    using function_t = function<details::job_buffer_size>;
-
-    /// @brief Default constructor.
-    /// @details Initializes the job with an empty state.
-    job() = default;
-
-    /// @brief Destructor.
-    /// @details Resets the job to ensure proper cleanup.
-    ~job()
-    {
-      reset();
-    }
-
-    job(job&&)                          = default;
-    job(job const&)                     = delete;
-    auto operator=(job&&) -> job&       = default;
-    auto operator=(job const&) -> auto& = delete;
-
-    /// @brief Assigns a callable to the job.
-    /// @details Stores the callable and its arguments, setting the job state to active.
-    /// @tparam `Func` The type of the callable.
-    /// @tparam `Args` The types of the arguments.
-    /// @param `func` The callable to store.
-    /// @param `args` The arguments to bind to the callable.
-    /// @return A reference to this job.
-    template<typename Func, typename... Args>
-      requires std::invocable<Func, Args...>
-    auto
-    assign(Func&& func, Args&&... args) noexcept -> decltype(auto)
-    {
-      func_.assign(FWD(func), FWD(args)...);
-      // state.store(job_state::active, std::memory_order_relaxed);
-      // NOTE: Intentionally not notifying here since that is redundant (and costly),
-      //       it is designed to be waited on by checking state active -> inactive.
-      // details::atomic_notify_all(active);
-    }
-
-    /// @brief Assigns a callable to the job.
-    /// @details Stores the callable, setting the job state to active.
-    /// @tparam `Func` The type of the callable.
-    /// @param `func` The callable to store.
-    /// @return A reference to this job.
-    template<typename Func>
-      requires std::invocable<Func>
-    auto
-    operator=(Func&& func) noexcept -> auto&
-    {
-      assign(FWD(func));
-      return *this;
-    }
-
-    /// @brief Resets the job to an empty state.
-    /// @details Clears the stored callable and sets the state to empty.
-    /// @return A reference to this job.
-    auto
-    operator=(std::nullptr_t) noexcept -> auto&
-    {
-      reset();
-      return *this;
-    }
-
-    /// @brief Executes the stored callable.
-    /// @details Invokes the callable, resets the job & notifies waiting threads if successful.
-    void
-    operator()() noexcept
-    {
-      assert(func_);
-      // assert(!done());
-
-      func_();
-      // if (reset() != job_state::empty) [[likely]]
-      // {
-      //   state.notify_all();
-      // }
-    }
-
-    /// @brief Checks if the job is active.
-    /// @details Returns true if the job state is active, false otherwise.
-    operator bool() const noexcept
-    {
-      return func_;
-    }
-
-    /// @brief Resets the job to an empty state.
-    /// @details Clears the stored callable and sets the state to empty.
-    /// @return The previous state of the job.
-    void
-    reset() noexcept
-    {
-      func_.reset();
-      // return state.exchange(job_state::empty, std::memory_order_release);
-    }
-
-    /// @brief Checks if the job is done.
-    /// @details Returns true if the job state is not active.
-    // auto
-    // done() const noexcept -> bool
-    // {
-    //   return state.load(std::memory_order_acquire) != job_state::active;
-    // }
-
-    /// @brief Gets the internal function object.
-    /// @details Provides access to the stored callable for inspection or modification.
-    /// @return A reference to the internal function object.
-    auto
-    get() noexcept -> auto&
-    {
-      return func_;
-    }
-
-  private:
-    function_t func_;
-  };
-
-  static_assert(sizeof(job) == details::cache_line_size, "job size must equal cache line size");
-  static_assert(alignof(job) == details::cache_line_size,
-                "job must be aligned to cache line boundaries");
+  using atomic_state_t = fho::atomic_bitfield<slot_state>;
 
   /// @brief A token representing a claim on a job's state.
-  /// @details The `job_token` class allows for monitoring and controlling the state of a job,
+  /// @details The `slot_token` class allows for monitoring and controlling the state of a job,
   /// including waiting for completion, cancelling, and checking if it's done or cancelled. It is
   /// move-only to ensure exclusive ownership.
   /// @example
   /// ```cpp
   /// auto j = fho::job{};
-  /// auto t = fho::job_token(my_job.state);
+  /// auto t = fho::slot_token(my_job.state);
   /// j.assign([]() { /* job work */ });
   /// t.wait(); // Waits for the job to complete
   /// ```
-  struct job_token
+  struct slot_token
   {
     /// @brief Default constructor.
     /// @details Initializes the token with no associated job.
-    job_token() = default;
+    slot_token() = default;
 
     /// @brief Deleted copy constructor.
     /// @details Tokens cannot be copied.
-    job_token(job_token const&) = delete;
+    slot_token(slot_token const&) = delete;
 
     /// @brief Destructor.
     /// @details Releases any resources held by the token.
-    ~job_token() = default;
+    ~slot_token() = default;
 
     /// @brief Constructor from atomic state.
     /// @details Initializes the token with the given job state.
     /// @param `state` The atomic state of the job.
-    job_token(atomic_state_t& state)
+    slot_token(atomic_state_t& state)
       : state_(&state)
     {}
 
     /// @brief Move constructor.
     /// @details Transfers ownership of the token's state.
     /// @param `rhs` The token to move from.
-    job_token(job_token&& rhs) noexcept
+    slot_token(slot_token&& rhs) noexcept
       : cancelled_(rhs.cancelled_.load(std::memory_order_relaxed))
       , state_(rhs.state_.load(std::memory_order_relaxed))
     {
@@ -214,14 +63,14 @@ namespace fho
 
     /// @brief Deleted copy assignment.
     /// @details Tokens cannot be copied.
-    auto operator=(job_token const&) -> job_token& = delete;
+    auto operator=(slot_token const&) -> slot_token& = delete;
 
     /// @brief Move assignment.
     /// @details Transfers ownership of the token's state.
     /// @param `rhs` The token to move from.
     /// @return A reference to this token.
     auto
-    operator=(job_token&& rhs) noexcept -> auto&
+    operator=(slot_token&& rhs) noexcept -> auto&
     {
       cancelled_.store(rhs.cancelled_, std::memory_order_relaxed);
       state_.store(rhs.state_, std::memory_order_relaxed);
@@ -244,7 +93,7 @@ namespace fho
     done() const noexcept -> bool
     {
       auto state = state_.load(std::memory_order_acquire);
-      return !state || !state->test<job_state::active>();
+      return !state || !state->test<slot_state::active>();
     }
 
     /// @brief Cancels the associated job.
@@ -273,7 +122,7 @@ namespace fho
       auto state = state_.load(std::memory_order_acquire);
       while (state)
       {
-        state->wait<job_state::active, true>(std::memory_order_acquire);
+        state->wait<slot_state::active, true>(std::memory_order_acquire);
 
         if (auto next = state_.load(std::memory_order_acquire); next == state) [[likely]]
         {
@@ -291,11 +140,11 @@ namespace fho
     std::atomic<atomic_state_t*> state_     = nullptr;
   };
 
-  static_assert(std::move_constructible<job_token>);
-  static_assert(std::is_move_assignable_v<job_token>);
+  static_assert(std::move_constructible<slot_token>);
+  static_assert(std::is_move_assignable_v<slot_token>);
 
   /// @brief A group of job tokens, allowing collective operations on multiple jobs.
-  /// @details The `token_group` class manages a collection of `job_token` objects, providing
+  /// @details The `token_group` class manages a collection of `slot_token` objects, providing
   /// methods to check if all jobs are done, cancel all jobs, or wait for all jobs to complete.
   /// @example
   /// ```cpp
@@ -342,7 +191,7 @@ namespace fho
     /// @param `token` The job token to add.
     /// @return A reference to this token group.
     auto
-    operator+=(job_token&& token) noexcept -> token_group&
+    operator+=(slot_token&& token) noexcept -> token_group&
     {
       tokens_.emplace_back(std::move(token));
       return *this;
@@ -383,8 +232,7 @@ namespace fho
     }
 
   private:
-    std::vector<job_token> tokens_;
+    std::vector<slot_token> tokens_;
   };
-}
 
-#undef FWD
+}

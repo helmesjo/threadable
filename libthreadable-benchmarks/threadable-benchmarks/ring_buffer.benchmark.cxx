@@ -16,6 +16,8 @@ namespace
 {
   constexpr auto jobs_per_iteration = 1 << 20;
   auto           val                = 1; // NOLINT
+
+  using func_t = fho::function<fho::details::slot_size>;
 }
 
 TEST_CASE("ring: push")
@@ -44,7 +46,7 @@ TEST_CASE("ring: push")
   }
   b.title("ring: push");
   {
-    auto ring  = fho::ring_buffer<fho::job, jobs_per_iteration>();
+    auto ring  = fho::ring_buffer<func_t, jobs_per_iteration>();
     auto token = fho::job_token{};
 
     b.run("fho::ring_buffer",
@@ -84,7 +86,7 @@ TEST_CASE("ring: iterate (sequential)")
           });
   }
   {
-    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -127,7 +129,7 @@ TEST_CASE("ring: iterate (parallel)")
           });
   }
   {
-    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -170,7 +172,7 @@ TEST_CASE("ring: execute (sequential)")
           });
   }
   {
-    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -183,7 +185,7 @@ TEST_CASE("ring: execute (sequential)")
             std::for_each(std::execution::seq, std::begin(range), std::end(range),
                           [](auto& job)
                           {
-                            job.get()();
+                            job();
                           });
           });
   }
@@ -214,7 +216,7 @@ TEST_CASE("ring: execute (parallel)")
           });
   }
   {
-    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -227,7 +229,7 @@ TEST_CASE("ring: execute (parallel)")
             std::for_each(std::execution::par, std::begin(range), std::end(range),
                           [](auto& job)
                           {
-                            job.get()();
+                            job();
                           });
           });
   }
