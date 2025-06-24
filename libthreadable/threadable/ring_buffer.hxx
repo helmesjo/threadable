@@ -101,15 +101,20 @@ namespace fho
         }
       }
 
-      inline void
-      release() noexcept
+      inline auto
+      release() noexcept -> bool
       {
+        if constexpr (!std::is_trivially_destructible_v<T>)
+        {
+          // Free up slot for re-use.
+          value.~T();
+        }
         auto prev = state.test_and_set<job_state::active, false>(std::memory_order_release);
         if (prev) [[likely]]
         {
           state.notify_all();
         }
-        // return prev;
+        return prev;
       }
 
       inline auto
@@ -210,10 +215,11 @@ namespace fho
         std::shared_ptr<int>(new int(0),
                              [this](int* p)
                              {
+                               (void)this; // silence clang 'unused this'-warning
                                if constexpr (!std::is_const_v<value_type>)
                                {
                                  std::for_each(begin(), end(),
-                                               [](auto& e)
+                                               [](buf_slot& e)
                                                {
                                                  e.release();
                                                });
@@ -404,7 +410,7 @@ namespace fho
     /// @param `max` The maximum number of jobs to consume. Defaults to the buffer capacity.
     /// @return A subrange of iterators pointing to the consumed jobs.
     auto
-    consume(std::size_t max = Capacity) noexcept
+    consume() noexcept
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);

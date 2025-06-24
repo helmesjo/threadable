@@ -65,9 +65,9 @@ namespace fho
       reset();
     }
 
-    job(job&&)                          = delete;
+    job(job&&)                          = default;
     job(job const&)                     = delete;
-    auto operator=(job&&) -> auto&      = delete;
+    auto operator=(job&&) -> job&       = default;
     auto operator=(job const&) -> auto& = delete;
 
     /// @brief Assigns a callable to the job.
@@ -130,10 +130,10 @@ namespace fho
 
     /// @brief Checks if the job is active.
     /// @details Returns true if the job state is active, false otherwise.
-    // operator bool() const noexcept
-    // {
-    //   return !done();
-    // }
+    operator bool() const noexcept
+    {
+      return func_;
+    }
 
     /// @brief Resets the job to an empty state.
     /// @details Clears the stored callable and sets the state to empty.
