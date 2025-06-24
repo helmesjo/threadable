@@ -132,18 +132,10 @@ namespace fho
         // details::atomic_notify_all(active);
       }
 
-      inline auto
-      token(job_token& t) noexcept -> job_token&
+      inline void
+      token(job_token& t) noexcept
       {
         t.assign(state);
-        return t;
-      }
-
-      [[nodiscard]] inline auto
-      token() noexcept -> job_token
-      {
-        auto t = job_token{};
-        return std::move(token(t));
       }
     };
 
@@ -353,10 +345,7 @@ namespace fho
         elem.assign(FWD(func), FWD(args)...);
       }
 
-      // assert(elem);
-
-      // token.assign(elem.state);
-      token = elem.token();
+      elem.token(token);
 
       // Check if full before comitting.
       if (auto tail = tail_.load(std::memory_order_relaxed);
