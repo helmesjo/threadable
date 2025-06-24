@@ -9,11 +9,6 @@ if($cxx.id == 'gcc')
 }
 switch $cxx.stdlib: path.match, $cxx.id: path.match, $cxx.target.class: regex.match
 {
-  case 'libc++', '*', 'macos'
-  {
-    import intf_libs += libpstld%lib{pstld}
-    libul{threadable}: $intf_libs
-  }
   case 'libstdc++', '*', '^(?!windows$).*'
   {
     if ($cxx.target.class == 'macos')

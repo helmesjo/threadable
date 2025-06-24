@@ -14,19 +14,6 @@
 #include <type_traits>
 #include <vector>
 
-#if !defined(__cpp_lib_execution) && !defined(__cpp_lib_parallel_algorithm) && \
-  __has_include(<pstld/pstld.h>)
-  #ifndef PSTLD_HACK_INTO_STD
-    #define PSTLD_HACK_INTO_STD
-  #endif
-  #include <pstld/pstld.h>
-  #undef PSTLD_HACK_INTO_STD
-#endif
-
-#if __cpp_lib_execution < 201603L || __cpp_lib_parallel_algorithm < 201603L
-  #error requires __cpp_lib_execution & __cpp_lib_parallel_algorithm
-#endif
-
 #ifdef _WIN32
   #pragma warning(push)
   #pragma warning(disable : 4324)
@@ -54,8 +41,8 @@ namespace fho
   /// Defaults to 65536 (`1 << 16`).
   /// @example
   /// ```cpp
-  /// auto buffer = fho::ring_buffer<>{fho::execution::parallel};
-  /// buffer.push(value);
+  /// auto buffer = fho::ring_buffer<int>{};
+  /// buffer.push(1);
   /// auto range = buffer.consume();
   /// ```
   template<typename T           = function<details::slot_size>,

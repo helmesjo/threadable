@@ -3,6 +3,8 @@
 #include <threadable/function.hxx>
 #include <threadable/ring_buffer.hxx>
 
+#include <mutex>
+
 namespace
 {
   using func_t = fho::function<fho::details::slot_size>;

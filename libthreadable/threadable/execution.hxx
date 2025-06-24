@@ -32,6 +32,7 @@ namespace fho
     using value_t = std::ranges::range_value_t<decltype(r)>;
     auto const b  = std::begin(r);
     auto const e  = std::end(r);
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
     if (policy == execution::par) [[likely]]
     {
       std::for_each(std::execution::par, b, e,
@@ -41,6 +42,7 @@ namespace fho
                     });
     }
     else [[unlikely]]
+#endif
     {
       // Make sure previous job has been executed, where
       // `b-1` is `e` if `r` wraps around, or active if it's

@@ -78,11 +78,11 @@ TEST_CASE("ring: iterate (sequential)")
     b.run("std::vector",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(ring), std::end(ring),
-                          [](auto const& job)
-                          {
-                            bench::doNotOptimizeAway(job);
-                          });
+            std::ranges::for_each(ring,
+                                  [](auto const& job)
+                                  {
+                                    bench::doNotOptimizeAway(job);
+                                  });
           });
   }
   {
@@ -95,15 +95,16 @@ TEST_CASE("ring: iterate (sequential)")
     b.run("fho::ring_buffer",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(ring), std::end(ring),
-                          [](auto const& job)
-                          {
-                            bench::doNotOptimizeAway(job);
-                          });
+            std::ranges::for_each(ring,
+                                  [](auto const& job)
+                                  {
+                                    bench::doNotOptimizeAway(job);
+                                  });
           });
   }
 }
 
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
 TEST_CASE("ring: iterate (parallel)")
 {
   bench::Bench b;
@@ -146,6 +147,7 @@ TEST_CASE("ring: iterate (parallel)")
           });
   }
 }
+#endif
 
 TEST_CASE("ring: execute (sequential)")
 {
@@ -164,11 +166,11 @@ TEST_CASE("ring: execute (sequential)")
     b.run("std::vector",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(ring), std::end(ring),
-                          [](auto& job)
-                          {
-                            job();
-                          });
+            std::ranges::for_each(ring,
+                                  [](auto& job)
+                                  {
+                                    job();
+                                  });
           });
   }
   {
@@ -182,15 +184,16 @@ TEST_CASE("ring: execute (sequential)")
     b.run("fho::ring_buffer",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(range), std::end(range),
-                          [](auto& job)
-                          {
-                            job();
-                          });
+            std::ranges::for_each(range,
+                                  [](auto& job)
+                                  {
+                                    job();
+                                  });
           });
   }
 }
 
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
 TEST_CASE("ring: execute (parallel)")
 {
   bench::Bench b;
@@ -208,11 +211,11 @@ TEST_CASE("ring: execute (parallel)")
     b.run("std::vector",
           [&]
           {
-            std::for_each(std::execution::par, std::begin(ring), std::end(ring),
-                          [](auto& job)
-                          {
-                            job();
-                          });
+            std::ranges::for_each(ring,
+                                  [](auto& job)
+                                  {
+                                    job();
+                                  });
           });
   }
   {
@@ -234,3 +237,4 @@ TEST_CASE("ring: execute (parallel)")
           });
   }
 }
+#endif
