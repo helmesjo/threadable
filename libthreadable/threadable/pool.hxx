@@ -12,6 +12,11 @@
 #include <random>
 #include <thread>
 
+#ifdef _WIN32
+  #pragma warning(push)
+  #pragma warning(disable : 4324)
+#endif
+
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
 namespace fho
@@ -261,3 +266,7 @@ namespace fho
 }
 
 #undef FWD
+
+#ifdef _WIN32
+  #pragma warning(pop)
+#endif
