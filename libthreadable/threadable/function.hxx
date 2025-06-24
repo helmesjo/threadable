@@ -81,25 +81,25 @@ namespace fho
     inline constexpr void
     invoke_special_func(void* self, method m, void* that)
     {
-      using func_t = std::remove_cvref_t<Func>;
+      using f_t = std::remove_cvref_t<Func>;
       switch (m)
       {
         case method::copy_ctor:
         {
-          static_assert(std::copy_constructible<func_t>);
-          std::construct_at(static_cast<func_t*>(self), *static_cast<Func const*>(that));
+          static_assert(std::copy_constructible<f_t>);
+          std::construct_at(static_cast<f_t*>(self), *static_cast<Func const*>(that));
         }
         break;
         case method::move_ctor:
         {
-          static_assert(std::move_constructible<func_t>);
-          std::construct_at(static_cast<func_t*>(self), std::move(*static_cast<Func*>(that)));
+          static_assert(std::move_constructible<f_t>);
+          std::construct_at(static_cast<f_t*>(self), std::move(*static_cast<Func*>(that)));
         }
         break;
         case method::dtor:
         {
-          static_assert(std::destructible<func_t>);
-          std::destroy_at(static_cast<func_t*>(self));
+          static_assert(std::destructible<f_t>);
+          std::destroy_at(static_cast<f_t*>(self));
         }
         break;
       }
@@ -389,7 +389,7 @@ namespace fho
     assign(Func&& callable) noexcept
       requires (!is_function_v<Func>) && (required_buffer_size_v<Func> <= Size)
     {
-      using func_t = std::remove_reference_t<Func>;
+      using f_t = std::remove_reference_t<Func>;
 
       static constexpr std::uint8_t total_size = required_buffer_size_v<Func>;
 
@@ -401,10 +401,9 @@ namespace fho
       // body (destructor pointer)
       // body (callable)
       details::size(buffer_.data(), total_size);
-      details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<func_t>));
-      details::special_func_ptr(buffer_.data(),
-                                std::addressof(details::invoke_special_func<func_t>));
-      std::construct_at(reinterpret_cast<std::remove_const_t<func_t>*>( // NOLINT
+      details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<f_t>));
+      details::special_func_ptr(buffer_.data(), std::addressof(details::invoke_special_func<f_t>));
+      std::construct_at(reinterpret_cast<std::remove_const_t<f_t>*>( // NOLINT
                           details::body_ptr(buffer_.data())),
                         FWD(callable));
     }
