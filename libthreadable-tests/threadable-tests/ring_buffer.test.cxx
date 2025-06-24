@@ -117,7 +117,7 @@ SCENARIO("ring_buffer: push & claim")
         auto nrJobs = 0;
         for (auto const& job : ring)
         {
-          // REQUIRE(job);
+          REQUIRE(job);
           ++nrJobs;
         }
         THEN("1 valid job existed")

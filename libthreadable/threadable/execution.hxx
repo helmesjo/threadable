@@ -114,6 +114,7 @@ namespace fho
     submit(std::ranges::range auto&& range, execution policy = execution::par) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
+      (void)policy;
       return work_.push(
         [r = FWD(range)]
         {
