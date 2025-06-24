@@ -433,9 +433,7 @@ namespace fho
     begin() const noexcept
     {
       auto const tail = tail_.load(std::memory_order_acquire);
-      auto       b    = const_ring_iterator_t(elems_.data(), tail);
-
-      return const_transform_type(std::ranges::subrange(b, b), const_value_accessor).begin();
+      return std::ranges::next(constRange_.begin(), tail);
     }
 
     /// @brief Returns an iterator to the end (head) of the buffer.
@@ -445,7 +443,7 @@ namespace fho
     end() const noexcept
     {
       auto const head = head_.load(std::memory_order_acquire);
-      return begin() + head;
+      return std::ranges::next(constRange_.begin(), head);
     }
 
     /// @brief Returns the maximum size of the buffer.
@@ -509,6 +507,14 @@ namespace fho
 
     alignas(details::cache_line_size)
       std::vector<buf_slot, aligned_allocator<buf_slot, details::cache_line_size>> elems_{Capacity};
+
+    /// @brief Pre-created to ensure iterator compatibility.
+    /// NOTE: MSVC in debug specifically does not like iterators from temporarily created &
+    /// differing ranges
+    const_ring_iterator_t const begin_ = const_ring_iterator_t(elems_.data(), 0);          // NOLINT
+    const_ring_iterator_t const end_   = const_ring_iterator_t(elems_.data(), max_size()); // NOLINT
+    const_transform_type const  constRange_ =                                              // NOLINT
+      const_transform_type(std::ranges::subrange(begin_, end_), const_value_accessor);
   };
 }
 
