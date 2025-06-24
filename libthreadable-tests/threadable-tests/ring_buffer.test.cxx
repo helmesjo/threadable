@@ -145,13 +145,13 @@ SCENARIO("ring_buffer: push & claim")
         }
       }
     }
-    WHEN("push callable with 'job_token&' as first parameter")
+    WHEN("push callable with 'slot_token&' as first parameter")
     {
       bool wasCancelled = false;
-      auto token        = fho::job_token{};
+      auto token        = fho::slot_token{};
 
       token = ring.push(
-        [&wasCancelled](fho::job_token& token)
+        [&wasCancelled](fho::slot_token& token)
         {
           wasCancelled = token.cancelled();
         },

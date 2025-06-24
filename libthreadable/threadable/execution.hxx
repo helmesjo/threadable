@@ -110,7 +110,7 @@ namespace fho
     /// provided range sequentially. This new job is then pushed into the internal `ring_buffer`.
     /// @tparam `T` The type of the range, must be a subrange of jobs.
     /// @param `range` The range of jobs to be executed together as a single job.
-    /// @return A `job_token` for the submitted job, which represents the entire range.
+    /// @return A `slot_token` for the submitted job, which represents the entire range.
     auto
     submit(std::ranges::range auto&& range, execution policy = execution::par) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
@@ -131,7 +131,7 @@ namespace fho
     /// be executed by the executor thread.
     /// @tparam `Func` The type of the callable, must be invocable.
     /// @param `work` The callable to be executed as a job.
-    /// @return A `job_token` for the submitted job, which can be used to monitor its state.
+    /// @return A `slot_token` for the submitted job, which can be used to monitor its state.
     auto
     submit(std::invocable auto&& work) noexcept
     {

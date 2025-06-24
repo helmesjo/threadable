@@ -47,7 +47,7 @@ TEST_CASE("ring: push")
   b.title("ring: push");
   {
     auto ring  = fho::ring_buffer<func_t, jobs_per_iteration>();
-    auto token = fho::job_token{};
+    auto token = fho::slot_token{};
 
     b.run("fho::ring_buffer",
           [&]

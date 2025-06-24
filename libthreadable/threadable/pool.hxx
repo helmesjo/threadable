@@ -259,7 +259,7 @@ namespace fho
   /// @tparam `Args` The types of the arguments.
   /// @param `func` The callable to push.
   /// @param `args` The arguments to pass to the callable.
-  /// @return A `job_token` for the submitted job.
+  /// @return A `slot_token` for the submitted job.
   template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
   [[nodiscard]] inline auto
   push(Func&& func, Args&&... args) noexcept

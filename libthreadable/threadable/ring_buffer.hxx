@@ -128,7 +128,7 @@ namespace fho
       }
 
       inline void
-      token(job_token& t) noexcept
+      token(slot_token& t) noexcept
       {
         t.assign(state);
       }
@@ -303,13 +303,13 @@ namespace fho
     /// @return A reference to the token.
     /// @example
     /// ```cpp
-    /// auto token = fho::job_token{};
+    /// auto token = fho::slot_token{};
     /// buffer.push(token, val);
     /// ```
     template<std::move_constructible Func, typename... Args>
-      requires std::invocable<Func, Args...> || std::invocable<Func, job_token&, Args...>
+      requires std::invocable<Func, Args...> || std::invocable<Func, slot_token&, Args...>
     auto
-    push(job_token& token, Func&& func, Args&&... args) noexcept -> job_token&
+    push(slot_token& token, Func&& func, Args&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_relaxed);
@@ -318,7 +318,7 @@ namespace fho
       elem.acquire();
 
       // 2. Assign `value_type`.
-      if constexpr (std::invocable<Func, job_token&, Args...>)
+      if constexpr (std::invocable<Func, slot_token&, Args...>)
       {
         elem.assign(FWD(func), std::ref(token), FWD(args)...);
       }
@@ -361,9 +361,9 @@ namespace fho
     template<std::move_constructible Func, typename... Args>
       requires std::invocable<Func, Args...>
     auto
-    push(Func&& func, Args&&... args) noexcept -> job_token
+    push(Func&& func, Args&&... args) noexcept -> slot_token
     {
-      job_token token;
+      slot_token token;
       push(token, FWD(func), FWD(args)...);
       return token;
     }
