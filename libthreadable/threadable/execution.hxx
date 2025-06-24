@@ -152,7 +152,7 @@ namespace fho
     {
       while (!stop_.load(std::memory_order_relaxed)) [[likely]]
       {
-        if (auto r = work_.consume(); fho::execute(r, execution::seq) == 0) [[unlikely]]
+        if (fho::execute(work_.consume(), execution::seq) == 0) [[unlikely]]
         {
           std::this_thread::sleep_for(std::chrono::nanoseconds{1});
         }

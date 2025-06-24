@@ -8,6 +8,13 @@
 
 namespace fho
 {
+  namespace details
+  {
+    template<typename T>
+    using underlying_type_t =
+      std::conditional_t<std::is_enum_v<T>, std::underlying_type<T>, std::type_identity<T>>::type;
+  }
+
   /// @brief A template class for atomic bitfield operations.
   /// @details This class provides atomic operations on individual bits or groups of bits within an
   /// underlying integer type `T`. It inherits from `std::atomic<T>` and adds methods to test, set,
@@ -22,24 +29,61 @@ namespace fho
   /// if (flag.template test<1>()) { /* bit is set */ }
   /// ```
   template<typename T>
-    requires (std::integral<T> || std::integral<std::underlying_type_t<T>>)
-  class atomic_bitfield final : std::atomic<T>
+    requires std::integral<details::underlying_type_t<T>>
+  class atomic_bitfield final : std::atomic<details::underlying_type_t<T>>
   {
-    using atomic_t = std::atomic<T>;
+    using underlying_type = details::underlying_type_t<T>;
+    using atomic_t        = std::atomic<underlying_type>;
+
+    static constexpr auto
+    to_underlying(T t) noexcept
+    {
+      return static_cast<underlying_type>(t);
+    }
+
+    static constexpr auto
+    from_underlying(underlying_type u) noexcept
+    {
+      return static_cast<T>(u);
+    }
 
   public:
-    using atomic_t::atomic;
+    using atomic_t::atomic_t;
     using atomic_t::operator=;
-    using atomic_t::load;
-    using atomic_t::store;
-    // using atomic_t::fetch_and;
-    // using atomic_t::fetch_or;
     using atomic_t::compare_exchange_strong;
     using atomic_t::compare_exchange_weak;
     using atomic_t::exchange;
+    using atomic_t::fetch_and;
+    using atomic_t::fetch_or;
+    using atomic_t::load;
     using atomic_t::notify_all;
     using atomic_t::notify_one;
+    using atomic_t::store;
     using atomic_t::wait;
+
+    /// @brief Overload for when `T` & `underlying_type` differs.
+    /// @tparam `Mask` Eg. the enum value.
+    /// @param `order` The memory order for the load operation.
+    /// @return Result of of the same operation but with `underlying_type`.
+    auto
+    compare_exchange_strong(T& expected, T const desired, auto&&... orders) noexcept -> bool
+      requires (!std::is_same_v<T, underlying_type>)
+    {
+      auto exp = to_underlying(expected);
+      auto res = this->compare_exchange_strong(exp, to_underlying(desired), orders...);
+      expected = from_underlying(exp);
+      return res;
+    }
+
+    auto
+    compare_exchange_weak(T& expected, T const desired, auto&&... orders) noexcept -> bool
+      requires (!std::is_same_v<T, underlying_type>)
+    {
+      auto exp = to_underlying(expected);
+      auto res = this->compare_exchange_weak(exp, to_underlying(desired), orders...);
+      expected = from_underlying(exp);
+      return res;
+    }
 
     /// @brief Tests if the bits specified by the mask are set.
     /// @details This method checks if any of the bits specified by the template parameter `Mask`
@@ -67,22 +111,15 @@ namespace fho
     inline auto
     test_and_set(std::memory_order order = std::memory_order_relaxed) noexcept -> bool
     {
-      if constexpr (std::is_enum_v<T>)
+      if constexpr (Value)
       {
-        return test_and_set<static_cast<std::underlying_type_t<T>>(Mask), Value>(order);
+        // Set the bit
+        return Mask & this->fetch_or(Mask, order);
       }
       else
       {
-        if constexpr (Value)
-        {
-          // Set the bit
-          return Mask & this->fetch_or(Mask, order);
-        }
-        else
-        {
-          // Clear the bit
-          return Mask & this->fetch_and(static_cast<T>(~Mask), order);
-        }
+        // Clear the bit
+        return Mask & this->fetch_and(~Mask, order);
       }
     }
 
