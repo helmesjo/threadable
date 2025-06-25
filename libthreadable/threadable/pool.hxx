@@ -235,7 +235,7 @@ namespace fho
   /// @param `policy` The execution policy for the new queue. Defaults to `execution::parallel`.
   /// @return A reference to the newly created queue.
   [[nodiscard]] inline auto
-  create(execution policy = execution::par) noexcept -> details::queue_t&
+  create(execution policy = execution::par) noexcept -> decltype(auto)
   {
     return details::pool().create(policy);
   }
@@ -246,7 +246,7 @@ namespace fho
   /// @param `queue` The queue to remove, moved into the function.
   /// @return True if the queue was found and removed, false otherwise.
   inline auto
-  remove(details::queue_t&& queue) noexcept -> bool
+  remove(details::queue_t&& queue) noexcept -> decltype(auto)
   {
     return details::pool().remove(std::move(queue));
   }
@@ -262,7 +262,7 @@ namespace fho
   /// @return A `slot_token` for the submitted job.
   template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
   [[nodiscard]] inline auto
-  push(Func&& func, Args&&... args) noexcept
+  push(Func&& func, Args&&... args) noexcept -> decltype(auto)
     requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
   {
     static auto& queue = create(Policy);

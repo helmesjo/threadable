@@ -357,7 +357,7 @@ namespace fho
     push(Func&& func, Args&&... args) noexcept -> slot_token
     {
       slot_token token;
-      push(token, FWD(func), FWD(args)...);
+      std::ignore = push(token, FWD(func), FWD(args)...);
       return token;
     }
 
