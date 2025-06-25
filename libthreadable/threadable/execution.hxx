@@ -146,8 +146,12 @@ namespace fho
     void
     stop() noexcept
     {
-      stop_.store(true, std::memory_order_relaxed);
-      std::ignore = work_.consume();
+      // Release thread if waiting.
+      work_.push(
+        [this]
+        {
+          stop_.store(true, std::memory_order_relaxed);
+        });
     }
 
   private:
@@ -158,7 +162,10 @@ namespace fho
       {
         if (fho::execute(work_.consume(), execution::seq) == 0) [[unlikely]]
         {
-          std::this_thread::sleep_for(std::chrono::nanoseconds{1});
+          // NOTE: Don't sleep here, as even (especially?) small sleeps (nanosecond)
+          //       will 1. increase ring buffer contention but also 2. accumulate
+          //       in user code with many executors causing unexpected delays.
+          work_.wait();
         }
       }
     }
