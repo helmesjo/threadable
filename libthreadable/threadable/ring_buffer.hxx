@@ -190,21 +190,27 @@ namespace fho
       ~active_subrange() = default;
 
     private:
-      std::shared_ptr<int> resetter_ =
-        std::shared_ptr<int>(new int(0),
-                             [this](int* p)
-                             {
-                               (void)this; // silence clang 'unused this'-warning
-                               if constexpr (!std::is_const_v<value_type>)
-                               {
-                                 std::for_each(begin(), end(),
-                                               [](buf_slot& e)
-                                               {
-                                                 e.release();
-                                               });
-                               }
-                               delete p; // NOLINT
-                             });
+      /// @brief Static dummy object and `shared_ptr` for reference counting to trigger cleanup.
+      /// @details This is a hack to use `shared_ptr<void>` for reference counting but without
+      /// allocating memory. The static `dummy` char serves as a valid, non-owned placeholder
+      /// with program-long lifetime. The `shared_ptr`'s control block tracks references, and the
+      /// custom deleter runs when the last instance is destroyed, releasing all `buf_slot` elements
+      /// in the range.
+      inline static char    dummy = 1;
+      std::shared_ptr<void> resetter_ =
+        std::shared_ptr<void>(&dummy,
+                              [this](void*)
+                              {
+                                (void)this; // silence clang 'unused this'-warning
+                                if constexpr (!std::is_const_v<value_type>)
+                                {
+                                  std::for_each(begin(), end(),
+                                                [](buf_slot& e)
+                                                {
+                                                  e.release();
+                                                });
+                                }
+                              });
     };
 
     inline static constexpr auto value_accessor =
