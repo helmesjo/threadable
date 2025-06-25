@@ -97,7 +97,7 @@ namespace fho
           value.~T();
         }
         auto prev = state.test_and_set<slot_state::active, false>(std::memory_order_release);
-        if (prev) [[likely]]
+        // if (prev) [[likely]]
         {
           state.notify_all();
         }
@@ -108,7 +108,7 @@ namespace fho
       assign(auto&&... args) noexcept -> decltype(auto)
       {
         value.assign(FWD(args)...);
-        state.store(slot_state::active, std::memory_order_relaxed);
+        state.store(slot_state::active, std::memory_order_release);
         // NOTE: Intentionally not notifying here since that is redundant (and costly),
         //       it is designed to be waited on by checking state active -> inactive.
         // details::atomic_notify_all(active);
@@ -163,31 +163,22 @@ namespace fho
       using base_t::prev;
       using base_t::size;
 
-      active_subrange(active_subrange const&) = default;
-
-      active_subrange(active_subrange&& that) noexcept
-        : base_t(std::move(that))
-      {
-        that.advance(that.size());
-      }
+      active_subrange(active_subrange const&) noexcept = delete;
+      active_subrange(active_subrange&& that) noexcept = default;
+      ~active_subrange()                               = default;
 
       active_subrange(base_t&& that) noexcept
         : base_t(std::move(that))
-      {
-        that.advance(that.size());
-      }
+      {}
 
-      auto operator=(active_subrange const&) -> active_subrange& = default;
+      auto operator=(active_subrange const&) noexcept -> active_subrange& = delete;
+      auto operator=(active_subrange&& that) noexcept -> active_subrange& = default;
 
-      auto
-      operator=(active_subrange&& that) noexcept -> active_subrange&
-      {
-        base_t::operator=(std::move(that));
-        that.advance(that.size());
-        return *this;
-      }
-
-      ~active_subrange() = default;
+      // auto
+      // operator=(base_t&& that) noexcept -> active_subrange&
+      // {
+      //   base_t::operator=(std::move(that));
+      // }
 
     private:
       /// @brief Static dummy object and `shared_ptr` for reference counting to trigger cleanup.
@@ -196,21 +187,42 @@ namespace fho
       /// with program-long lifetime. The `shared_ptr`'s control block tracks references, and the
       /// custom deleter runs when the last instance is destroyed, releasing all `buf_slot` elements
       /// in the range.
-      inline static char    dummy = 1;
-      std::shared_ptr<void> resetter_ =
-        std::shared_ptr<void>(&dummy,
-                              [this](void*)
-                              {
-                                (void)this; // silence clang 'unused this'-warning
-                                if constexpr (!std::is_const_v<value_type>)
-                                {
-                                  std::for_each(begin(), end(),
-                                                [](buf_slot& e)
-                                                {
-                                                  e.release();
-                                                });
-                                }
-                              });
+      inline static char    dummy     = 1;
+      std::shared_ptr<void> resetter_ = std::shared_ptr<void>(
+        &dummy,
+        [b = base_t::begin().index(), e = base_t::end().index(), d = base_t::data()](void*)
+        {
+          if constexpr (!std::is_const_v<value_type>)
+          {
+            if (b == e)
+            {
+              // std::osyncstream(std::cout)
+              //   << std::format("range: SKIP   ({}-{}]\n", ring_iterator_t::mask(b),
+              //                  ring_iterator_t::mask(e));
+              return;
+            }
+
+            // auto const prev       = b - 1;
+            using ring_iterator_t = decltype(base_t::begin());
+            if (b != e)
+            {
+              std::osyncstream(std::cout)
+                << std::format("range: RELEASE  ({}-{}]\n", ring_iterator_t::mask(b),
+                               ring_iterator_t::mask(e));
+            }
+            for (auto i = b; i < e; ++i)
+            {
+              auto& e = d[ring_iterator_t::mask(i)];
+              e.release();
+            }
+            if (b != e)
+            {
+              std::osyncstream(std::cout)
+                << std::format("range: RELEASED ({}-{}]\n", ring_iterator_t::mask(b),
+                               ring_iterator_t::mask(e));
+            }
+          }
+        });
     };
 
     inline static constexpr auto value_accessor =
@@ -305,7 +317,7 @@ namespace fho
     push(slot_token& token, Func&& func, Args&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot.
-      auto const slot = next_.fetch_add(1, std::memory_order_relaxed);
+      auto const slot = next_.fetch_add(1, std::memory_order_acquire);
 
       auto& elem = elems_[ring_iterator_t::mask(slot)];
       elem.acquire();
@@ -323,10 +335,10 @@ namespace fho
       elem.token(token);
 
       // Check if full before comitting.
-      if (auto tail = tail_.load(std::memory_order_relaxed);
+      if (auto tail = tail_.load(std::memory_order_acquire);
           ring_iterator_t::mask(slot + 1 - tail) == 0) [[unlikely]]
       {
-        tail_.wait(tail, std::memory_order_relaxed);
+        tail_.wait(tail, std::memory_order_acquire);
       }
 
       // 3. Commit slot.
@@ -366,11 +378,11 @@ namespace fho
     void
     wait() const noexcept
     {
-      auto const tail = tail_.load(std::memory_order_relaxed);
-      auto const head = head_.load(std::memory_order_relaxed);
+      auto const tail = tail_.load(std::memory_order_acquire);
+      auto const head = head_.load(std::memory_order_acquire);
       if (ring_iterator_t::mask(head - tail) == 0) [[unlikely]]
       {
-        head_.wait(head, std::memory_order_relaxed);
+        head_.wait(head, std::memory_order_acquire);
       }
     }
 
@@ -386,9 +398,22 @@ namespace fho
       auto       b    = ring_iterator_t(elems_.data(), tail);
       auto       e    = ring_iterator_t(elems_.data(), head);
       tail_.store(head, std::memory_order_release);
+      // Make sure previous slot has been processed.
+      // if constexpr (Capacity > 1)
+      // {
+      //   auto const prev = b - 1;
+      //   if (ring_iterator_t::mask(head - tail)) [[unlikely]]
+      //   {
+      //     if (prev->state.template test<slot_state::active>(std::memory_order_relaxed))
+      //     [[unlikely]]
+      //     {
+      //       prev->state.template wait<slot_state::active, true>();
+      //     }
+      //   }
+      // }
       // NOTE: Intentionally not notifying here since we
       //       use spin-locks for better performance.
-      // tail_.notify_all();
+      tail_.notify_all();
       return subrange_type(std::ranges::subrange(b, e), value_accessor);
     }
 
@@ -436,8 +461,8 @@ namespace fho
     auto
     size() const noexcept -> std::size_t
     {
-      auto const tail = tail_.load(std::memory_order_relaxed);
-      auto const head = head_.load(std::memory_order_relaxed);
+      auto const tail = tail_.load(std::memory_order_acquire);
+      auto const head = head_.load(std::memory_order_acquire);
       return ring_iterator_t::mask(head - tail); // circular distance
     }
 

@@ -4,6 +4,9 @@
 #include <threadable/function.hxx>
 
 #include <algorithm>
+#include <format>
+#include <iostream>
+#include <syncstream>
 
 namespace fho
 {
@@ -197,6 +200,13 @@ namespace fho
       return *this;
     }
 
+    /// @brief Number of tokens in group.
+    [[nodiscard]] auto
+    size() const noexcept -> std::size_t
+    {
+      return tokens_.size();
+    }
+
     /// @brief Checks if all jobs in the group are done.
     /// @details Returns true if every token in the group reports that its job is done.
     [[nodiscard]] auto
@@ -225,9 +235,13 @@ namespace fho
     void
     wait() noexcept
     {
+      // int i = 0;
       for (auto& token : tokens_)
       {
+        // std::osyncstream(std::cout) << std::format("token: Wait - {}.\n", i);
         token.wait();
+        // std::osyncstream(std::cout) << std::format("token: Done - {}.\n", i);
+        // ++i;
       }
     }
 

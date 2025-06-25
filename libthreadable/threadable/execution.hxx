@@ -5,7 +5,9 @@
 #include <atomic>
 #include <chrono>
 #include <execution>
+#include <iostream>
 #include <ranges>
+#include <syncstream>
 #include <thread>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -44,17 +46,6 @@ namespace fho
     else [[unlikely]]
 #endif
     {
-      // Make sure previous job has been executed, where
-      // `b-1` is `e` if `r` wraps around, or active if it's
-      // already consumed but being processed by another
-      // thread.
-      // auto const prev = b - 1;
-      // if ((prev != e) && prev->state.template
-      // test<slot_state::active>(std::memory_order_relaxed))
-      //   [[unlikely]]
-      // {
-      //   prev->state.template wait<slot_state::active, true>();
-      // }
       std::for_each(b, e,
                     [](value_t& elem)
                     {
@@ -114,17 +105,59 @@ namespace fho
     /// @param `range` The range of jobs to be executed together as a single job.
     /// @return A `slot_token` for the submitted job, which represents the entire range.
     auto
-    submit(std::ranges::range auto&& range, execution policy = execution::par) noexcept
+    submit(std::ranges::range auto&& range, execution policy) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
-      (void)policy;
+      auto       b          = range.begin().base();
+      auto       e          = range.end().base();
+      auto const prev       = b - 1;
+      using ring_iterator_t = decltype(b);
+      std::osyncstream(std::cout) << std::format("SUBMIT  ({}-{}] - prev: {}\n",
+                                                 ring_iterator_t::mask(b.index()),
+                                                 ring_iterator_t::mask(e.index()),
+                                                 ring_iterator_t::mask(prev.index()));
+
       return work_.push(
-        [r = FWD(range)]
+        [r = FWD(range), policy]() mutable
         {
+          auto       b    = r.begin().base();
+          auto       e    = r.end().base();
+          auto const prev = b - 1;
+          if (policy == execution::seq) [[likely]]
+          {
+            using ring_iterator_t = decltype(b);
+
+            // Make sure previous slot has been processed.
+            if (b != e && prev != e && prev < b) [[unlikely]]
+            {
+              // if (prev->state.template test<slot_state::active>(std::memory_order_acquire))
+              //   [[unlikely]]
+              {
+                std::osyncstream(std::cout) << std::format(
+                  "WAITING ({}-{}] - prev: {} (active: {})\n", ring_iterator_t::mask(b.index()),
+                  ring_iterator_t::mask(e.index()), ring_iterator_t::mask(prev.index()),
+                  prev->state.template test<slot_state::active>(std::memory_order_acquire));
+                prev->state.template wait<slot_state::active, true>(std::memory_order_acquire);
+              }
+            }
+          }
+          std::osyncstream(std::cout)
+            << std::format("EXEC    ({}-{}] - prev: {}\n", ring_iterator_t::mask(b.index()),
+                           ring_iterator_t::mask(e.index()), ring_iterator_t::mask(prev.index()));
           for (auto& j : r)
           {
             j();
           }
+          {
+            auto derp = std::move(r);
+            std::osyncstream(std::cout)
+              << std::format("DROPED  ({}-{}] - prev: {}\n", ring_iterator_t::mask(b.index()),
+                             ring_iterator_t::mask(e.index()), ring_iterator_t::mask(prev.index()));
+          }
+          std::osyncstream(std::cout)
+            << std::format("DONE    ({}-{}] - prev: {}\n", ring_iterator_t::mask(b.index()),
+                           ring_iterator_t::mask(e.index()), ring_iterator_t::mask(prev.index()));
+          // execute(std::move(r), execution::seq);
         });
     }
 
@@ -150,7 +183,7 @@ namespace fho
       work_.push(
         [this]
         {
-          stop_.store(true, std::memory_order_relaxed);
+          stop_.store(true, std::memory_order_release);
         });
     }
 
@@ -158,9 +191,16 @@ namespace fho
     void
     run()
     {
-      while (!stop_.load(std::memory_order_relaxed)) [[likely]]
+      while (!stop_.load(std::memory_order_acquire)) [[likely]]
       {
-        if (fho::execute(work_.consume(), execution::seq) == 0) [[unlikely]]
+        if (auto r = work_.consume(); !r.empty()) [[likely]]
+        {
+          for (auto& j : r)
+          {
+            j();
+          }
+        }
+        else
         {
           // NOTE: Don't sleep here, as even (especially?) small sleeps (nanosecond)
           //       will 1. increase ring buffer contention but also 2. accumulate

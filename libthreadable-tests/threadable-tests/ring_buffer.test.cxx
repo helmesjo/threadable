@@ -170,7 +170,7 @@ SCENARIO("ring_buffer: push & claim")
       {
         // NOLINTBEGIN
         int                   called  = 0;
-        static constexpr auto too_big = fho::details::cache_line_size * 2;
+        static constexpr auto too_big = fho::details::slot_size * 2;
         // both capturing big data & passing as argument
         ring.push(
           [&called, bigData = std::make_shared<std::uint8_t[]>(
@@ -211,7 +211,7 @@ SCENARIO("ring_buffer: push & claim")
       {
         for (auto& job : ring.consume())
         {
-          // REQUIRE(job);
+          REQUIRE(job);
           job();
         }
         THEN("128 jobs were executed")
