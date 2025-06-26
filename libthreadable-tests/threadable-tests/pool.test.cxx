@@ -146,8 +146,8 @@ using namespace std::chrono_literals;
 
 SCENARIO("pool: execution order")
 {
-  constexpr auto capacity = std::size_t{1024};
-  auto           pool     = fho::pool<capacity>(1);
+  constexpr auto capacity = std::size_t{4};
+  auto           pool     = fho::pool<capacity>(0);
   GIVEN("a job is pushed to sequential queue")
   {
     auto& queue    = pool.create(fho::execution::seq);
@@ -160,6 +160,7 @@ SCENARIO("pool: execution order")
       tokens += queue.push(
         [i, &executed, &counter]
         {
+          std::osyncstream(std::cout) << std::format("test: EXECUTING {}\n", i);
           executed[i] = counter++;
         });
       // simulate interruptions

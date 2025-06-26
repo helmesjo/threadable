@@ -85,7 +85,7 @@ namespace fho
     /// @details Updates the internal state pointer.
     /// @param `state` The new atomic state of the job.
     void
-    assign(atomic_state_t& state) noexcept
+    assign(atomic_state_t const& state) noexcept
     {
       state_.store(&state, std::memory_order_release);
     }
@@ -123,24 +123,12 @@ namespace fho
       // take into account that the underlying state-ptr might have
       // been re-assigned while waiting (eg. for a recursive/self-queueing job)
       auto state = state_.load(std::memory_order_acquire);
-      while (state)
-      {
-        state->wait<slot_state::active, true>(std::memory_order_acquire);
-
-        if (auto next = state_.load(std::memory_order_acquire); next == state) [[likely]]
-        {
-          break;
-        }
-        else [[unlikely]]
-        {
-          state = next;
-        }
-      }
+      state->wait<slot_state::active, true>(std::memory_order_acquire);
     }
 
   private:
-    std::atomic_bool             cancelled_ = false;
-    std::atomic<atomic_state_t*> state_     = nullptr;
+    std::atomic_bool                   cancelled_ = false;
+    std::atomic<atomic_state_t const*> state_     = nullptr;
   };
 
   static_assert(std::move_constructible<slot_token>);
@@ -235,13 +223,13 @@ namespace fho
     void
     wait() noexcept
     {
-      // int i = 0;
+      int i = 0;
       for (auto& token : tokens_)
       {
-        // std::osyncstream(std::cout) << std::format("token: Wait - {}.\n", i);
+        std::osyncstream(std::cout) << std::format("token: Wait - {}.\n", i);
         token.wait();
-        // std::osyncstream(std::cout) << std::format("token: Done - {}.\n", i);
-        // ++i;
+        std::osyncstream(std::cout) << std::format("token: Done - {}.\n", i);
+        ++i;
       }
     }
 

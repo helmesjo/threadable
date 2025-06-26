@@ -245,8 +245,8 @@ namespace fho
     };
 
     template<typename Func, typename... Args>
-    deferred_callable(Func&& callable,
-                      Args&&... args) -> deferred_callable<decltype(callable), decltype(args)...>;
+    deferred_callable(Func&& callable, Args&&... args)
+      -> deferred_callable<decltype(callable), decltype(args)...>;
 
     template<typename T>
     struct is_function : std::false_type
@@ -475,8 +475,11 @@ namespace fho
     operator=(function_buffer const& buffer) -> auto&
     {
       std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
-      details::invoke_special_func(data(), details::method::copy_ctor,
-                                   const_cast<std::byte*>(buffer.data())); // NOLINT
+      if (buffer.size()) [[likely]]
+      {
+        details::invoke_special_func(data(), details::method::copy_ctor,
+                                     const_cast<std::byte*>(buffer.data())); // NOLINT
+      }
       return *this;
     }
 
@@ -489,8 +492,15 @@ namespace fho
     operator=(function_buffer&& buffer) noexcept -> auto&
     {
       std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
-      details::invoke_special_func(data(), details::method::move_ctor, buffer.data());
-      details::size(buffer.data(), 0);
+      if (buffer.size()) [[likely]]
+      {
+        details::invoke_special_func(data(), details::method::move_ctor, buffer.data());
+        details::size(buffer.data(), 0);
+      }
+      // else [[unlikely]]
+      // {
+      //   details::size(data(), 0);
+      // }
       return *this;
     }
 
