@@ -9,10 +9,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <ranges>
-#include <syncstream>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -35,24 +33,15 @@ namespace fho
 
   }
 
-  inline auto
-  logme(auto const& title, auto const* data, auto slot)
-  {
-    auto& elem = data + slot;
-    std::osyncstream(std::cout) << std::format("[{:%Y-%m-%d %H:%M:%S}] {} {} (ptr: {:x})\n",
-                                               std::chrono::high_resolution_clock::now(), title,
-                                               slot, (size_t)&elem);
-  }
-
-  inline auto
-  logme(auto const& title, auto const& elem, auto slot)
-  {
-    auto id   = std::this_thread::get_id();
-    auto thrd = std::hash<std::thread::id>{}(id);
-    std::osyncstream(std::cout) << std::format(
-      "[{:%Y-%m-%d %H:%M:%S}] {} {} (ptr: {:x})\t thread: {}\n",
-      std::chrono::high_resolution_clock::now(), title, slot, (size_t)&elem, thrd);
-  }
+  // inline auto
+  // logme(auto const& title, auto const* data, auto slot)
+  // {
+  //   using namespace std::chrono;
+  //   auto  now  = floor<seconds>(high_resolution_clock::now());
+  //   auto& elem = data + slot;
+  //   std::osyncstream(std::cout) << std::format("[{:%Y-%m-%d %H:%M:%S}] {} {} (ptr: {:x})\n", now,
+  //                                              title, slot, (size_t)&elem);
+  // }
 
   /// @brief A Multi-Producer Single-Consumer (MPSC) ring buffer for managing objects in a
   /// threading environment.
@@ -161,9 +150,9 @@ namespace fho
         auto prev = state.test_and_set<slot_state::active, false>(std::memory_order_acq_rel);
         auto id   = std::this_thread::get_id();
         auto thrd = std::hash<std::thread::id>{}(id);
-        std::osyncstream(std::cout) << std::format(
-          "[{:%Y-%m-%d %H:%M:%S}] buf_slot: STATE AFTER RELEASED {} (ptr: {:x})\t thread: {}\n",
-          std::chrono::high_resolution_clock::now(), state.load(), (size_t)this, thrd);
+        // std::osyncstream(std::cout) << std::format(
+        //   "[{:%Y-%m-%d %H:%M:%S}] buf_slot: STATE AFTER RELEASED {} (ptr: {:x})\t thread: {}\n",
+        //   std::chrono::high_resolution_clock::now(), state.load(), (size_t)this, thrd);
         // while (!state.compare_exchange_weak(prev, slot_state::empty, std::memory_order_release,
         //                                     std::memory_order_acquire)) [[likely]]
         // {
@@ -272,7 +261,7 @@ namespace fho
       std::shared_ptr<void> resetter_ =
         std::shared_ptr<void>(this,
                               [b = base_t::begin().index(), e = base_t::end().index(),
-                               d = base_t::data()](void*)
+                               d = base_t::begin().data()](void*)
                               {
                                 if constexpr (!std::is_const_v<value_type>)
                                 {
@@ -289,10 +278,10 @@ namespace fho
                                   // using ring_iterator_t = decltype(base_t::begin());
                                   // if (b != e)
                                   // {
-                                  //   std::osyncstream(std::cout)
-                                  //     << std::format("range: RELEASE  ({}-{}]\n",
-                                  //     ring_iterator_t::mask(b),
-                                  //                    ring_iterator_t::mask(e));
+                                  std::osyncstream(std::cout)
+                                    << std::format("range: RELEASE  ({}-{}]\n",
+                                                   ring_iterator_t::mask(b),
+                                                   ring_iterator_t::mask(e));
                                   // }
                                   // ring_buffer: ACQUIRED 0 (ptr: 14f009400)
                                   // ring_buffer: COMITTED 0 (ptr: 14f009400)
@@ -307,15 +296,15 @@ namespace fho
                                   // ring_buffer: ACQUIRED 3 (ptr: 14f009700)
                                   for (auto i = b; i < e; ++i)
                                   {
-                                    buf_slot& e = d[ring_iterator_t::mask(i)];
-                                    logme("range:\tRELEASING - ", e, ring_iterator_t::mask(i));
+                                    buf_slot& elem = d[ring_iterator_t::mask(i)];
+                                    logme("range: releasing", elem, ring_iterator_t::mask(i));
                                     // std::osyncstream(std::cout) << std::format("range: RELEASING
                                     // {} (ptr: {:x})\n",
                                     //                                            ring_iterator_t::mask(i),
                                     //                                            (size_t)&e);
-                                    e.release();
+                                    elem.release();
                                     // assert(!e.state.load(std::memory_order_acquire));
-                                    logme("range:\tRELEASED - ", e, ring_iterator_t::mask(i));
+                                    logme("range: released", elem, ring_iterator_t::mask(i));
                                     // std::osyncstream(std::cout)
                                     //   << std::format("range: RELEASED  {} (ptr: {:x})\n",
                                     //                  ring_iterator_t::mask(i), (size_t)&e);
@@ -372,8 +361,8 @@ namespace fho
       auto i = 0;
       for (auto& e : elems_)
       {
-        logme("range:\tINITIAL STATE FOR SLOT - ", e, ring_iterator_t::mask(i));
-        // std::osyncstream(std::cout) << std::format("range: INITIAL STATE FOR SLOT {} (ptr:
+        logme("range: INITIAL STATE FOR SLOT", e, ring_iterator_t::mask(i));
+        // STD::OSYNcstream(sTD::cout) << std::format("range: INITIAL STATE FOR SLOT {} (ptr:
         // {:x})\n",
         //                                            ring_iterator_t::mask(i++), (size_t)&e);
       }
@@ -435,7 +424,7 @@ namespace fho
 
       auto& elem = elems_[ring_iterator_t::mask(slot)];
       elem.acquire();
-      logme("ring_buffer:\tACQUIRED - ", elem, ring_iterator_t::mask(slot));
+      logme("ring: acquired", elem, ring_iterator_t::mask(slot));
       // std::osyncstream(std::cout) << std::format(
       //   "[{:%Y-%m-%d %H:%M:%S}] ring_buffer: ACQUIRED {} (ptr: {:x})\n",
       //   std::chrono::high_resolution_clock::now(), ring_iterator_t::mask(slot), (size_t)&elem);
@@ -451,7 +440,7 @@ namespace fho
       {
         elem.assign(FWD(func), FWD(args)...);
       }
-      logme("ring_buffer:\tWRITTEN - ", elem, ring_iterator_t::mask(slot));
+      logme("ring: written", elem, ring_iterator_t::mask(slot));
       // std::osyncstream(std::cout) << std::format("ring_buffer: WRITTEN {} (ptr: {:x})\n",
       //                                            ring_iterator_t::mask(slot), (size_t)&elem);
 
@@ -466,7 +455,7 @@ namespace fho
             ring_iterator_t::mask(slot + 1 - tail) == 0) [[unlikely]]
         {
           auto& t = elems_[ring_iterator_t::mask(tail)];
-          logme("ring_buffer:\tWAIT 4 SPACE - ", t, ring_iterator_t::mask(tail));
+          logme("ring: wait 4 space", t, ring_iterator_t::mask(tail));
           // std::osyncstream(std::cout) << std::format("ring_buffer: WAIT4TAIL {} (ptr: {:x})\n",
           //                                            ring_iterator_t::mask(tail), (size_t)&t);
           tail_.wait(tail, std::memory_order_acquire);
@@ -475,7 +464,7 @@ namespace fho
       }
       while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release,
                                           std::memory_order_acquire));
-      logme("ring_buffer:\tCOMITTED - ", elem, ring_iterator_t::mask(slot));
+      logme("ring: comitted", elem, ring_iterator_t::mask(slot));
       // std::osyncstream(std::cout) << std::format("ring_buffer: COMITTED {} (ptr: {:x})\n",
       //                                            ring_iterator_t::mask(slot), (size_t)&elem);
       head_.notify_one();
@@ -494,7 +483,7 @@ namespace fho
     /// auto token = buffer.push(val);
     /// ```
     template<std::move_constructible Func, typename... Args>
-      requires std::invocable<Func, Args...>
+      requires std::invocable<Func, Args...> || std::invocable<Func, slot_token&, Args...>
     auto
     push(Func&& func, Args&&... args) noexcept -> slot_token
     {
@@ -564,8 +553,8 @@ namespace fho
       tail_.notify_all();
       if (ring_iterator_t::mask(head - tail) != 0)
       {
-        logme("consume() tail", b->state, tail);
-        logme("consume() head", e->state, head);
+        logme("consume(): tail", b->state, tail);
+        logme("consume(): head", e->state, head);
       }
       return subrange_type(std::ranges::subrange(b, e), value_accessor);
     }

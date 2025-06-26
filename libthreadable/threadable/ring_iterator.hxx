@@ -239,9 +239,21 @@ namespace fho
     /// @brief Returns the current index of the iterator.
     /// @return The current index.
     [[nodiscard]] inline auto
-    index() const
+    index() const noexcept
     {
       return index_;
+    }
+
+    [[nodiscard]] inline auto
+    data() noexcept
+    {
+      return jobs_;
+    }
+
+    [[nodiscard]] inline auto
+    data() const noexcept
+    {
+      return jobs_;
     }
 
   private:

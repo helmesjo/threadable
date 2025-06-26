@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "threadable/ring_buffer.hxx"
+#include "threadable/token.hxx"
 
 using namespace std::chrono_literals;
 
@@ -158,9 +159,9 @@ SCENARIO("pool: execution order")
     for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
       tokens += queue.push(
-        [i, &executed, &counter]
+        [i, &executed, &counter](fho::slot_token& token)
         {
-          std::osyncstream(std::cout) << std::format("test: EXECUTING {}\n", i);
+          logme("test: executing", *token.state_.load(), i);
           executed[i] = counter++;
         });
       // simulate interruptions

@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <execution>
+#include <format>
 #include <iostream>
 #include <ranges>
 #include <syncstream>
@@ -132,13 +133,15 @@ namespace fho
               // if (prev->state.template test<slot_state::active>(std::memory_order_acquire))
               //   [[unlikely]]
               {
-                std::osyncstream(std::cout)
-                  << std::format("WAITING ({}-{}] - prev: {} (active: {} (ptr: {:x}))\n",
-                                 ring_iterator_t::mask(b.index()), ring_iterator_t::mask(e.index()),
-                                 ring_iterator_t::mask(prev.index()),
-                                 prev->state.template test<slot_state::active>(
-                                   std::memory_order_acquire),
-                                 (size_t)&*prev);
+                logme("executor: waiting", *prev, ring_iterator_t::mask(prev.index()));
+                // std::osyncstream(std::cout)
+                //   << std::format("WAITING ({}-{}] - prev: {} (active: {} (ptr: {:x}))\n",
+                //                  ring_iterator_t::mask(b.index()),
+                //                  ring_iterator_t::mask(e.index()),
+                //                  ring_iterator_t::mask(prev.index()),
+                //                  prev->state.template test<slot_state::active>(
+                //                    std::memory_order_acquire),
+                //                  (size_t) & (*prev));
                 // while(prev->state.template test<slot_state::active>(std::memory_order_acquire));
                 prev->state.template wait<slot_state::active, true>(std::memory_order_acquire);
               }
