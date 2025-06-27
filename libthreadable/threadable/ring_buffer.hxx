@@ -397,7 +397,7 @@ namespace fho
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_acquire);
 
-      auto& elem = elems_[ring_iterator_t::mask(slot)];
+      buf_slot& elem = elems_[ring_iterator_t::mask(slot)];
       elem.acquire();
       logme("ring: acquired", elem, ring_iterator_t::mask(slot));
       // std::osyncstream(std::cout) << std::format(

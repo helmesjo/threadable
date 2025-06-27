@@ -15,18 +15,18 @@ namespace fho
   inline auto
   logme(auto const& title, auto const& elem, auto slot)
   {
-    using namespace std::chrono;
-    auto              now = system_clock::now();
-    std::stringstream ss;
-    auto              time = system_clock::to_time_t(now);
-    ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S") << '.' // NOLINT
-       << std::setfill('0') << std::setw(6)
-       << duration_cast<microseconds>(now.time_since_epoch() % seconds(1)).count();
-    auto id   = std::this_thread::get_id();
-    auto thrd = std::hash<std::thread::id>{}(id);
-    std::osyncstream(std::cout) << std::format(
-      "[{}] \tptr: {:016x}\t thread: {:<20} slot: {} --> {}\n", ss.str(), (size_t)&elem, thrd, slot,
-      title);
+    // using namespace std::chrono;
+    // auto              now = system_clock::now();
+    // std::stringstream ss;
+    // auto              time = system_clock::to_time_t(now);
+    // ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S") << '.' // NOLINT
+    //    << std::setfill('0') << std::setw(6)
+    //    << duration_cast<microseconds>(now.time_since_epoch() % seconds(1)).count();
+    // auto id   = std::this_thread::get_id();
+    // auto thrd = std::hash<std::thread::id>{}(id);
+    // std::osyncstream(std::cout) << std::format(
+    //   "[{}] \tptr: {:016x}\t thread: {:<20} slot: {} --> {}\n", ss.str(), (size_t)&elem, thrd,
+    //   slot, title);
   }
 
   enum slot_state : std::uint8_t
