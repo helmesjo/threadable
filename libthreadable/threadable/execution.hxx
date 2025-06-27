@@ -119,7 +119,7 @@ namespace fho
       //                                            ring_iterator_t::mask(prev.index()));
 
       return work_.push(
-        [r = FWD(range), policy]() mutable
+        [policy](std::ranges::range auto&& r) mutable
         {
           auto       b          = r.begin().base();
           auto       e          = r.end().base();
@@ -156,6 +156,11 @@ namespace fho
             j();
           }
           {
+            // @TODO: This is a work-around to force-release the consumed range `r`, but the
+            //        main issue (as to why it doesn't happen automatically) is because
+            //        `fho::function` doesn't correctly forward (as r-value reference in this case)
+            //        to the function (this lambda). So it keeps holding on to the `active_subrange`
+            //        instance = nothing gets released.
             r = {};
             // auto derp = std::move(r);
             // std::osyncstream(std::cout)
@@ -163,11 +168,13 @@ namespace fho
             //                  ring_iterator_t::mask(e.index()),
             //                  ring_iterator_t::mask(prev.index()));
           }
-          std::osyncstream(std::cout)
-            << std::format("DONE    ({}-{}] - prev: {}\n", ring_iterator_t::mask(b.index()),
-                           ring_iterator_t::mask(e.index()), ring_iterator_t::mask(prev.index()));
+          // std::osyncstream(std::cout)
+          //   << std::format("DONE    ({}-{}] - prev: {}\n", ring_iterator_t::mask(b.index()),
+          //                  ring_iterator_t::mask(e.index()),
+          //                  ring_iterator_t::mask(prev.index()));
           // execute(std::move(r), execution::seq);
-        });
+        },
+        FWD(range));
     }
 
     /// @brief Submits a single job to be executed by the executor.
