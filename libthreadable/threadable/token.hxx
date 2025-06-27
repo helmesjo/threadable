@@ -8,6 +8,7 @@
 #include <format>
 #include <iostream>
 #include <syncstream>
+#include <thread>
 
 namespace fho
 {
@@ -24,7 +25,7 @@ namespace fho
     auto id   = std::this_thread::get_id();
     auto thrd = std::hash<std::thread::id>{}(id);
     std::osyncstream(std::cout) << std::format(
-      "[{}] \tslot: {} ptr: {:016x}\t thread: {:<20} --> {}\n", ss.str(), slot, (size_t)&elem, thrd,
+      "[{}] \tptr: {:016x}\t thread: {:<20} slot: {} --> {}\n", ss.str(), (size_t)&elem, thrd, slot,
       title);
   }
 

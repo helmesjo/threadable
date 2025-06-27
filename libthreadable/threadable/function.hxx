@@ -86,14 +86,26 @@ namespace fho
       {
         case method::copy_ctor:
         {
-          static_assert(std::copy_constructible<f_t>);
-          std::construct_at(static_cast<f_t*>(self), *static_cast<Func const*>(that));
+          if constexpr (std::copy_constructible<f_t>)
+          {
+            std::construct_at(static_cast<f_t*>(self), *static_cast<Func const*>(that));
+          }
+          else
+          {
+            assert(false);
+          }
         }
         break;
         case method::move_ctor:
         {
-          static_assert(std::move_constructible<f_t>);
-          std::construct_at(static_cast<f_t*>(self), std::move(*static_cast<Func*>(that)));
+          if constexpr (std::move_constructible<f_t>)
+          {
+            std::construct_at(static_cast<f_t*>(self), std::move(*static_cast<Func*>(that)));
+          }
+          else
+          {
+            assert(false);
+          }
         }
         break;
         case method::dtor:
@@ -393,7 +405,8 @@ namespace fho
 
       static constexpr std::uint8_t total_size = required_buffer_size_v<Func>;
 
-      static_assert(std::copy_constructible<Func>, "Callable must be copy-constructible");
+      static_assert(std::copy_constructible<Func> || std::move_constructible<Func>,
+                    "Callable must be copy-constructible");
       reset();
 
       // header (size)

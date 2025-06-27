@@ -11,6 +11,7 @@
 #include <cassert>
 #include <cstddef>
 #include <ranges>
+#include <syncstream>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -124,58 +125,34 @@ namespace fho
         // Wait if slot is occupied.
         // if (state.template test<slot_state::active>()) [[unlikely]]
         {
-          // state.template wait<slot_state::active, true>();
+          state.template wait<slot_state::active, true>();
         }
       }
 
       inline auto
       release() noexcept -> bool
       {
-        if (auto prev = state.load(std::memory_order_acquire); !prev)
-        {
-          return prev;
-        }
-        // if constexpr (!std::is_trivially_destructible_v<T>)
-        {
-          // Free up slot for re-use.
-          // value.reset();
-          // value = T{};
-          value.~T();
-          // value.T();
-        }
-        // auto prev = state.test_and_set<slot_state::active, false>(std::memory_order_release);
-        // std::osyncstream(std::cout) << std::format("slot: RELEASING ? (ptr: {:x})\n",
-        // (size_t)this);
-        // auto prev = static_cast<slot_state>(slot_state::active | slot_state::claimed);
-        auto prev = state.test_and_set<slot_state::active, false>(std::memory_order_acq_rel);
-        auto id   = std::this_thread::get_id();
-        auto thrd = std::hash<std::thread::id>{}(id);
-        // std::osyncstream(std::cout) << std::format(
-        //   "[{:%Y-%m-%d %H:%M:%S}] buf_slot: STATE AFTER RELEASED {} (ptr: {:x})\t thread: {}\n",
-        //   std::chrono::high_resolution_clock::now(), state.load(), (size_t)this, thrd);
-        // while (!state.compare_exchange_weak(prev, slot_state::empty, std::memory_order_release,
-        //                                     std::memory_order_acquire)) [[likely]]
-        // {
-        //   if (prev == slot_state::empty)
-        //   {
-        //     break;
-        //   }
-        //   prev = static_cast<slot_state>(slot_state::active | slot_state::claimed);
-        // }
-        // auto prev = state.exchange(slot_state::empty, std::memory_order_release);
-        // if (prev) [[likely]]
-        {
-          state.notify_all();
-        }
+        // must be claimed and active (both)
+        assert(state.test<(static_cast<slot_state>(slot_state::active | slot_state::claimed))>());
+        // Free up slot for re-use.
+        value.~T();
+        auto prev = state.exchange(slot_state::empty, std::memory_order_release);
+        assert(prev == (slot_state::active | slot_state::claimed));
+        state.notify_all();
         return prev;
       }
 
       inline auto
       assign(auto&&... args) noexcept -> decltype(auto)
       {
+        assert(state.load(std::memory_order_acquire) == slot_state::claimed);
+        // assert(state.load(std::memory_order_acquire) == slot_state::claimed);
+        assert(!value);
         value.assign(FWD(args)...);
-        // state.set<slot_state::active, true>(std::memory_order_release);
-        state.store(slot_state::active, std::memory_order_release);
+        // auto prev = state.test_and_set<slot_state::active, true>(std::memory_order_release);
+        auto prev =
+          state.exchange(slot_state::active | slot_state::claimed, std::memory_order_release);
+        // assert(prev == (slot_state::active | slot_state::claimed));
         // NOTE: Intentionally not notifying here since that is redundant (and costly),
         //       it is designed to be waited on by checking state active -> inactive.
         // details::atomic_notify_all(active);
@@ -233,7 +210,7 @@ namespace fho
       using base_t::prev;
       using base_t::size;
 
-      active_subrange(active_subrange const&) noexcept = default;
+      active_subrange(active_subrange const&) noexcept = delete;
       active_subrange(active_subrange&& that) noexcept = default;
       ~active_subrange()                               = default;
 
@@ -241,7 +218,7 @@ namespace fho
         : base_t(std::move(that))
       {}
 
-      auto operator=(active_subrange const&) noexcept -> active_subrange& = default;
+      auto operator=(active_subrange const&) noexcept -> active_subrange& = delete;
       auto operator=(active_subrange&& that) noexcept -> active_subrange& = default;
 
       // auto
@@ -265,57 +242,55 @@ namespace fho
                               {
                                 if constexpr (!std::is_const_v<value_type>)
                                 {
-                                  if (b == e)
+                                  if (b < e)
                                   {
+                                    // auto const prev       = b - 1;
+                                    // using ring_iterator_t = decltype(base_t::begin());
+                                    // if (b != e)
+                                    // {
+                                    logme(std::format("range: RELEASE  ({}-{}] (unmasked)", b, e),
+                                          nullptr, ring_iterator_t::mask(b));
                                     // std::osyncstream(std::cout)
-                                    //   << std::format("range: SKIP   ({}-{}]\n",
-                                    //   ring_iterator_t::mask(b),
-                                    //                  ring_iterator_t::mask(e));
-                                    return;
+                                    //   << std::format("range: RELEASE  ({}-{}]\n", b, e);
+                                    // }
+                                    // ring_buffer: ACQUIRED 0 (ptr: 14f009400)
+                                    // ring_buffer: COMITTED 0 (ptr: 14f009400)
+                                    // test: EXECUTING 0
+                                    // ring_buffer: ACQUIRED 1 (ptr: 14f009500)
+                                    // range: RELEASED 0 (ptr: 14f009400)
+                                    // ring_buffer: COMITTED 1 (ptr: 14f009500)
+                                    // test: EXECUTING 1
+                                    // ring_buffer: ACQUIRED 2 (ptr: 14f009600)
+                                    // ring_buffer: COMITTED 2 (ptr: 14f009600)
+                                    // range: RELEASED 1 (ptr: 14f009600) <-- IT RELEASES WRONG
+                                    // SLOT! ring_buffer: ACQUIRED 3 (ptr: 14f009700)
+                                    auto begin = ring_iterator_t(d, b);
+                                    auto end   = ring_iterator_t(d, e);
+                                    for (auto i = b; i < e; ++i)
+                                    // for (auto derp = begin; begin != end; ++derp)
+                                    {
+                                      buf_slot& elem = d[ring_iterator_t::mask(i)];
+                                      logme("range: releasing", elem, ring_iterator_t::mask(i));
+                                      // std::osyncstream(std::cout) << std::format("range:
+                                      // RELEASING
+                                      // {} (ptr: {:x})\n",
+                                      //                                            ring_iterator_t::mask(i),
+                                      //                                            (size_t)&e);
+                                      elem.release();
+                                      // assert(!e.state.load(std::memory_order_acquire));
+                                      logme("range: released", elem, ring_iterator_t::mask(i));
+                                      // std::osyncstream(std::cout)
+                                      //   << std::format("range: RELEASED  {} (ptr: {:x})\n",
+                                      //                  ring_iterator_t::mask(i), (size_t)&e);
+                                    }
+                                    // if (b != e)
+                                    // {
+                                    //   std::osyncstream(std::cout)
+                                    //     << std::format("range: RELEASED ({}-{}]\n",
+                                    //     ring_iterator_t::mask(b),
+                                    //                    ring_iterator_t::mask(e));
+                                    // }
                                   }
-
-                                  // auto const prev       = b - 1;
-                                  // using ring_iterator_t = decltype(base_t::begin());
-                                  // if (b != e)
-                                  // {
-                                  std::osyncstream(std::cout)
-                                    << std::format("range: RELEASE  ({}-{}]\n",
-                                                   ring_iterator_t::mask(b),
-                                                   ring_iterator_t::mask(e));
-                                  // }
-                                  // ring_buffer: ACQUIRED 0 (ptr: 14f009400)
-                                  // ring_buffer: COMITTED 0 (ptr: 14f009400)
-                                  // test: EXECUTING 0
-                                  // ring_buffer: ACQUIRED 1 (ptr: 14f009500)
-                                  // range: RELEASED 0 (ptr: 14f009400)
-                                  // ring_buffer: COMITTED 1 (ptr: 14f009500)
-                                  // test: EXECUTING 1
-                                  // ring_buffer: ACQUIRED 2 (ptr: 14f009600)
-                                  // ring_buffer: COMITTED 2 (ptr: 14f009600)
-                                  // range: RELEASED 1 (ptr: 14f009600) <-- IT RELEASES WRONG SLOT!
-                                  // ring_buffer: ACQUIRED 3 (ptr: 14f009700)
-                                  for (auto i = b; i < e; ++i)
-                                  {
-                                    buf_slot& elem = d[ring_iterator_t::mask(i)];
-                                    logme("range: releasing", elem, ring_iterator_t::mask(i));
-                                    // std::osyncstream(std::cout) << std::format("range: RELEASING
-                                    // {} (ptr: {:x})\n",
-                                    //                                            ring_iterator_t::mask(i),
-                                    //                                            (size_t)&e);
-                                    elem.release();
-                                    // assert(!e.state.load(std::memory_order_acquire));
-                                    logme("range: released", elem, ring_iterator_t::mask(i));
-                                    // std::osyncstream(std::cout)
-                                    //   << std::format("range: RELEASED  {} (ptr: {:x})\n",
-                                    //                  ring_iterator_t::mask(i), (size_t)&e);
-                                  }
-                                  // if (b != e)
-                                  // {
-                                  //   std::osyncstream(std::cout)
-                                  //     << std::format("range: RELEASED ({}-{}]\n",
-                                  //     ring_iterator_t::mask(b),
-                                  //                    ring_iterator_t::mask(e));
-                                  // }
                                 }
                               });
     };
@@ -358,14 +333,14 @@ namespace fho
     /// @details Initializes the (pre-allocated) ring buffer.
     ring_buffer() noexcept
     {
-      auto i = 0;
-      for (auto& e : elems_)
-      {
-        logme("range: INITIAL STATE FOR SLOT", e, ring_iterator_t::mask(i));
-        // STD::OSYNcstream(sTD::cout) << std::format("range: INITIAL STATE FOR SLOT {} (ptr:
-        // {:x})\n",
-        //                                            ring_iterator_t::mask(i++), (size_t)&e);
-      }
+      // auto i = 0;
+      // for (auto& e : elems_)
+      // {
+      //   logme("range: INITIAL STATE FOR SLOT", e, ring_iterator_t::mask(i));
+      //   // STD::OSYNcstream(sTD::cout) << std::format("range: INITIAL STATE FOR SLOT {} (ptr:
+      //   // {:x})\n",
+      //   //                                            ring_iterator_t::mask(i++), (size_t)&e);
+      // }
     }
 
     ~ring_buffer() = default;
@@ -459,11 +434,11 @@ namespace fho
           // std::osyncstream(std::cout) << std::format("ring_buffer: WAIT4TAIL {} (ptr: {:x})\n",
           //                                            ring_iterator_t::mask(tail), (size_t)&t);
           tail_.wait(tail, std::memory_order_acquire);
-          expected = slot;
         }
+        expected = slot;
       }
       while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release,
-                                          std::memory_order_acquire));
+                                          std::memory_order_relaxed));
       logme("ring: comitted", elem, ring_iterator_t::mask(slot));
       // std::osyncstream(std::cout) << std::format("ring_buffer: COMITTED {} (ptr: {:x})\n",
       //                                            ring_iterator_t::mask(slot), (size_t)&elem);
@@ -522,39 +497,13 @@ namespace fho
                                         {
                                           return e.state.load();
                                         });
-      // if (ring_iterator_t::mask(head - tail) == 0)
-      // {
-      //   int i = 0;
-      //   for (auto const& e : elems_)
-      //   {
-      //     if (e.state.load())
-      //     {
-      //       logme("consume() empty but slot active:", e, i);
-      //     }
-      //     ++i;
-      //   }
-      //   assert(!active);
-      // }
-      // Make sure previous slot has been processed.
-      // if constexpr (Capacity > 1)
-      // {
-      //   auto const prev = b - 1;
-      //   if (ring_iterator_t::mask(head - tail)) [[unlikely]]
-      //   {
-      //     if (prev->state.template test<slot_state::active>(std::memory_order_relaxed))
-      //     [[unlikely]]
-      //     {
-      //       prev->state.template wait<slot_state::active, true>();
-      //     }
-      //   }
-      // }
-      // NOTE: Intentionally not notifying here since we
-      //       use spin-locks for better performance.
       tail_.notify_all();
       if (ring_iterator_t::mask(head - tail) != 0)
       {
-        logme("consume(): tail", b->state, tail);
-        logme("consume(): head", e->state, head);
+        // std::osyncstream(std::cout) << std::format("range: CONSUME - ({}-{}]\n", tail, head);
+        logme(std::format("range: CONSUME  ({}-{}] (unmasked)", tail, head), b->state,
+              ring_iterator_t::mask(tail));
+        // logme("consume(): head", e->state, ring_iterator_t::mask(head));
       }
       return subrange_type(std::ranges::subrange(b, e), value_accessor);
     }
