@@ -1,8 +1,8 @@
 #pragma once
 
+#include <threadable/atomic.hxx>
 #include <threadable/ring_buffer.hxx>
 
-#include <atomic>
 #include <execution>
 #include <ranges>
 #include <thread>
@@ -17,39 +17,42 @@ namespace fho
     par
   };
 
-  /// @brief Executes a range of jobs.
-  /// @details Invokes the callables in the provided range, either sequentially or in parallel based
-  /// on the execution policy.
+  /// @brief Executes a range of callables.
+  /// @details Invokes the callables in the provided range with the provided arguments.
   /// @tparam `R` The type of the range.
-  /// @param `r` The range of jobs to execute.
-  /// @param `policy` Execution policy.
-  /// @return The number of jobs executed.
-  inline auto
-  execute(std::ranges::range auto&& r, execution policy = execution::par)
-    requires std::invocable<std::ranges::range_value_t<decltype(r)>>
+  /// @param `r` The range of callables to execute.
+  /// @tparam `Args` The types of the arguments.
+  /// @param `args` The arguments forwarded to each invocation.
+  /// @return The number of callables executed.
+  template<std::ranges::range R, typename... Args>
+  inline constexpr auto
+  execute(auto&& exPo, R&& r, Args&&... args)
+    requires std::invocable<std::ranges::range_value_t<R>, Args...>
   {
     using value_t = std::ranges::range_value_t<decltype(r)>;
     auto const b  = std::begin(r);
     auto const e  = std::end(r);
 #if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
-    if (policy == execution::par) [[likely]]
+    std::for_each(exPo, b, e,
+                  [&](value_t& elem)
+                  {
+                    elem(FWD(args)...);
+                  });
+#else
+    for (auto&& c : FWD(r))
     {
-      std::for_each(std::execution::par, b, e,
-                    [](value_t& elem)
-                    {
-                      elem();
-                    });
+      FWD(c)(FWD(args)...);
     }
-    else [[unlikely]]
 #endif
-    {
-      std::for_each(b, e,
-                    [](value_t& elem)
-                    {
-                      elem();
-                    });
-    }
     return r.size();
+  }
+
+  template<std::ranges::range R, typename... Args>
+  inline constexpr auto
+  execute(R&& r, Args&&... args)
+    requires std::invocable<std::ranges::range_value_t<R>, Args...>
+  {
+    return execute(std::execution::seq, FWD(r), FWD(args)...);
   }
 
   /// @brief A class that manages a single thread for executing jobs.
@@ -105,33 +108,41 @@ namespace fho
     submit(std::ranges::range auto&& range, execution policy) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
+      using value_t = std::ranges::range_value_t<decltype(range)>;
       return work_.push(
         [policy](std::ranges::range auto&& r) mutable
         {
-          auto       b          = r.begin().base();
-          auto       e          = r.end().base();
-          auto const prev       = b - 1;
-          using ring_iterator_t = decltype(b);
-          if (policy == execution::seq) [[likely]]
+          // Special rule for `ring_buffer` ranges:
+          // If sequential execution policy, wait for completion
+          // of previous slot.
+          if constexpr (requires {
+                          {
+                            range.begin().base()->state.load()
+                          } -> std::common_reference_with<slot_state>;
+                        })
           {
-            // Make sure previous slot has been processed.
-            if (b != e && prev != e && prev < b) [[unlikely]]
+            auto const b    = r.begin().base();
+            auto const e    = r.end().base();
+            auto const prev = b - 1;
+            if (policy == execution::seq) [[unlikely]]
             {
-              prev->state.template wait<slot_state::active, true>(std::memory_order_acquire);
+              // Make sure previous slot has been processed.
+              if (b != e && prev != e && prev < b) [[unlikely]]
+              {
+                prev->state.template wait<slot_state::active, true>(std::memory_order_acquire);
+              }
             }
           }
-          for (auto& j : r)
+          for (auto& e : r)
           {
-            j();
+            e();
           }
-          {
-            // @TODO: This is a work-around to force-release the consumed range `r`, but the
-            //        main issue (as to why it doesn't happen automatically) is because
-            //        `fho::function` doesn't correctly forward (as r-value reference in this case)
-            //        to the function (this lambda). So it keeps holding on to the `active_subrange`
-            //        instance = nothing gets released.
-            r = {};
-          }
+          // @TODO: This is a work-around to force-release the consumed range `r`, but the
+          //        main issue (as to why it doesn't happen automatically) is because
+          //        `fho::function` doesn't correctly forward (as r-value reference in this case)
+          //        to the function (this lambda). So it keeps holding on to the `active_subrange`
+          //        instance = nothing gets released.
+          r = {};
         },
         FWD(range));
     }
@@ -158,7 +169,8 @@ namespace fho
       work_.push(
         [this]
         {
-          stop_.store(true, std::memory_order_release);
+          stop_ = true;
+          work_.clear();
         });
     }
 
@@ -166,7 +178,7 @@ namespace fho
     void
     run()
     {
-      while (!stop_.load(std::memory_order_acquire)) [[likely]]
+      while (!stop_) [[likely]]
       {
         if (auto r = work_.consume(); !r.empty()) [[likely]]
         {
@@ -185,9 +197,9 @@ namespace fho
       }
     }
 
-    std::atomic_bool stop_{false};
-    ring_buffer<>    work_;
-    std::thread      thread_;
+    bool          stop_ = false;
+    ring_buffer<> work_;
+    std::thread   thread_;
   };
 }
 
