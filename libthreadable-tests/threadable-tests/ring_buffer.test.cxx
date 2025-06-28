@@ -88,6 +88,16 @@ SCENARIO("ring_buffer: push & claim")
 
       called    = 0;
       destroyed = 0;
+      AND_WHEN("cleared")
+      {
+        ring.clear();
+        THEN("it resets & destroys pushed jobs")
+        {
+          REQUIRE(ring.empty());
+          REQUIRE(called == 0);
+          REQUIRE(destroyed == 1);
+        }
+      }
       AND_WHEN("ring is destroyed")
       {
         {
@@ -459,23 +469,24 @@ SCENARIO("ring_buffer: standard algorithms")
             ++jobsExecuted;
           });
       }
-      auto [b, e] = ring.consume();
+      auto r = ring.consume();
       AND_WHEN("std::for_each")
       {
-        std::for_each(b, e,
-                      [](auto& job)
-                      {
-                        job();
-                      });
+        std::ranges::for_each(r,
+                              [](auto& job)
+                              {
+                                job();
+                              });
         THEN("all jobs executed")
         {
           REQUIRE(jobsExecuted.load() == ring.max_size());
           REQUIRE(ring.size() == 0);
         }
       }
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
       AND_WHEN("std::for_each (parallel)")
       {
-        std::for_each(std::execution::par, b, e,
+        std::for_each(std::execution::par, r.begin(), r.end(),
                       [](auto& job)
                       {
                         job();
@@ -486,6 +497,7 @@ SCENARIO("ring_buffer: standard algorithms")
           REQUIRE(ring.size() == 0);
         }
       }
+#endif
     }
   }
 }

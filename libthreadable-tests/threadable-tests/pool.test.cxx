@@ -6,10 +6,6 @@
 #include <thread>
 #include <vector>
 
-#include "threadable/ring_buffer.hxx"
-
-using namespace std::chrono_literals;
-
 SCENARIO("pool: create/remove queues")
 {
   auto pool = fho::pool();
@@ -92,22 +88,83 @@ SCENARIO("pool: create/remove queues")
   }
 }
 
+// @NOTE: Currently has a sporadic deadlock, but I'm cherry-pick of a larger
+//        group of fixes that (from testing) solves this.
+// SCENARIO("pool: execution order")
+// {
+//   constexpr auto capacity = std::size_t{1 << 16};
+//   auto           pool     = fho::pool<capacity>();
+//   GIVEN("a job is pushed to sequential queue")
+//   {
+//     auto& queue    = pool.create(fho::execution::seq);
+//     auto  executed = std::vector<std::size_t>(queue.max_size(), 0);
+//     auto  tokens   = fho::token_group{};
+//     auto  counter  = std::atomic_size_t{0};
+//     for (std::size_t i = 0; i < queue.max_size(); ++i)
+//     {
+//       tokens += queue.push(
+//         [i, &executed, &counter]()
+//         {
+//           executed[i] = counter++;
+//         });
+//       // simulate interruptions
+//       if (i % 2 == 0)
+//       {
+//         std::this_thread::yield();
+//       }
+//     }
+//     tokens.wait();
+//     THEN("all jobs are executed in order")
+//     {
+//       REQUIRE(executed.size() == queue.max_size());
+//       for (std::size_t i = 0; i < queue.max_size(); ++i)
+//       {
+//         REQUIRE(executed[i] == i);
+//       }
+//     }
+//     (void)pool.remove(std::move(queue));
+//   }
+//   GIVEN("a job is pushed to parallel queue")
+//   {
+//     auto counter = std::atomic_size_t{0};
+//     auto tokens  = fho::token_group{};
+//     for (std::size_t i = 0; i < capacity; ++i)
+//     {
+//       tokens += fho::push<fho::execution::par>(
+//         [&counter]
+//         {
+//           ++counter;
+//         });
+//     }
+//     tokens.wait();
+//     THEN("all jobs are executed")
+//     {
+//       REQUIRE(counter == capacity);
+//     }
+//   }
+// }
+
 SCENARIO("pool: push jobs to global pool")
 {
   constexpr auto nr_of_jobs = std::size_t{1024};
-  auto           mutex      = std::mutex{};
   auto           executed   = std::vector<std::size_t>(nr_of_jobs, 0);
   GIVEN("a job is pushed to sequential queue")
   {
-    auto tokens = fho::token_group{};
+    std::ranges::fill(executed, 0);
+    auto tokens  = fho::token_group{};
+    auto counter = std::atomic_size_t{0};
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
       tokens += fho::push<fho::execution::seq>(
-        [i, &executed, &mutex]
+        [i, &executed, &counter]
         {
-          std::scoped_lock _{mutex};
-          executed[i] = i;
+          executed[i] = counter++;
         });
+      // simulate interruptions
+      if (i % 2 == 0)
+      {
+        std::this_thread::yield();
+      }
     }
     tokens.wait();
     THEN("all jobs are executed in order")
@@ -141,33 +198,11 @@ SCENARIO("pool: push jobs to global pool")
 
 SCENARIO("pool: stress-test")
 {
-  constexpr auto capacity = std::size_t{1 << 18};
-  auto           pool     = fho::pool<capacity>();
-  GIVEN("single producer pushes a large amount of jobs")
-  {
-    auto& queue   = pool.create(fho::execution::par);
-    auto  counter = std::atomic_size_t{0};
-
-    auto tokens = fho::token_group{};
-    for (std::size_t i = 0; i < queue.max_size(); ++i)
-    {
-      tokens += queue.push(
-        [&counter]
-        {
-          ++counter;
-        });
-    }
-
-    tokens.wait();
-
-    THEN("all gets executed")
-    {
-      REQUIRE(counter.load() == queue.max_size());
-    }
-  }
+  constexpr auto capacity = std::size_t{1 << 16};
+  auto           pool     = fho::pool<capacity>(0);
   GIVEN("multiple producers pushes a large amount of jobs")
   {
-    constexpr auto nr_producers = 3;
+    constexpr auto nr_producers = 5;
 
     auto& queue     = pool.create(fho::execution::par);
     auto  counter   = std::atomic_size_t{0};

@@ -3,9 +3,11 @@
 #include <threadable/ring_buffer.hxx>
 
 #include <atomic>
-#include <chrono>
+#include <execution>
 #include <ranges>
 #include <thread>
+
+#define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
 namespace fho
 {
@@ -22,39 +24,13 @@ namespace fho
   /// @param `r` The range of jobs to execute.
   /// @param `policy` Execution policy.
   /// @return The number of jobs executed.
-  template<typename R>
   inline auto
-  execute(std::ranges::subrange<R> r, execution policy = execution::par)
+  execute(std::ranges::range auto&& r)
     requires std::invocable<std::ranges::range_value_t<decltype(r)>>
   {
-    using value_t = std::ranges::range_value_t<decltype(r)>;
-    auto const b  = std::begin(r);
-    auto const e  = std::end(r);
-    if (policy == execution::par) [[likely]]
+    for (auto& e : r)
     {
-      std::for_each(std::execution::par, b, e,
-                    [](value_t& elem)
-                    {
-                      elem();
-                    });
-    }
-    else [[unlikely]]
-    {
-      // Make sure previous job has been executed, where
-      // `b-1` is `e` if `r` wraps around, or active if it's
-      // already consumed but being processed by another
-      // thread.
-      auto const prev = b - 1;
-      if ((prev != e) && prev->state.template test<job_state::active>(std::memory_order_relaxed))
-        [[unlikely]]
-      {
-        prev->state.template wait<job_state::active, true>();
-      }
-      std::for_each(b, e,
-                    [](value_t& elem)
-                    {
-                      elem();
-                    });
+      e();
     }
     return r.size();
   }
@@ -107,20 +83,35 @@ namespace fho
     /// provided range sequentially. This new job is then pushed into the internal `ring_buffer`.
     /// @tparam `T` The type of the range, must be a subrange of jobs.
     /// @param `range` The range of jobs to be executed together as a single job.
-    /// @return A `job_token` for the submitted job, which represents the entire range.
-    template<typename T>
+    /// @return A `slot_token` for the submitted job, which represents the entire range.
     auto
-    submit(std::ranges::subrange<T> range, execution policy = execution::par) noexcept
+    submit(std::ranges::range auto&& range, execution policy) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
+      using value_t = std::ranges::range_value_t<decltype(range)>;
       return work_.push(
-        [r = std::move(range)]
+        [policy](std::ranges::range auto&& r) mutable
         {
+          if constexpr (std::same_as<job, value_t>)
+          {
+            auto const b    = std::begin(r);
+            auto const e    = std::end(r);
+            auto const prev = b - 1;
+            if (policy == execution::seq) [[likely]]
+            {
+              // Make sure previous slot has been processed.
+              if (b != e && prev != e && prev < b) [[unlikely]]
+              {
+                prev->state.template wait<job_state::active, true>(std::memory_order_acquire);
+              }
+            }
+          }
           for (auto& j : r)
           {
             j();
           }
-        });
+        },
+        FWD(range));
     }
 
     /// @brief Submits a single job to be executed by the executor.
@@ -128,7 +119,7 @@ namespace fho
     /// be executed by the executor thread.
     /// @tparam `Func` The type of the callable, must be invocable.
     /// @param `work` The callable to be executed as a job.
-    /// @return A `job_token` for the submitted job, which can be used to monitor its state.
+    /// @return A `slot_token` for the submitted job, which can be used to monitor its state.
     auto
     submit(std::invocable auto&& work) noexcept
     {
@@ -141,25 +132,42 @@ namespace fho
     void
     stop() noexcept
     {
-      stop_.store(true, std::memory_order_relaxed);
-      std::ignore = work_.consume();
+      // Release thread if waiting.
+      work_.push(
+        [this]
+        {
+          stop_ = true;
+          work_.clear();
+        });
     }
 
   private:
     void
     run()
     {
-      while (!stop_.load(std::memory_order_relaxed)) [[likely]]
+      while (!stop_) [[likely]]
       {
-        if (auto r = work_.consume(); fho::execute(r, execution::seq) == 0) [[unlikely]]
+        if (auto r = work_.consume(); !r.empty()) [[likely]]
         {
-          std::this_thread::sleep_for(std::chrono::nanoseconds{1});
+          for (auto& j : r)
+          {
+            j();
+          }
+        }
+        else
+        {
+          // NOTE: Don't sleep here, as even (especially?) small sleeps (nanosecond)
+          //       will 1. increase ring buffer contention but also 2. accumulate
+          //       in user code with many executors causing unexpected delays.
+          work_.wait();
         }
       }
     }
 
-    std::atomic_bool stop_{false};
-    ring_buffer<>    work_;
-    std::thread      thread_;
+    bool          stop_ = false;
+    ring_buffer<> work_;
+    std::thread   thread_;
   };
 }
+
+#undef FWD
