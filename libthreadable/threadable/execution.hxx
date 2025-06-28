@@ -3,12 +3,8 @@
 #include <threadable/ring_buffer.hxx>
 
 #include <atomic>
-#include <chrono>
 #include <execution>
-#include <format>
-#include <iostream>
 #include <ranges>
-#include <syncstream>
 #include <thread>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -109,15 +105,6 @@ namespace fho
     submit(std::ranges::range auto&& range, execution policy) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
-      // auto       b          = range.begin().base();
-      // auto       e          = range.end().base();
-      // auto const prev       = b - 1;
-      // using ring_iterator_t = decltype(b);
-      // std::osyncstream(std::cout) << std::format("SUBMIT  ({}-{}] - prev: {}\n",
-      //                                            ring_iterator_t::mask(b.index()),
-      //                                            ring_iterator_t::mask(e.index()),
-      //                                            ring_iterator_t::mask(prev.index()));
-
       return work_.push(
         [policy](std::ranges::range auto&& r) mutable
         {
@@ -130,27 +117,9 @@ namespace fho
             // Make sure previous slot has been processed.
             if (b != e && prev != e && prev < b) [[unlikely]]
             {
-              // if (prev->state.template test<slot_state::active>(std::memory_order_acquire))
-              //   [[unlikely]]
-              {
-                logme("executor: waiting", *prev, ring_iterator_t::mask(prev.index()));
-                // std::osyncstream(std::cout)
-                //   << std::format("WAITING ({}-{}] - prev: {} (active: {} (ptr: {:x}))\n",
-                //                  ring_iterator_t::mask(b.index()),
-                //                  ring_iterator_t::mask(e.index()),
-                //                  ring_iterator_t::mask(prev.index()),
-                //                  prev->state.template test<slot_state::active>(
-                //                    std::memory_order_acquire),
-                //                  (size_t) & (*prev));
-                // while(prev->state.template test<slot_state::active>(std::memory_order_acquire));
-                prev->state.template wait<slot_state::active, true>(std::memory_order_acquire);
-              }
+              prev->state.template wait<slot_state::active, true>(std::memory_order_acquire);
             }
           }
-          // std::osyncstream(std::cout)
-          //   << std::format("EXEC    ({}-{}] - prev: {}\n", ring_iterator_t::mask(b.index()),
-          //                  ring_iterator_t::mask(e.index()),
-          //                  ring_iterator_t::mask(prev.index()));
           for (auto& j : r)
           {
             j();
@@ -162,17 +131,7 @@ namespace fho
             //        to the function (this lambda). So it keeps holding on to the `active_subrange`
             //        instance = nothing gets released.
             r = {};
-            // auto derp = std::move(r);
-            // std::osyncstream(std::cout)
-            //   << std::format("DROPED  ({}-{}] - prev: {}\n", ring_iterator_t::mask(b.index()),
-            //                  ring_iterator_t::mask(e.index()),
-            //                  ring_iterator_t::mask(prev.index()));
           }
-          // std::osyncstream(std::cout)
-          //   << std::format("DONE    ({}-{}] - prev: {}\n", ring_iterator_t::mask(b.index()),
-          //                  ring_iterator_t::mask(e.index()),
-          //                  ring_iterator_t::mask(prev.index()));
-          // execute(std::move(r), execution::seq);
         },
         FWD(range));
     }

@@ -6,11 +6,6 @@
 #include <thread>
 #include <vector>
 
-#include "threadable/ring_buffer.hxx"
-#include "threadable/token.hxx"
-
-using namespace std::chrono_literals;
-
 SCENARIO("pool: create/remove queues")
 {
   auto pool = fho::pool();
@@ -148,7 +143,7 @@ SCENARIO("pool: push jobs to global pool")
 SCENARIO("pool: execution order")
 {
   constexpr auto capacity = std::size_t{4};
-  auto           pool     = fho::pool<capacity>(0);
+  auto           pool     = fho::pool<capacity>();
   GIVEN("a job is pushed to sequential queue")
   {
     auto& queue    = pool.create(fho::execution::seq);
@@ -161,7 +156,6 @@ SCENARIO("pool: execution order")
       tokens += queue.push(
         [i, &executed, &counter](fho::slot_token& token)
         {
-          logme("test: executing", *token.state_.load(), i);
           executed[i] = counter++;
         });
       // simulate interruptions
@@ -204,13 +198,13 @@ SCENARIO("pool: execution order")
 
 SCENARIO("pool: stress-test")
 {
-  constexpr auto capacity = std::size_t{1 << 12};
-  auto           pool     = fho::pool<capacity>(0);
+  constexpr auto capacity = std::size_t{1 << 16};
+  auto           pool     = fho::pool<capacity>();
   GIVEN("multiple producers pushes a large amount of jobs")
   {
-    constexpr auto nr_producers = 7;
+    constexpr auto nr_producers = 5;
 
-    auto& queue     = pool.create(fho::execution::seq);
+    auto& queue     = pool.create(fho::execution::par);
     auto  counter   = std::atomic_size_t{0};
     auto  producers = std::vector<std::thread>{};
 

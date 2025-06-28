@@ -107,17 +107,10 @@ namespace fho
                 }
                 else [[unlikely]]
                 {
-                  auto b                = range.begin().base();
-                  auto e                = range.end().base();
-                  using ring_iterator_t = decltype(b);
-                  auto& be              = b->state;
-                  auto& ee              = (e - 1)->state;
-                  logme("executor: start", be, ring_iterator_t::mask(b.index()));
                   for (auto& j : range)
                   {
                     j();
                   }
-                  logme("executor: done", ee, ring_iterator_t::mask(e.index() - 1));
                 }
               }
             }

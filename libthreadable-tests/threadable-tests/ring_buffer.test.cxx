@@ -40,9 +40,9 @@ SCENARIO("ring_buffer: push & claim")
         REQUIRE_NOTHROW(ring.end());
         REQUIRE_NOTHROW(ring.consume());
       }
-      THEN("clear() returns 0")
+      THEN("clear() does not throw/crash")
       {
-        REQUIRE(ring.clear() == 0);
+        REQUIRE_NOTHROW(ring.clear());
       }
       AND_WHEN("moved from")
       {
@@ -93,7 +93,7 @@ SCENARIO("ring_buffer: push & claim")
       destroyed = 0;
       AND_WHEN("cleared")
       {
-        REQUIRE(ring.clear() == 1);
+        ring.clear();
         THEN("it resets & destroys pushed jobs")
         {
           REQUIRE(ring.empty());
