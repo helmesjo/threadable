@@ -16,9 +16,9 @@ namespace
 {
   template<typename T>
   auto
-  is_aligned(T const* ptr, std::size_t alignment) -> bool
+  is_aligned(T const& ptr, std::size_t alignment) -> bool
   {
-    auto addr = reinterpret_cast<std::uintptr_t>(ptr); // NOLINT
+    auto addr = reinterpret_cast<std::uintptr_t>(&ptr); // NOLINT
     return (addr % alignment) == 0;
   }
 
@@ -261,11 +261,11 @@ SCENARIO("ring_buffer: alignment")
     {
       ring.push([] {});
     }
-    THEN("they are alligned to cache line boundaries")
+    THEN("all are aligned to cache line boundaries")
     {
-      for (auto const& item : ring)
+      for (auto itr = ring.begin(); itr != ring.end(); ++itr)
       {
-        REQUIRE(is_aligned(&item, fho::details::cache_line_size));
+        REQUIRE(is_aligned(*itr.base(), fho::details::cache_line_size));
       }
     }
   }

@@ -563,6 +563,8 @@ namespace fho
   template<typename Func, typename... Args>
   function_buffer(Func&&, Args&&...) -> function_buffer<required_buffer_size_v<Func, Args...>>;
 
+  static_assert(sizeof(function_buffer<details::cache_line_size>) == details::cache_line_size);
+
   /// @brief A dynamic function wrapper that can store callables of any size.
   /// @details The `function_dyn` class is designed to store and invoke callable objects of
   /// arbitrary size by dynamically allocating memory on the heap. It is suitable for scenarios
@@ -712,7 +714,7 @@ namespace fho
   /// f();
   /// ```
   template<std::size_t Size = details::cache_line_size - sizeof(details::invoke_func_t)>
-  struct alignas(details::cache_line_size) function
+  struct function
   {
   private:
     using buffer_t = function_buffer<Size>;
@@ -872,6 +874,8 @@ namespace fho
       return buffer_.size();
     }
   };
+
+  static_assert(sizeof(function<details::cache_line_size>) == details::cache_line_size);
 }
 
 #undef FWD

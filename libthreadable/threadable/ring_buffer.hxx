@@ -142,28 +142,8 @@ namespace fho
       }
     };
 
-    static_assert(sizeof(buf_slot) % details::cache_line_size == 0,
-                  "Buffer slot size must be a multiple of the cache line size");
-
     using ring_iterator_t       = ring_iterator<buf_slot, index_mask>;
     using const_ring_iterator_t = ring_iterator<buf_slot const, index_mask>;
-
-    // static_assert(sizeof(buf_slot) - sizeof(buf_slot::state) - sizeof(buf_slot::value) == 0);
-
-    // static constexpr auto slot_buffer_size =
-    //   sizeof(buf_slot) - sizeof(function<0>);
-
-    //     static_assert(sizeof(T) <= details::slot_buffer_size,
-    // #if __cpp_static_assert >= 202306L
-    //                   std::format("T (size: {}) does not fit ring buffer slot (free: {})",
-    //                   sizeof(T),
-    //                               details::slot_buffer_size));
-    // #else
-    //                   "T does not fit ring buffer slot");
-    // #endif
-
-    static_assert(Capacity > 1, "capacity must be greater than 1");
-    static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
 
   public:
     template<typename Iterator>
@@ -258,6 +238,20 @@ namespace fho
       std::is_same_v<value_type, std::remove_reference_t<decltype(*std::declval<iterator>())>>);
     static_assert(
       std::is_const_v<std::remove_reference_t<decltype(*std::declval<const_iterator>())>>);
+
+    static_assert(Capacity > 1, "capacity must be greater than 1");
+    static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
+
+#if __cpp_static_assert >= 202306L && __cpp_lib_constexpr_format
+    static_assert(sizeof(T) <= details::slot_size,
+                  std::format("T (size: {}) does not fit ring buffer slot (free : {}) ", sizeof(T),
+                              details::slot_size));
+#else
+    static_assert(sizeof(T) <= details::slot_size, "T does not fit ring buffer slot");
+#endif
+
+    static_assert(sizeof(buf_slot) % details::cache_line_size == 0,
+                  "Buffer slot size must be a multiple of the cache line size");
 
     /// @brief Default constructor.
     /// @details Initializes the (pre-allocated) ring buffer.
