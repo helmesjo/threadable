@@ -15,6 +15,20 @@ namespace fho
       std::conditional_t<std::is_enum_v<T>, std::underlying_type<T>, std::type_identity<T>>::type;
   }
 
+  inline constexpr auto
+  to_underlying(auto&& t) noexcept
+  {
+    using underlying_t = details::underlying_type_t<std::remove_reference_t<decltype(t)>>;
+    return static_cast<underlying_t>(t);
+  }
+
+  template<typename T>
+  inline constexpr auto
+  from_underlying(auto&& u) noexcept
+  {
+    return static_cast<T>(u);
+  }
+
   /// @brief A template class for atomic bitfield operations.
   /// @details This class provides atomic operations on individual bits or groups of bits within an
   /// underlying integer type `T`. It inherits from `std::atomic<T>` and adds methods to test, set,
@@ -34,18 +48,6 @@ namespace fho
   {
     using underlying_type = details::underlying_type_t<T>;
     using atomic_t        = std::atomic<underlying_type>;
-
-    static constexpr auto
-    to_underlying(T t) noexcept
-    {
-      return static_cast<underlying_type>(t);
-    }
-
-    static constexpr auto
-    from_underlying(underlying_type u) noexcept
-    {
-      return static_cast<T>(u);
-    }
 
   public:
     using atomic_t::atomic_t;
@@ -73,7 +75,7 @@ namespace fho
     {
       auto exp = to_underlying(expected);
       auto res = this->compare_exchange_strong(exp, to_underlying(desired), orders...);
-      expected = from_underlying(exp);
+      expected = from_underlying<T>(exp);
       return res;
     }
 
@@ -84,7 +86,7 @@ namespace fho
     {
       auto exp = to_underlying(expected);
       auto res = this->compare_exchange_weak(exp, to_underlying(desired), orders...);
-      expected = from_underlying(exp);
+      expected = from_underlying<T>(exp);
       return res;
     }
 
@@ -122,7 +124,7 @@ namespace fho
       else
       {
         // Clear the bit
-        return Mask & this->fetch_and(static_cast<underlying_type>(~Mask), orders...);
+        return Mask & this->fetch_and(to_underlying(~Mask), orders...);
       }
     }
 
