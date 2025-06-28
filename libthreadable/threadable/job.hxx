@@ -142,7 +142,8 @@ namespace fho
     reset() noexcept -> job_state
     {
       func_.reset();
-      return state.exchange(job_state::empty, std::memory_order_release);
+      return from_underlying<job_state>(
+        state.exchange(job_state::empty, std::memory_order_release));
     }
 
     /// @brief Checks if the job is done.
