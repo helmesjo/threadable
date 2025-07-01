@@ -488,9 +488,16 @@ namespace fho
     auto
     operator=(function_buffer const& buffer) -> auto&
     {
-      std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
-      details::invoke_special_func(data(), details::method::copy_ctor,
-                                   const_cast<std::byte*>(buffer.data())); // NOLINT
+      if (buffer.size()) [[likely]]
+      {
+        std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
+        details::invoke_special_func(data(), details::method::copy_ctor,
+                                     const_cast<std::byte*>(buffer.data())); // NOLINT
+      }
+      else [[unlikely]]
+      {
+        reset();
+      }
       return *this;
     }
 
@@ -502,9 +509,15 @@ namespace fho
     auto
     operator=(function_buffer&& buffer) noexcept -> auto&
     {
-      std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
-      details::invoke_special_func(data(), details::method::move_ctor, buffer.data());
-      details::size(buffer.data(), 0);
+      if (buffer.size()) [[likely]]
+      {
+        std::memcpy(data(), buffer.data(), details::function_buffer_meta_size);
+        details::invoke_special_func(data(), details::method::move_ctor, buffer.data());
+      }
+      else [[unlikely]]
+      {
+        reset();
+      }
       return *this;
     }
 
