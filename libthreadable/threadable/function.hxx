@@ -68,33 +68,51 @@ namespace fho
     /// @brief Performs special operations on the callable object in the buffer.
     /// @details Handles copy construction, move construction, or destruction based on the method.
     /// Used internally for callable lifecycle management.
-    /// @tparam `Func` The type of the callable object.
+    /// @tparam `T` The type of the object.
     /// @param `self` Pointer to the target buffer.
     /// @param `m` The operation to perform: copy_ctor, move_ctor, or dtor.
     /// @param `that` Pointer to the source buffer for copy/move, optional for destruction.
-    template<typename Func>
+    template<typename T>
     inline constexpr void
     invoke_special_func(void* self, method m, void* that)
     {
-      using func_t = std::remove_cvref_t<Func>;
+      using value_t = std::remove_cvref_t<T>;
       switch (m)
       {
         case method::copy_ctor:
         {
-          static_assert(std::copy_constructible<func_t>);
-          std::construct_at(static_cast<func_t*>(self), *static_cast<Func const*>(that));
+          if constexpr (std::copy_constructible<value_t>)
+          {
+            std::construct_at(static_cast<value_t*>(self), *static_cast<T const*>(that));
+          }
+          else
+          {
+            assert("Type is not copy-constructible" == nullptr);
+            std::terminate();
+          }
         }
         break;
         case method::move_ctor:
         {
-          static_assert(std::move_constructible<func_t>);
-          std::construct_at(static_cast<func_t*>(self), std::move(*static_cast<Func*>(that)));
+          if constexpr (std::move_constructible<value_t>)
+          {
+            std::construct_at(static_cast<value_t*>(self), std::move(*static_cast<T*>(that)));
+          }
+          else if constexpr (std::copy_constructible<value_t>)
+          {
+            std::construct_at(static_cast<value_t*>(self), *static_cast<T const*>(that));
+          }
+          else
+          {
+            assert("Type is not move- nor copy-constructible" == nullptr);
+            std::terminate();
+          }
         }
         break;
         case method::dtor:
         {
-          static_assert(std::destructible<func_t>);
-          std::destroy_at(static_cast<func_t*>(self));
+          static_assert(std::destructible<value_t>);
+          std::destroy_at(static_cast<value_t*>(self));
         }
         break;
       }
@@ -339,9 +357,8 @@ namespace fho
     assign(Func&& func, Args&&... args) noexcept
       requires std::invocable<Func&&, Args&&...> && (sizeof...(args) > 0)
     {
-      using func_value_t = std::remove_reference_t<decltype(func)>;
-      if constexpr (std::is_function_v<func_value_t> ||
-                    std::is_member_function_pointer_v<func_value_t>)
+      using value_t = std::remove_reference_t<decltype(func)>;
+      if constexpr (std::is_function_v<value_t> || std::is_member_function_pointer_v<value_t>)
       {
         assign(
           [func, ... args = FWD(args)]() mutable
@@ -384,11 +401,12 @@ namespace fho
     assign(Func&& callable) noexcept
       requires (!is_function_v<Func>) && (required_buffer_size_v<Func> <= Size)
     {
-      using func_t = std::remove_reference_t<Func>;
+      using value_t = std::remove_reference_t<Func>;
 
       static constexpr std::uint8_t total_size = required_buffer_size_v<Func>;
 
-      static_assert(std::copy_constructible<Func>, "Callable must be copy-constructible");
+      static_assert(std::copy_constructible<Func> || std::move_constructible<Func>,
+                    "Callable must be copy- or move-constructible");
       reset();
 
       // header (size)
@@ -396,10 +414,10 @@ namespace fho
       // body (destructor pointer)
       // body (callable)
       details::size(buffer_.data(), total_size);
-      details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<func_t>));
+      details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<value_t>));
       details::special_func_ptr(buffer_.data(),
-                                std::addressof(details::invoke_special_func<func_t>));
-      std::construct_at(reinterpret_cast<std::remove_const_t<func_t>*>( // NOLINT
+                                std::addressof(details::invoke_special_func<value_t>));
+      std::construct_at(reinterpret_cast<std::remove_const_t<value_t>*>( // NOLINT
                           details::body_ptr(buffer_.data())),
                         FWD(callable));
     }
@@ -535,6 +553,8 @@ namespace fho
 
   template<typename Func, typename... Args>
   function_buffer(Func&&, Args&&...) -> function_buffer<required_buffer_size_v<Func, Args...>>;
+
+  static_assert(sizeof(function_buffer<details::cache_line_size>) == details::cache_line_size);
 
   /// @brief A dynamic function wrapper that can store callables of any size.
   /// @details The `function_dyn` class is designed to store and invoke callable objects of
@@ -845,6 +865,8 @@ namespace fho
       return buffer_.size();
     }
   };
+
+  static_assert(sizeof(function<details::cache_line_size>) == details::cache_line_size);
 }
 
 #undef FWD
