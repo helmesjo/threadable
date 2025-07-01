@@ -36,8 +36,10 @@ namespace fho
   /// objects concurrently and a single consumer to consume. It uses atomic
   /// operations to manage the buffer's state. The buffer is templated on its capacity, which must
   /// be a power of 2 and greater than 1.
+  /// @tparam `T` The value type.
   /// @tparam `Capacity` The size of the ring buffer, must be a power of 2 and greater than 1.
   /// Defaults to 65536 (`1 << 16`).
+  /// @tparam `Allocator` The allocator type.
   /// @example
   /// ```cpp
   /// auto buffer = fho::ring_buffer<int>{};
@@ -45,12 +47,14 @@ namespace fho
   /// auto range = buffer.consume();
   /// ```
   template<typename T           = function<details::slot_size>,
-           std::size_t Capacity = details::default_capacity>
+           std::size_t Capacity = details::default_capacity,
+           typename Allocator   = aligned_allocator<ring_slot<T>, details::cache_line_size>>
   class ring_buffer
   {
     static constexpr auto index_mask = Capacity - 1u;
 
     using slot_type             = ring_slot<T>;
+    using allocator_type        = Allocator;
     using value_type            = T;
     using atomic_index_t        = std::atomic_size_t;
     using index_t               = typename atomic_index_t::value_type;
@@ -392,9 +396,7 @@ namespace fho
     alignas(details::cache_line_size) atomic_index_t head_{0};
     alignas(details::cache_line_size) atomic_index_t next_{0};
 
-    alignas(details::cache_line_size)
-      std::vector<slot_type, aligned_allocator<slot_type, details::cache_line_size>> elems_{
-        Capacity};
+    alignas(details::cache_line_size) std::vector<slot_type, allocator_type> elems_{Capacity};
 
     /// @brief Pre-created to ensure iterator compatibility.
     /// NOTE: MSVC in debug specifically does not like iterators from temporarily created &
