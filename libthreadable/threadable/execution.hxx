@@ -112,9 +112,12 @@ namespace fho
     submit(std::ranges::range auto&& range, execution policy) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
-      using value_t = std::ranges::range_value_t<decltype(range)>;
+      // NOTE: Take range as l-value to claim ownership if it was
+      //       passed as r-value reference to make sure it is
+      //       correctly released when the lambda completes.
+      //       See `active_subrange` destruction for details.
       return work_.push(
-        [policy](std::ranges::range auto&& r) mutable
+        [policy](std::ranges::range auto r /* NOTE: Must be passed by value */) mutable
         {
           // Special rule for `ring_buffer` ranges:
           // If sequential execution policy, wait for completion
@@ -141,12 +144,6 @@ namespace fho
           {
             c();
           }
-          // @TODO: This is a work-around to force-release the consumed range `r`, but the
-          //        main issue (as to why it doesn't happen automatically) is because
-          //        `fho::function` doesn't correctly forward (as r-value reference in this case)
-          //        to the function (this lambda). So it keeps holding on to the `active_subrange`
-          //        instance = nothing gets released.
-          r = {};
         },
         FWD(range));
     }
