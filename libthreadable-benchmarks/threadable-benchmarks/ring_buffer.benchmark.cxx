@@ -2,6 +2,7 @@
 #include <threadable/ring_buffer.hxx>
 
 #include <algorithm>
+#include <execution>
 #include <functional>
 #include <vector>
 
@@ -15,6 +16,8 @@ namespace
 {
   constexpr auto jobs_per_iteration = 1 << 20;
   auto           val                = 1; // NOLINT
+
+  using func_t = fho::function<fho::details::slot_size>;
 }
 
 TEST_CASE("ring: push")
@@ -43,8 +46,8 @@ TEST_CASE("ring: push")
   }
   b.title("ring: push");
   {
-    auto ring  = fho::ring_buffer<fho::job, jobs_per_iteration>();
-    auto token = fho::job_token{};
+    auto ring  = fho::ring_buffer<func_t, jobs_per_iteration>();
+    auto token = fho::slot_token{};
 
     b.run("fho::ring_buffer",
           [&]
@@ -75,15 +78,15 @@ TEST_CASE("ring: iterate (sequential)")
     b.run("std::vector",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(ring), std::end(ring),
-                          [](auto const& job)
-                          {
-                            bench::doNotOptimizeAway(job);
-                          });
+            std::ranges::for_each(ring,
+                                  [](auto const& job)
+                                  {
+                                    bench::doNotOptimizeAway(job);
+                                  });
           });
   }
   {
-    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -92,15 +95,16 @@ TEST_CASE("ring: iterate (sequential)")
     b.run("fho::ring_buffer",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(ring), std::end(ring),
-                          [](auto const& job)
-                          {
-                            bench::doNotOptimizeAway(job);
-                          });
+            std::ranges::for_each(ring,
+                                  [](auto const& job)
+                                  {
+                                    bench::doNotOptimizeAway(job);
+                                  });
           });
   }
 }
 
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
 TEST_CASE("ring: iterate (parallel)")
 {
   bench::Bench b;
@@ -126,7 +130,7 @@ TEST_CASE("ring: iterate (parallel)")
           });
   }
   {
-    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -143,6 +147,7 @@ TEST_CASE("ring: iterate (parallel)")
           });
   }
 }
+#endif
 
 TEST_CASE("ring: execute (sequential)")
 {
@@ -161,15 +166,15 @@ TEST_CASE("ring: execute (sequential)")
     b.run("std::vector",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(ring), std::end(ring),
-                          [](auto& job)
-                          {
-                            job();
-                          });
+            std::ranges::for_each(ring,
+                                  [](auto& job)
+                                  {
+                                    job();
+                                  });
           });
   }
   {
-    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -179,15 +184,16 @@ TEST_CASE("ring: execute (sequential)")
     b.run("fho::ring_buffer",
           [&]
           {
-            std::for_each(std::execution::seq, std::begin(range), std::end(range),
-                          [](auto& job)
-                          {
-                            job.get()();
-                          });
+            std::ranges::for_each(range,
+                                  [](auto& job)
+                                  {
+                                    job();
+                                  });
           });
   }
 }
 
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
 TEST_CASE("ring: execute (parallel)")
 {
   bench::Bench b;
@@ -205,15 +211,15 @@ TEST_CASE("ring: execute (parallel)")
     b.run("std::vector",
           [&]
           {
-            std::for_each(std::execution::par, std::begin(ring), std::end(ring),
-                          [](auto& job)
-                          {
-                            job();
-                          });
+            std::ranges::for_each(ring,
+                                  [](auto& job)
+                                  {
+                                    job();
+                                  });
           });
   }
   {
-    auto ring = fho::ring_buffer<fho::job, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
       ring.push(job_t{});
@@ -226,8 +232,9 @@ TEST_CASE("ring: execute (parallel)")
             std::for_each(std::execution::par, std::begin(range), std::end(range),
                           [](auto& job)
                           {
-                            job.get()();
+                            job();
                           });
           });
   }
 }
+#endif

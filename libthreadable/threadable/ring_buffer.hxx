@@ -2,29 +2,21 @@
 
 #include <threadable/allocator.hxx>
 #include <threadable/atomic.hxx>
-#include <threadable/job.hxx>
+#include <threadable/function.hxx>
 #include <threadable/ring_iterator.hxx>
+#include <threadable/token.hxx>
 
 #include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cstddef>
-#include <execution>
-#include <iterator>
 #include <ranges>
+#include <type_traits>
 #include <vector>
 
-#if !defined(__cpp_lib_execution) && !defined(__cpp_lib_parallel_algorithm) && \
-  __has_include(<pstld/pstld.h>)
-  #ifndef PSTLD_HACK_INTO_STD
-    #define PSTLD_HACK_INTO_STD
-  #endif
-  #include <pstld/pstld.h>
-  #undef PSTLD_HACK_INTO_STD
-#endif
-
-#if __cpp_lib_execution < 201603L || __cpp_lib_parallel_algorithm < 201603L
-  #error requires __cpp_lib_execution & __cpp_lib_parallel_algorithm
+#ifdef _WIN32
+  #pragma warning(push)
+  #pragma warning(disable : 4324)
 #endif
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -33,7 +25,8 @@ namespace fho
 {
   namespace details
   {
-    constexpr std::size_t default_capacity = 1 << 16;
+    inline constexpr auto        slot_size        = cache_line_size - sizeof(fho::atomic_state_t);
+    inline constexpr std::size_t default_capacity = 1 << 16;
   }
 
   /// @brief A Multi-Producer Single-Consumer (MPSC) ring buffer for managing objects in a
@@ -46,12 +39,12 @@ namespace fho
   /// Defaults to 65536 (`1 << 16`).
   /// @example
   /// ```cpp
-  /// auto buffer = fho::ring_buffer<>{fho::execution::parallel};
-  /// buffer.push([]() { cout << "Job executed!\n"; });
+  /// auto buffer = fho::ring_buffer<int>{};
+  /// buffer.push(1);
   /// auto range = buffer.consume();
-  /// fho::execute(range);
   /// ```
-  template<typename T = job, std::size_t Capacity = details::default_capacity>
+  template<typename T           = function<details::slot_size>,
+           std::size_t Capacity = details::default_capacity>
   class ring_buffer
   {
     using value_type                    = T;
@@ -60,26 +53,205 @@ namespace fho
     static constexpr auto index_mask    = Capacity - 1u;
     static constexpr auto null_callback = [](ring_buffer&) {};
 
+    struct alignas(details::cache_line_size) buf_slot
+    {
+      fho::atomic_state_t state;
+      value_type          value;
+
+      buf_slot() = default;
+
+      buf_slot(fho::atomic_state_t state, value_type value)
+        : state(state.load(std::memory_order_relaxed))
+        , value(std::move(value))
+      {}
+
+      buf_slot(buf_slot&& that) noexcept
+        : state(that.state.load(std::memory_order_relaxed))
+        , value(std::move(that.value))
+      {}
+
+      buf_slot(buf_slot const&) = delete;
+      ~buf_slot()               = default;
+
+      auto operator=(buf_slot const&) -> buf_slot& = delete;
+
+      inline auto
+      operator=(buf_slot&& that) noexcept -> buf_slot&
+      {
+        state = std::move(that.state.load(std::memory_order_relaxed));
+        value = std::move(that.value);
+      }
+
+      inline
+      operator value_type&() noexcept
+      {
+        return value;
+      }
+
+      inline
+      operator value_type const&() const noexcept
+      {
+        return value;
+      }
+
+      inline void
+      acquire() noexcept
+      {
+        auto exp = slot_state::empty;
+        while (!state.compare_exchange_weak(exp, slot_state::claimed, std::memory_order_release,
+                                            std::memory_order_relaxed)) [[likely]]
+        {
+          exp = slot_state::empty;
+        }
+      }
+
+      inline auto
+      assign(auto&&... args) noexcept -> decltype(auto)
+      {
+        assert(state.load(std::memory_order_acquire) == slot_state::claimed);
+        assert(!value);
+        value.assign(FWD(args)...);
+        state.store(slot_state::active, std::memory_order_release);
+        // NOTE: Intentionally not notifying here since that is redundant (and costly),
+        //       it is designed to be waited on by checking state active -> inactive.
+        // state.notify_all();
+      }
+
+      inline void
+      release() noexcept
+      {
+        // must be active
+        assert(state.test<slot_state::active>());
+        // Free up slot for re-use.
+        if constexpr (!std::is_trivially_destructible_v<T>)
+        {
+          value.~T();
+        }
+        state.store(slot_state::empty, std::memory_order_release);
+        state.notify_all();
+      }
+
+      inline void
+      token(slot_token& t) noexcept
+      {
+        t.assign(state);
+      }
+    };
+
+    using ring_iterator_t       = ring_iterator<buf_slot, index_mask>;
+    using const_ring_iterator_t = ring_iterator<buf_slot const, index_mask>;
+
+  public:
+    template<typename Iterator>
+    struct active_subrange final : std::ranges::subrange<Iterator>
+    {
+      using base_t = std::ranges::subrange<Iterator>;
+
+      using iterator        = Iterator; // NOLINT
+      using value_type      = typename iterator::value_type;
+      using difference_type = typename iterator::difference_type;
+
+      using base_t::base_t;
+
+      using base_t::advance;
+      using base_t::back;
+      using base_t::begin;
+      using base_t::empty;
+      using base_t::end;
+      using base_t::front;
+      using base_t::next;
+      using base_t::prev;
+      using base_t::size;
+
+      active_subrange(active_subrange const&) noexcept = delete;
+      active_subrange(active_subrange&& that) noexcept = default;
+      ~active_subrange()                               = default;
+
+      active_subrange(base_t&& that) noexcept
+        : base_t(std::move(that))
+      {}
+
+      auto operator=(active_subrange const&) noexcept -> active_subrange& = delete;
+      auto operator=(active_subrange&& that) noexcept -> active_subrange& = default;
+
+    private:
+      /// @brief Static dummy object and `shared_ptr` for reference counting to trigger cleanup.
+      /// @details This is a hack to use `shared_ptr<void>` for reference counting but without
+      /// allocating memory. The static `dummy` char serves as a valid, non-owned placeholder
+      /// with program-long lifetime. The `shared_ptr`'s control block tracks references, and the
+      /// custom deleter runs when the last instance is destroyed, releasing all `buf_slot` elements
+      /// in the range.
+      inline static char    dummy = 1;
+      std::shared_ptr<void> resetter_ =
+        std::shared_ptr<void>(&dummy,
+                              [b = base_t::begin().index(), e = base_t::end().index(),
+                               d = base_t::begin().data()](void*)
+                              {
+                                if constexpr (!std::is_const_v<value_type>)
+                                {
+                                  if (b < e)
+                                  {
+                                    for (auto i = b; i < e; ++i)
+                                    {
+                                      buf_slot& elem = d[ring_iterator_t::mask(i)];
+                                      elem.release();
+                                    }
+                                  }
+                                }
+                              });
+    };
+
+    inline static constexpr auto value_accessor =
+      [](auto&& a) -> std::add_lvalue_reference_t<value_type>
+    {
+      return FWD(a).value;
+    };
+
+    inline static constexpr auto const_value_accessor =
+      [](auto&& a) -> std::add_lvalue_reference_t<std::add_const_t<value_type>>
+    {
+      return FWD(a).value;
+    };
+
+    using transform_type =
+      std::ranges::transform_view<std::ranges::subrange<ring_iterator_t>, decltype(value_accessor)>;
+    using const_transform_type =
+      std::ranges::transform_view<std::ranges::subrange<const_ring_iterator_t>,
+                                  decltype(const_value_accessor)>;
+
+    using subrange_type =
+      decltype(active_subrange<ring_iterator_t>() | std::views::transform(value_accessor));
+
+    using const_subrange_type = decltype(active_subrange<const_ring_iterator_t>() |
+                                         std::views::transform(const_value_accessor));
+
+    using iterator       = std::ranges::iterator_t<transform_type>;       // NOLINT
+    using const_iterator = std::ranges::iterator_t<const_transform_type>; // NOLINT
+
+    static_assert(
+      std::is_same_v<value_type, std::remove_reference_t<decltype(*std::declval<iterator>())>>);
+    static_assert(
+      std::is_const_v<std::remove_reference_t<decltype(*std::declval<const_iterator>())>>);
+
     static_assert(Capacity > 1, "capacity must be greater than 1");
     static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
 
-  public:
-    using iterator       = ring_iterator<value_type, index_mask>;       // NOLINT
-    using const_iterator = ring_iterator<value_type const, index_mask>; // NOLINT
-    static_assert(std::is_const_v<typename const_iterator::value_type>);
-    static_assert(std::is_const_v<std::remove_reference_t<typename const_iterator::reference>>);
-    static_assert(std::is_const_v<std::remove_pointer_t<typename const_iterator::pointer>>);
+#if __cpp_static_assert >= 202306L && __cpp_lib_constexpr_format
+    static_assert(sizeof(T) <= details::slot_size,
+                  std::format("T (size: {}) does not fit ring buffer slot (free : {}) ", sizeof(T),
+                              details::slot_size));
+#else
+    static_assert(sizeof(T) <= details::slot_size, "T does not fit ring buffer slot");
+#endif
 
-    // Make sure iterator is valid for parallelization with the standard algorithms
-    static_assert(std::random_access_iterator<iterator>);
-    static_assert(std::contiguous_iterator<iterator>);
-
-    ring_buffer(ring_buffer const&) = delete;
+    static_assert(sizeof(buf_slot) % details::cache_line_size == 0,
+                  "Buffer slot size must be a multiple of the cache line size");
 
     /// @brief Default constructor.
     /// @details Initializes the (pre-allocated) ring buffer.
-    ring_buffer() noexcept = default;
-    ~ring_buffer()         = default;
+    ring_buffer() noexcept          = default;
+    ring_buffer(ring_buffer const&) = delete;
+    ~ring_buffer()                  = default;
 
     /// @brief Move constructor.
     /// @details Moves the contents of another ring buffer into this one.
@@ -111,44 +283,32 @@ namespace fho
       return *this;
     }
 
-    /// @brief Pushes a job into the ring buffer with a job token.
-    /// @details Adds a callable to the buffer, associating it with a job token for state
+    /// @brief Pushes a value into the ring buffer with a token.
+    /// @details Adds a callable to the buffer, associating it with a token for state
     /// monitoring.
     /// @tparam `Func` The type of the callable.
     /// @tparam `Args` The types of the arguments.
-    /// @param `token` The job token to associate with the job.
+    /// @param `token` The token to associate with the slot.
     /// @param `func` The callable to add to the buffer.
     /// @param `args` The arguments to pass to the callable.
-    /// @return A reference to the job token.
+    /// @return A reference to the token.
     /// @example
     /// ```cpp
-    /// auto token = fho::job_token{};
-    /// buffer.push(token, []() { cout << "Job executed!\n"; });
+    /// auto token = fho::slot_token{};
+    /// buffer.push(token, val);
     /// ```
-    template<std::copy_constructible Func, typename... Args>
-      requires std::invocable<Func, Args...> || std::invocable<Func, job_token&, Args...>
+    template<std::move_constructible Func, typename... Args>
+      requires std::invocable<Func, Args...> || std::invocable<Func, slot_token&, Args...>
     auto
-    push(job_token& token, Func&& func, Args&&... args) noexcept -> job_token&
+    push(slot_token& token, Func&& func, Args&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot.
-      auto const slot = next_.fetch_add(1, std::memory_order_relaxed);
-
-      auto& elem = elems_[iterator::mask(slot)];
-      auto  exp  = job_state::empty;
-      while (!elem.state.compare_exchange_weak(exp, job_state::claimed, std::memory_order_release,
-                                               std::memory_order_relaxed)) [[likely]]
-      {
-        exp = job_state::empty;
-      }
-
-      // Wait if slot is occupied.
-      if (elem.state.template test<job_state::active>()) [[unlikely]]
-      {
-        elem.state.template wait<job_state::active, true>();
-      }
+      auto const slot = next_.fetch_add(1, std::memory_order_acquire);
+      buf_slot&  elem = elems_[ring_iterator_t::mask(slot)];
+      elem.acquire();
 
       // 2. Assign `value_type`.
-      if constexpr (std::invocable<Func, job_token&, Args...>)
+      if constexpr (std::invocable<Func, slot_token&, Args...>)
       {
         elem.assign(FWD(func), std::ref(token), FWD(args)...);
       }
@@ -157,115 +317,108 @@ namespace fho
         elem.assign(FWD(func), FWD(args)...);
       }
 
-      assert(elem);
-
-      token.assign(elem.state);
-
-      // Check if full before comitting.
-      if (auto tail = tail_.load(std::memory_order_relaxed); iterator::mask(slot + 1 - tail) == 0)
-        [[unlikely]]
-      {
-        tail_.wait(tail, std::memory_order_relaxed);
-      }
+      elem.token(token);
 
       // 3. Commit slot.
-      auto expected = slot;
-      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release,
-                                          std::memory_order_relaxed)) [[likely]]
+      index_t expected; // NOLINT
+      do
       {
+        // Check if full before comitting.
+        if (auto tail = tail_.load(std::memory_order_acquire);
+            ring_iterator_t::mask(slot + 1 - tail) == 0) [[unlikely]]
+        {
+          tail_.wait(tail, std::memory_order_acquire);
+        }
         expected = slot;
       }
+      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release,
+                                          std::memory_order_relaxed));
       head_.notify_one();
       return token;
     }
 
-    /// @brief Pushes a job into the ring buffer.
-    /// @details Adds a callable to the buffer and returns a new job token.
+    /// @brief Pushes a value into the ring buffer.
+    /// @details Adds a callable to the buffer and returns a new token.
     /// @tparam `Func` The type of the callable.
     /// @tparam `Args` The types of the arguments.
     /// @param `func` The callable to add to the buffer.
     /// @param `args` The arguments to pass to the callable.
-    /// @return A new job token for the added job.
+    /// @return A new token for the acquired slot.
     /// @example
     /// ```cpp
-    /// auto token = buffer.push([]() { cout << "Job executed!\n"; });
+    /// auto token = buffer.push(val);
     /// ```
-    template<std::copy_constructible Func, typename... Args>
-      requires std::invocable<Func, Args...>
+    template<std::move_constructible Func, typename... Args>
+      requires std::invocable<Func, Args...> || std::invocable<Func, slot_token&, Args...>
     auto
-    push(Func&& func, Args&&... args) noexcept -> job_token
+    push(Func&& func, Args&&... args) noexcept -> slot_token
     {
-      job_token token;
-      push(token, FWD(func), FWD(args)...);
+      slot_token token;
+      std::ignore = push(token, FWD(func), FWD(args)...);
       return token;
     }
 
-    /// @brief Waits until there are jobs available in the buffer.
+    /// @brief Waits until there are values available in the buffer.
     /// @details Blocks until the buffer is not empty.
     void
     wait() const noexcept
     {
-      auto const tail = tail_.load(std::memory_order_relaxed);
-      auto const head = head_.load(std::memory_order_relaxed);
-      if (iterator::mask(head - tail) == 0) [[unlikely]]
+      auto const tail = tail_.load(std::memory_order_acquire);
+      auto const head = head_.load(std::memory_order_acquire);
+      if (ring_iterator_t::mask(head - tail) == 0) [[unlikely]]
       {
-        head_.wait(head, std::memory_order_relaxed);
+        head_.wait(head, std::memory_order_acquire);
       }
     }
 
-    /// @brief Consumes jobs from the buffer.
-    /// @details Retrieves a range of jobs from the buffer for execution.
-    /// @param `max` The maximum number of jobs to consume. Defaults to the buffer capacity.
-    /// @return A subrange of iterators pointing to the consumed jobs.
+    /// @brief Consumes values from the buffer.
+    /// @details Retrieves a range of values from the buffer for execution.
+    /// @param `max` The maximum number of values to consume. Defaults to `max_size()`.
+    /// @return A subrange pointing to the consumed values.
     auto
-    consume(std::size_t max = Capacity) noexcept -> std::ranges::subrange<iterator>
+    consume(index_t max = max_size()) noexcept
     {
+      assert(max <= max_size());
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
-      auto       b    = iterator(elems_.data(), tail);
-      auto       e    = iterator(elems_.data(), head);
-      tail_.store(head, std::memory_order_release);
-      // NOTE: Intentionally not notifying here since we
-      //       use spin-locks for better performance.
-      // tail_.notify_all();
-      return std::ranges::subrange(b, e);
+      auto const cap  = tail + std::min<index_t>(max, head - tail); // Cap range size
+      auto       b    = ring_iterator_t(elems_.data(), tail);
+      auto       e    = ring_iterator_t(elems_.data(), cap);
+      tail_.store(cap, std::memory_order_release);
+      tail_.notify_all();
+      return subrange_type(std::ranges::subrange(b, e), value_accessor);
     }
 
-    /// @brief Clears all jobs from the buffer.
-    /// @details Resets all jobs in the buffer to an empty state.
+    /// @brief Clears all values from the buffer.
+    /// @details Resets all values in the buffer to an empty state.
     void
     clear() noexcept
     {
-      auto range = consume();
-      std::for_each(std::execution::par, std::begin(range), std::end(range),
-                    [](value_type& elem)
-                    {
-                      elem.reset();
-                    });
+      std::ignore = consume();
     }
 
     /// @brief Returns an iterator to the beginning (tail) of the buffer.
-    /// @details Provides access to the first job in the buffer.
+    /// @details Provides access to the first value in the buffer.
     /// @return A const iterator to the beginning of the buffer.
     auto
-    begin() const noexcept -> const_iterator
+    begin() const noexcept
     {
       auto const tail = tail_.load(std::memory_order_acquire);
-      return const_iterator(elems_.data(), tail);
+      return std::ranges::next(constRange_.begin(), tail);
     }
 
     /// @brief Returns an iterator to the end (head) of the buffer.
-    /// @details Provides access to the position after the last job in the buffer.
+    /// @details Provides access to the position after the last value in the buffer.
     /// @return A const iterator to the end of the buffer.
     auto
-    end() const noexcept -> const_iterator
+    end() const noexcept
     {
       auto const head = head_.load(std::memory_order_acquire);
-      return begin() + head;
+      return std::ranges::next(constRange_.begin(), head);
     }
 
     /// @brief Returns the maximum size of the buffer.
-    /// @details The maximum number of jobs the buffer can hold, which is `capacity - 1`.
+    /// @details The maximum number of values the buffer can hold, which is `capacity - 1`.
     /// @return The maximum size of the buffer.
     static constexpr auto
     max_size() noexcept -> std::size_t
@@ -273,19 +426,19 @@ namespace fho
       return Capacity - 1;
     }
 
-    /// @brief Returns the current number of jobs in the buffer.
-    /// @details Calculates the number of jobs currently in the buffer.
-    /// @return The number of jobs in the buffer.
+    /// @brief Returns the current number of values in the buffer.
+    /// @details Calculates the number of values currently in the buffer.
+    /// @return The number of values in the buffer.
     auto
     size() const noexcept -> std::size_t
     {
-      auto const tail = tail_.load(std::memory_order_relaxed);
-      auto const head = head_.load(std::memory_order_relaxed);
-      return iterator::mask(head - tail); // circular distance
+      auto const tail = tail_.load(std::memory_order_acquire);
+      auto const head = head_.load(std::memory_order_acquire);
+      return ring_iterator_t::mask(head - tail); // circular distance
     }
 
     /// @brief Checks if the buffer is empty.
-    /// @details Returns true if there are no jobs in the buffer, false otherwise.
+    /// @details Returns true if there are no values in the buffer, false otherwise.
     /// @return True if the buffer is empty, false otherwise.
     auto
     empty() const noexcept -> bool
@@ -324,9 +477,20 @@ namespace fho
     alignas(details::cache_line_size) atomic_index_t next_{0};
 
     alignas(details::cache_line_size)
-      std::vector<value_type, aligned_allocator<value_type, details::cache_line_size>> elems_{
-        Capacity};
+      std::vector<buf_slot, aligned_allocator<buf_slot, details::cache_line_size>> elems_{Capacity};
+
+    /// @brief Pre-created to ensure iterator compatibility.
+    /// NOTE: MSVC in debug specifically does not like iterators from temporarily created &
+    /// differing ranges
+    const_ring_iterator_t const begin_ = const_ring_iterator_t(elems_.data(), 0);          // NOLINT
+    const_ring_iterator_t const end_   = const_ring_iterator_t(elems_.data(), max_size()); // NOLINT
+    const_transform_type const  constRange_ =                                              // NOLINT
+      const_transform_type(std::ranges::subrange(begin_, end_), const_value_accessor);
   };
 }
 
 #undef FWD
+
+#ifdef _WIN32
+  #pragma warning(pop)
+#endif

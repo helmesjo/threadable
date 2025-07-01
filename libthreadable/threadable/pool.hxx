@@ -12,10 +12,20 @@
 #include <random>
 #include <thread>
 
+#ifdef _WIN32
+  #pragma warning(push)
+  #pragma warning(disable : 4324)
+#endif
+
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
 namespace fho
 {
+  namespace details
+  {
+    using job_t = function<details::slot_size>;
+  }
+
   /// @brief A thread pool class that manages multiple executors and job queues.
   /// @details The `pool` class manages a collection of `executor` instances and multiple job queues
   /// (instances of `ring_buffer`). It includes a scheduler thread that distributes jobs from the
@@ -33,7 +43,7 @@ namespace fho
   class pool
   {
   public:
-    using queue_t = ring_buffer<job, Capacity>;
+    using queue_t = ring_buffer<details::job_t, Capacity>;
 
     struct job_queue
     {
@@ -97,11 +107,10 @@ namespace fho
                 }
                 else [[unlikely]]
                 {
-                  std::for_each(range.begin(), range.end(),
-                                [](auto& j)
-                                {
-                                  j();
-                                });
+                  for (auto& j : range)
+                  {
+                    j();
+                  }
                 }
               }
             }
@@ -225,7 +234,7 @@ namespace fho
   /// @param `policy` The execution policy for the new queue. Defaults to `execution::parallel`.
   /// @return A reference to the newly created queue.
   [[nodiscard]] inline auto
-  create(execution policy = execution::par) noexcept -> details::queue_t&
+  create(execution policy = execution::par) noexcept -> decltype(auto)
   {
     return details::pool().create(policy);
   }
@@ -236,7 +245,7 @@ namespace fho
   /// @param `queue` The queue to remove, moved into the function.
   /// @return True if the queue was found and removed, false otherwise.
   inline auto
-  remove(details::queue_t&& queue) noexcept -> bool
+  remove(details::queue_t&& queue) noexcept -> decltype(auto)
   {
     return details::pool().remove(std::move(queue));
   }
@@ -249,10 +258,10 @@ namespace fho
   /// @tparam `Args` The types of the arguments.
   /// @param `func` The callable to push.
   /// @param `args` The arguments to pass to the callable.
-  /// @return A `job_token` for the submitted job.
+  /// @return A `slot_token` for the submitted job.
   template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
   [[nodiscard]] inline auto
-  push(Func&& func, Args&&... args) noexcept
+  push(Func&& func, Args&&... args) noexcept -> decltype(auto)
     requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
   {
     static auto& queue = create(Policy);
@@ -261,3 +270,7 @@ namespace fho
 }
 
 #undef FWD
+
+#ifdef _WIN32
+  #pragma warning(pop)
+#endif
