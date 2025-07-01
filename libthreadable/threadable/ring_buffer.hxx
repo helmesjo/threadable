@@ -4,6 +4,7 @@
 #include <threadable/atomic.hxx>
 #include <threadable/function.hxx>
 #include <threadable/ring_iterator.hxx>
+#include <threadable/ring_slot.hxx>
 #include <threadable/token.hxx>
 
 #include <algorithm>
@@ -47,99 +48,14 @@ namespace fho
            std::size_t Capacity = details::default_capacity>
   class ring_buffer
   {
-    using value_type                    = T;
-    using atomic_index_t                = std::atomic_size_t;
-    using index_t                       = typename atomic_index_t::value_type;
-    static constexpr auto index_mask    = Capacity - 1u;
-    static constexpr auto null_callback = [](ring_buffer&) {};
+    static constexpr auto index_mask = Capacity - 1u;
 
-    struct alignas(details::cache_line_size) buf_slot
-    {
-      fho::atomic_state_t state;
-      value_type          value;
-
-      buf_slot() = default;
-
-      buf_slot(fho::atomic_state_t state, value_type value)
-        : state(state.load(std::memory_order_relaxed))
-        , value(std::move(value))
-      {}
-
-      buf_slot(buf_slot&& that) noexcept
-        : state(that.state.load(std::memory_order_relaxed))
-        , value(std::move(that.value))
-      {}
-
-      buf_slot(buf_slot const&) = delete;
-      ~buf_slot()               = default;
-
-      auto operator=(buf_slot const&) -> buf_slot& = delete;
-
-      inline auto
-      operator=(buf_slot&& that) noexcept -> buf_slot&
-      {
-        state = std::move(that.state.load(std::memory_order_relaxed));
-        value = std::move(that.value);
-      }
-
-      inline
-      operator value_type&() noexcept
-      {
-        return value;
-      }
-
-      inline
-      operator value_type const&() const noexcept
-      {
-        return value;
-      }
-
-      inline void
-      acquire() noexcept
-      {
-        auto exp = slot_state::empty;
-        while (!state.compare_exchange_weak(exp, slot_state::claimed, std::memory_order_release,
-                                            std::memory_order_relaxed)) [[likely]]
-        {
-          exp = slot_state::empty;
-        }
-      }
-
-      inline auto
-      assign(auto&&... args) noexcept -> decltype(auto)
-      {
-        assert(state.load(std::memory_order_acquire) == slot_state::claimed);
-        assert(!value);
-        std::construct_at(&value, FWD(args)...);
-        state.store(slot_state::active, std::memory_order_release);
-        // NOTE: Intentionally not notifying here since that is redundant (and costly),
-        //       it is designed to be waited on by checking state active -> inactive.
-        // state.notify_all();
-      }
-
-      inline void
-      release() noexcept
-      {
-        // must be active
-        assert(state.test<slot_state::active>());
-        // Free up slot for re-use.
-        if constexpr (!std::is_trivially_destructible_v<T>)
-        {
-          std::destroy_at(&value);
-        }
-        state.store(slot_state::empty, std::memory_order_release);
-        state.notify_all();
-      }
-
-      inline void
-      token(slot_token& t) noexcept
-      {
-        t.assign(state);
-      }
-    };
-
-    using ring_iterator_t       = ring_iterator<buf_slot, index_mask>;
-    using const_ring_iterator_t = ring_iterator<buf_slot const, index_mask>;
+    using slot_type             = ring_slot<T>;
+    using value_type            = T;
+    using atomic_index_t        = std::atomic_size_t;
+    using index_t               = typename atomic_index_t::value_type;
+    using ring_iterator_t       = ring_iterator<slot_type, index_mask>;
+    using const_ring_iterator_t = ring_iterator<slot_type const, index_mask>;
 
   public:
     template<typename Iterator>
@@ -179,8 +95,8 @@ namespace fho
       /// @details This is a hack to use `shared_ptr<void>` for reference counting but without
       /// allocating memory. The static `dummy` char serves as a valid, non-owned placeholder
       /// with program-long lifetime. The `shared_ptr`'s control block tracks references, and the
-      /// custom deleter runs when the last instance is destroyed, releasing all `buf_slot` elements
-      /// in the range.
+      /// custom deleter runs when the last instance is destroyed, releasing all `slot_type`
+      /// elements in the range.
       inline static char    dummy = 1;
       std::shared_ptr<void> resetter_ =
         std::shared_ptr<void>(&dummy,
@@ -193,7 +109,7 @@ namespace fho
                                   {
                                     for (auto i = b; i < e; ++i)
                                     {
-                                      buf_slot& elem = d[ring_iterator_t::mask(i)];
+                                      slot_type& elem = d[ring_iterator_t::mask(i)];
                                       elem.release();
                                     }
                                   }
@@ -244,7 +160,7 @@ namespace fho
     static_assert(sizeof(T) <= details::slot_size, "T does not fit ring buffer slot");
 #endif
 
-    static_assert(sizeof(buf_slot) % details::cache_line_size == 0,
+    static_assert(sizeof(slot_type) % details::cache_line_size == 0,
                   "Buffer slot size must be a multiple of the cache line size");
 
     /// @brief Default constructor.
@@ -304,7 +220,7 @@ namespace fho
     {
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_acquire);
-      buf_slot&  elem = elems_[ring_iterator_t::mask(slot)];
+      slot_type& elem = elems_[ring_iterator_t::mask(slot)];
       elem.acquire();
 
       // 2. Assign `value_type`.
@@ -477,7 +393,8 @@ namespace fho
     alignas(details::cache_line_size) atomic_index_t next_{0};
 
     alignas(details::cache_line_size)
-      std::vector<buf_slot, aligned_allocator<buf_slot, details::cache_line_size>> elems_{Capacity};
+      std::vector<slot_type, aligned_allocator<slot_type, details::cache_line_size>> elems_{
+        Capacity};
 
     /// @brief Pre-created to ensure iterator compatibility.
     /// NOTE: MSVC in debug specifically does not like iterators from temporarily created &
