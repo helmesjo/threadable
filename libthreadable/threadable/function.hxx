@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception> // std::terminate()
 #include <functional>
 #include <limits>
 #include <memory>

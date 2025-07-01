@@ -52,7 +52,11 @@ namespace fho
   execute(R&& r, Args&&... args)
     requires std::invocable<std::ranges::range_value_t<R>, Args...>
   {
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
     return execute(std::execution::seq, FWD(r), FWD(args)...);
+#else
+    return execute(0, FWD(r), FWD(args)...);
+#endif
   }
 
   /// @brief A class that manages a single thread for executing jobs.
