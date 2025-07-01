@@ -718,7 +718,7 @@ namespace fho
   /// fho::function<> f = []() { std::cout << "Hello, World!\n"; };
   /// f();
   /// ```
-  template<std::size_t Size = details::cache_line_size - sizeof(details::invoke_func_t)>
+  template<std::size_t Size = details::cache_line_size>
   struct function
   {
   private:
@@ -833,7 +833,7 @@ namespace fho
     /// @brief Gets the internal buffer.
     /// @details Returns a const reference to the internal `buffer_t`.
     /// @return A const reference to the internal buffer.
-    auto
+    [[nodiscard]] auto
     buffer() const noexcept -> buffer_t const&
     {
       return buffer_;
@@ -842,7 +842,7 @@ namespace fho
     /// @brief Gets the internal buffer.
     /// @details Returns a reference to the internal `buffer_t`.
     /// @return A reference to the internal buffer.
-    auto
+    [[nodiscard]] auto
     buffer() noexcept -> buffer_t&
     {
       return buffer_;
