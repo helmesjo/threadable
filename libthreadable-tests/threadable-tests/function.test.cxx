@@ -190,7 +190,7 @@ SCENARIO("function_buffer")
     };
     auto buffer = fho::function_buffer(lambda);
     buffer.reset();
-    buffer.assign(lambda);
+    buffer = lambda;
     THEN("it can be invoked")
     {
       fho::details::invoke(buffer.data());
@@ -236,7 +236,7 @@ SCENARIO("function_buffer")
     buffer.reset();
     AND_WHEN("by value")
     {
-      buffer.assign(func);
+      buffer = func;
       THEN("it can be invoked")
       {
         fho::details::invoke(buffer.data());
@@ -245,7 +245,7 @@ SCENARIO("function_buffer")
     }
     AND_WHEN("by r-value")
     {
-      buffer.assign(std::move(func));
+      buffer = std::move(func);
       THEN("it can be invoked")
       {
         fho::details::invoke(buffer.data());
@@ -375,17 +375,15 @@ SCENARIO("function_dyn")
     // important to trigger the obscure case,
     // so leave as-is.
     auto func = fho::function();
-    func.assign(
-      [obj = type{5}]
-      {
-        REQUIRE(*obj.val == 5);
-      });
+    func      = [obj = type{5}]
+    {
+      REQUIRE(*obj.val == 5);
+    };
     auto funcDyn = fho::function_dyn(func);
-    func.assign(
-      [func = funcDyn]() mutable
-      {
-        func();
-      });
+    func         = [func = funcDyn]() mutable
+    {
+      func();
+    };
     THEN("it's invocable after source object has been destroyed")
     {
       funcDyn.reset();
@@ -440,7 +438,7 @@ SCENARIO("function: assign/reset")
     {
       AND_WHEN("using assign()")
       {
-        func.assign([] {});
+        func = [] {};
         REQUIRE(func);
 
         AND_WHEN("function is reset")
@@ -478,7 +476,7 @@ SCENARIO("function: assign/reset")
     WHEN("callable with argument is assigned")
     {
       int argReceived = 0;
-      func.assign(
+      func            = fho::function(
         [&argReceived](int arg)
         {
           argReceived = arg;
@@ -499,7 +497,7 @@ SCENARIO("function: assign/reset")
         static_assert(sizeof(self) == 8);
       };
       static_assert(sizeof(callable) == 8);
-      func.assign(callable, callable);
+      func = fho::function(callable, callable);
     }
     WHEN("non-trivially-copyable callable is assigned")
     {
@@ -524,15 +522,15 @@ SCENARIO("function: assign/reset")
         {}
       };
 
-      // add test to verify func.assign(std::move(func)) doesn't first reset "self"
-      // dito for func.assign(func) which should be no-op.A
+      // add test to verify func = std::move(func) doesn't first reset "self"
+      // dito for func = func which should be no-op.A
       // dito for function_dyn
 
       static_assert(!std::is_trivially_copyable_v<type>);
       static_assert(std::copy_constructible<type>);
       static_assert(std::is_destructible_v<type>);
 
-      func.assign(type{});
+      func = type{};
       AND_WHEN("function is reset")
       {
         destroyed = 0;
@@ -546,7 +544,7 @@ SCENARIO("function: assign/reset")
       AND_WHEN("a new callable is assigned")
       {
         destroyed = 0;
-        func.assign([] {});
+        func      = [] {};
 
         THEN("destructor is invoked on previous callable")
         {
@@ -575,7 +573,7 @@ SCENARIO("function: execution")
         int val = 0;
       } callable;
 
-      func.assign(callable);
+      func = callable;
       WHEN("it is invoked")
       {
         func();
@@ -600,7 +598,7 @@ SCENARIO("function: execution")
         int& val; // NOLINT
       } callable{val};
 
-      func.assign(callable);
+      func = callable;
       WHEN("it is invoked")
       {
         func();
@@ -633,7 +631,7 @@ SCENARIO("function: execution")
         int& const_val;    // NOLINT
       } const callable{.nonconst_val = nonconstVal, .const_val = constVal};
 
-      func.assign(callable);
+      func = callable;
       WHEN("it is invoked")
       {
         func();
@@ -647,11 +645,10 @@ SCENARIO("function: execution")
     int called = 0;
     WHEN("lambda")
     {
-      func.assign(
-        [&called]
-        {
-          ++called;
-        });
+      func = [&called]
+      {
+        ++called;
+      };
       THEN("it's invoked")
       {
         func();
@@ -660,7 +657,7 @@ SCENARIO("function: execution")
     }
     WHEN("free function")
     {
-      func.assign(free_func, std::ref(called));
+      func = fho::function(free_func, std::ref(called));
       THEN("it's invoked")
       {
         func();
@@ -678,7 +675,7 @@ SCENARIO("function: execution")
         }
       };
 
-      func.assign(&type::func, type{}, std::ref(called));
+      func = fho::function(&type::func, type{}, std::ref(called));
       THEN("it's invoked")
       {
         func();
@@ -713,7 +710,7 @@ SCENARIO("function: Conversion")
       }
     };
 
-    func.assign(type{});
+    func = type{};
     WHEN("function is converted to std::function")
     {
       std::function<void()> stdFunc = func;
