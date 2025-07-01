@@ -110,7 +110,7 @@ namespace fho
       {
         assert(state.load(std::memory_order_acquire) == slot_state::claimed);
         assert(!value);
-        value.assign(FWD(args)...);
+        std::construct_at(&value, FWD(args)...);
         state.store(slot_state::active, std::memory_order_release);
         // NOTE: Intentionally not notifying here since that is redundant (and costly),
         //       it is designed to be waited on by checking state active -> inactive.
@@ -125,7 +125,7 @@ namespace fho
         // Free up slot for re-use.
         if constexpr (!std::is_trivially_destructible_v<T>)
         {
-          value.~T();
+          std::destroy_at(&value);
         }
         state.store(slot_state::empty, std::memory_order_release);
         state.notify_all();
