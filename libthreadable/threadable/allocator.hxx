@@ -26,13 +26,18 @@ namespace fho
     static_assert(Alignment >= alignof(T) && (Alignment & (Alignment - 1)) == 0,
                   "Alignment must be a power of 2 and at least alignof(T)");
 
-    aligned_allocator() = default;
+    constexpr aligned_allocator() = default;
 
     using base_t = std::allocator<T>;
     using base_t::base_t;
 
-    using pointer   = typename std::allocator_traits<base_t>::pointer;
-    using size_type = typename std::allocator_traits<base_t>::size_type;
+    using trait_types = std::allocator_traits<base_t>;
+
+    using size_type       = typename trait_types::size_type;
+    using difference_type = typename trait_types::difference_type;
+
+    using propagate_on_container_move_assignment = // NOLINT
+      typename trait_types::propagate_on_container_move_assignment;
 
     /// @brief Rebind the allocator to a different type.
     /// @details This is required for the allocator to be used with standard library containers. It
@@ -48,10 +53,10 @@ namespace fho
     /// is aligned to `Alignment` bytes.
     /// @param `n` The number of elements to allocate.
     /// @return A pointer to the allocated memory.
-    inline auto
-    allocate(size_type n) -> pointer
+    [[nodiscard]] inline constexpr auto
+    allocate(size_type n) -> T*
     {
-      return static_cast<pointer>(
+      return static_cast<T*>(
         ::operator new[](n * sizeof(T), std::align_val_t(Alignment))); // NOLINT
     }
 
@@ -60,8 +65,8 @@ namespace fho
     /// was allocated with the specified Alignment.
     /// @param `p` The pointer to the memory to deallocate.
     /// @param `size` The number of elements (ignored in this implementation).
-    inline void
-    deallocate(pointer p, size_type) noexcept
+    inline constexpr void
+    deallocate(T* p, size_type) noexcept
     {
       ::operator delete[](p, std::align_val_t{Alignment}); // NOLINT
     }
