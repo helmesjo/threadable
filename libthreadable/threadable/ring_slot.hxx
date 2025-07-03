@@ -69,8 +69,15 @@ namespace fho
     inline auto
     assign(auto&&... args) noexcept -> decltype(auto)
     {
+      if constexpr (requires {
+                      { value() } -> std::convertible_to<bool>;
+                    })
+      {
+        assert(!value());
+      }
+      // Must be claimed
       assert(state_.load(std::memory_order_acquire) == slot_state::claimed);
-      assert(!value());
+
       std::construct_at(data(), FWD(args)...);
       state_.store(slot_state::active, std::memory_order_release);
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
@@ -81,7 +88,7 @@ namespace fho
     inline void
     release() noexcept
     {
-      // must be active
+      // Must be active
       assert(state_.test<slot_state::active>());
       // Free up slot for re-use.
       if constexpr (!std::is_trivially_destructible_v<T>)
