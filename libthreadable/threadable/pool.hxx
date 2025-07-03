@@ -92,6 +92,7 @@ namespace fho
               queues = queues_;
             }
 
+            auto executed = false;
             for (auto& queue : queues)
             {
               auto& [policy, buffer] = *queue;
@@ -112,7 +113,12 @@ namespace fho
                     j();
                   }
                 }
+                executed = true;
               }
+            }
+            if (!executed) [[unlikely]]
+            {
+              std::this_thread::yield();
             }
           }
         });
