@@ -124,13 +124,13 @@ namespace fho
     inline static constexpr auto value_accessor =
       [](auto&& a) -> std::add_lvalue_reference_t<value_type>
     {
-      return FWD(a).value;
+      return FWD(a).value();
     };
 
     inline static constexpr auto const_value_accessor =
       [](auto&& a) -> std::add_lvalue_reference_t<std::add_const_t<value_type>>
     {
-      return FWD(a).value;
+      return FWD(a).value();
     };
 
     using transform_type =
@@ -171,7 +171,11 @@ namespace fho
     /// @details Initializes the (pre-allocated) ring buffer.
     ring_buffer() noexcept          = default;
     ring_buffer(ring_buffer const&) = delete;
-    ~ring_buffer()                  = default;
+
+    ~ring_buffer()
+    {
+      std::ignore = consume();
+    }
 
     /// @brief Move constructor.
     /// @details Moves the contents of another ring buffer into this one.
