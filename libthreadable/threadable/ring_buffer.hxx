@@ -63,8 +63,9 @@ namespace fho
 
   public:
     template<typename Iterator>
-    struct active_subrange final : std::ranges::subrange<Iterator>
+    class active_subrange final : public std::ranges::subrange<Iterator>
     {
+    public:
       using base_t = std::ranges::subrange<Iterator>;
 
       using iterator        = Iterator; // NOLINT

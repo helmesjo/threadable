@@ -32,8 +32,9 @@ namespace fho
   /// j.assign([]() { /* job work */ });
   /// t.wait(); // Waits for the job to complete
   /// ```
-  struct slot_token
+  class slot_token
   {
+  public:
     /// @brief Default constructor.
     /// @details Initializes the token with no associated job.
     slot_token() = default;
@@ -143,8 +144,9 @@ namespace fho
   /// group += std::move(token2);
   /// group.wait(); // Waits for both jobs to complete
   /// ```
-  struct token_group
+  class token_group
   {
+  public:
     /// @brief Default constructor.
     /// @details Initializes an empty token group.
     token_group() = default;

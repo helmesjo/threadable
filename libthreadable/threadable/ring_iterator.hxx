@@ -12,8 +12,9 @@ namespace fho
   /// @tparam `T` The type of elements stored in the ring buffer.
   /// @tparam `Mask` A (capacity) mask used to wrap indices around the buffer size.
   template<typename T, size_t Mask>
-  struct ring_iterator
+  class ring_iterator
   {
+  public:
     using iterator_category = std::random_access_iterator_tag;
     using iterator_concept  = std::contiguous_iterator_tag;
     using difference_type   = std::ptrdiff_t;

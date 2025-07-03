@@ -21,9 +21,9 @@
 namespace fho
 {
   template<std::size_t>
-  struct function;
+  class function;
 
-  struct function_dyn;
+  class function_dyn;
 
   namespace details
   {
@@ -314,11 +314,12 @@ namespace fho
   /// details::invoke(buffer.data()); // but typically through fho::function or fho::function_dyn
   /// ```
   template<std::size_t Size>
-  struct function_buffer
+  class function_buffer
   {
     static_assert(Size <= std::numeric_limits<std::uint8_t>::max(), "Buffer size must be <= 255");
     using buffer_t = std::array<std::byte, Size>;
 
+  public:
     /// @brief Assigns a `function<Size>` object to the buffer.
     /// @details Copies the provided `function<Size>` object into the buffer.
     /// @tparam `Size_` The size of the function.
@@ -582,8 +583,9 @@ namespace fho
   /// auto dyn_func = fho::function_dyn(lambda);
   /// dyn_func(); // Invokes the lambda
   /// ```
-  struct function_dyn
+  class function_dyn
   {
+  public:
     auto operator=(function_dyn const&) -> function_dyn& = delete;
     auto operator=(function_dyn&&) -> function_dyn&      = delete;
 
@@ -719,11 +721,9 @@ namespace fho
   /// f();
   /// ```
   template<std::size_t Size = details::cache_line_size>
-  struct function
+  class function
   {
-  private:
     using buffer_t = function_buffer<Size>;
-    buffer_t buffer_;
 
   public:
     /// @brief Default constructor.
@@ -878,6 +878,9 @@ namespace fho
     {
       return buffer_.size();
     }
+
+  private:
+    buffer_t buffer_;
   };
 
   static_assert(sizeof(function<details::cache_line_size>) == details::cache_line_size);

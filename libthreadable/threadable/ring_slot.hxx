@@ -17,8 +17,9 @@
 namespace fho
 {
   template<typename T>
-  struct alignas(details::cache_line_size) ring_slot
+  class alignas(details::cache_line_size) ring_slot
   {
+  public:
     ring_slot() = default;
 
     ring_slot(fho::atomic_state_t state, T value)
