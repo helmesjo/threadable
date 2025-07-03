@@ -25,7 +25,7 @@ namespace
     return (addr % alignment) == 0;
   }
 
-  using func_t = fho::function<fho::details::slot_size>;
+  using func_t = fho::fast_func_t;
 }
 
 SCENARIO("ring_buffer: push & claim")

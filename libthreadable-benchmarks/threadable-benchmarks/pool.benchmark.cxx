@@ -65,10 +65,10 @@ TEST_CASE("pool: job execution")
   {
     auto pool = fho::pool<jobs_per_iteration>();
 
-    auto queues = std::vector<
-      std::reference_wrapper<fho::ring_buffer<fho::details::job_t, jobs_per_iteration>>>{
-      pool.create(fho::execution::par), pool.create(fho::execution::par),
-      pool.create(fho::execution::par), pool.create(fho::execution::par)};
+    auto queues =
+      std::vector<std::reference_wrapper<fho::ring_buffer<fho::fast_func_t, jobs_per_iteration>>>{
+        pool.create(fho::execution::par), pool.create(fho::execution::par),
+        pool.create(fho::execution::par), pool.create(fho::execution::par)};
 
     b.batch(jobs_per_iteration)
       .run("fho::pool (queues: 4)",

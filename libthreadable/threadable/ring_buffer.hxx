@@ -30,6 +30,11 @@ namespace fho
     inline constexpr std::size_t default_capacity = 1 << 16;
   }
 
+  /// @brief A `fho::function` alias optimized to cache line size for use within a `ring_buffer`.
+  /// @details The size of the function object is exactly that of the target systems (deduced)
+  ///          cache line size minus `1` byte reserved for the `ring_slot` state handling.
+  using fast_func_t = function<details::slot_size>;
+
   /// @brief A Multi-Producer Single-Consumer (MPSC) ring buffer for managing objects in a
   /// threading environment.
   /// @details This class provides a lock-free ring buffer that allows multiple producers to add
@@ -46,9 +51,8 @@ namespace fho
   /// buffer.push(1);
   /// auto range = buffer.consume();
   /// ```
-  template<typename T           = function<details::slot_size>,
-           std::size_t Capacity = details::default_capacity,
-           typename Allocator   = aligned_allocator<ring_slot<T>, details::cache_line_size>>
+  template<typename T = fast_func_t, std::size_t Capacity = details::default_capacity,
+           typename Allocator = aligned_allocator<ring_slot<T>, details::cache_line_size>>
   class ring_buffer
   {
     static constexpr auto index_mask = Capacity - 1u;

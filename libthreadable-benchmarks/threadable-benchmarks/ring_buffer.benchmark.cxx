@@ -20,7 +20,7 @@ namespace
   constexpr auto jobs_per_iteration = 1 << 20;
   auto           val                = 1; // NOLINT
 
-  using func_t = fho::function<fho::details::slot_size>;
+  using func_t = fho::fast_func_t;
 }
 
 TEST_CASE("ring: push")
