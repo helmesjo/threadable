@@ -8,9 +8,12 @@
 #include <barrier>
 #include <cstddef>
 #include <cstdint>
-#include <execution>
 #include <functional>
 #include <thread>
+
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
+  #include <execution>
+#endif
 
 namespace
 {

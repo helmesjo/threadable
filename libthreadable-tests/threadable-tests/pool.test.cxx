@@ -3,8 +3,14 @@
 
 #include <barrier>
 #include <cstddef>
+#include <format>
 #include <thread>
 #include <vector>
+
+SCENARIO("pool: print system info")
+{
+  std::cerr << std::format("hardware_concurrency: {}\n", std::thread::hardware_concurrency());
+}
 
 SCENARIO("pool: create/remove queues")
 {

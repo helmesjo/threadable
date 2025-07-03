@@ -2,9 +2,12 @@
 #include <threadable/ring_buffer.hxx>
 
 #include <algorithm>
-#include <execution>
 #include <functional>
 #include <vector>
+
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
+  #include <execution>
+#endif
 
 #include <doctest/doctest.h>
 

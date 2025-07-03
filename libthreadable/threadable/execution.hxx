@@ -3,9 +3,13 @@
 #include <threadable/atomic.hxx>
 #include <threadable/ring_buffer.hxx>
 
-#include <execution>
 #include <ranges>
 #include <thread>
+
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
+  #include <algorithm>
+  #include <execution>
+#endif
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
