@@ -78,11 +78,17 @@ namespace fho
       // Must be claimed
       assert(state_.load(std::memory_order_acquire) == slot_state::claimed);
 
-      std::construct_at(data(), FWD(args)...);
+      std::construct_at<T>(data(), FWD(args)...);
       state_.store(slot_state::active, std::memory_order_release);
       // NOTE: Intentionally not notifying here since that is redundant (and costly),
       //       it is designed to be waited on by checking state active -> inactive.
       // state.notify_all();
+    }
+
+    inline void
+    wait() const noexcept
+    {
+      state_.template wait<slot_state::active, true>(std::memory_order_acquire);
     }
 
     inline void
@@ -93,7 +99,7 @@ namespace fho
       // Free up slot for re-use.
       if constexpr (!std::is_trivially_destructible_v<T>)
       {
-        std::destroy_at(data());
+        std::destroy_at<T>(data());
       }
       state_.store(slot_state::empty, std::memory_order_release);
       state_.notify_all();

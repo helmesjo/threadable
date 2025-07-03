@@ -117,16 +117,14 @@ namespace fho
       //       correctly released when the lambda completes.
       //       See `active_subrange` destruction for details.
       return work_.push(
-        [policy](std::ranges::range auto r /* NOTE: Must be passed by value */) mutable
+        [policy](std::ranges::range auto r /* Must be passed by value */) mutable
         {
           // Special rule for `ring_buffer` ranges:
-          // If sequential execution policy, wait for completion
-          // of previous slot.
-          if constexpr (requires {
-                          {
-                            range.begin().base()->state.load()
-                          } -> std::common_reference_with<slot_state>;
-                        })
+          // If sequential execution policy, wait for completion of
+          // previous slot.
+          // NOTE: We call `.base()` since `ring_buffer` internally uses
+          //       a transform view adapter, and we look for `ring_slot`.
+          if constexpr (requires { range.begin().base()->wait(); })
           {
             if (policy == execution::seq) [[unlikely]]
             {
@@ -136,7 +134,7 @@ namespace fho
               // Make sure previous slot has been processed.
               if (b != e && prev != e && prev < b) [[unlikely]]
               {
-                prev->state.template wait<slot_state::active, true>(std::memory_order_acquire);
+                prev->wait();
               }
             }
           }

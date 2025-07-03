@@ -117,7 +117,7 @@ namespace fho
     /// @brief Waits for the associated job to complete.
     /// @details Blocks until the job state changes from active.
     void
-    wait() noexcept
+    wait() const noexcept
     {
       // take into account that the underlying state-ptr might have
       // been re-assigned while waiting (eg. for a recursive/self-queueing job)
@@ -220,7 +220,7 @@ namespace fho
     /// @brief Waits for all jobs in the group to complete.
     /// @details Calls `wait` on each token in the group.
     void
-    wait() noexcept
+    wait() const noexcept
     {
       for (auto& token : tokens_)
       {
