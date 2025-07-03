@@ -37,11 +37,33 @@ namespace fho
     auto const b  = std::begin(r);
     auto const e  = std::end(r);
 #if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
-    std::for_each(exPo, b, e,
-                  [&](value_t& elem)
-                  {
-                    elem(FWD(args)...);
-                  });
+    if constexpr (std::same_as<std::remove_cvref_t<decltype(exPo)>, fho::execution>)
+    {
+      if (exPo == execution::seq)
+      {
+        std::for_each(std::execution::seq, b, e,
+                      [&](value_t& elem)
+                      {
+                        elem(FWD(args)...);
+                      });
+      }
+      else if (exPo == execution::par)
+      {
+        std::for_each(std::execution::par, b, e,
+                      [&](value_t& elem)
+                      {
+                        elem(FWD(args)...);
+                      });
+      }
+    }
+    else
+    {
+      std::for_each(exPo, b, e,
+                    [&](value_t& elem)
+                    {
+                      elem(FWD(args)...);
+                    });
+    }
 #else
     for (auto&& c : FWD(r))
     {
