@@ -177,13 +177,13 @@ SCENARIO("ring_buffer: push & claim")
         static constexpr auto too_big = fho::details::slot_size * 2;
         // both capturing big data & passing as argument
         ring.push(
-          [&called, bigData = std::make_shared<std::uint8_t[]>(
-                      too_big)](int arg, std::shared_ptr<std::uint8_t[]> const& data)
+          [&called, bigData = std::make_shared<std::byte[]>(
+                      too_big)](int arg, std::shared_ptr<std::byte[]> const& data)
           {
             called = arg;
             (void)data;
           },
-          16, std::make_shared<std::uint8_t[]>(too_big));
+          16, std::make_shared<std::byte[]>(too_big));
         // NOLINTEND
 
         REQUIRE(ring.size() == 1);

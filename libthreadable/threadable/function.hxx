@@ -59,7 +59,7 @@ namespace fho
       std::invoke(*static_cast<Func*>(buffer));
     }
 
-    enum class method : std::uint8_t
+    enum class method : std::uint_fast8_t
     {
       copy_ctor,
       move_ctor,
@@ -122,29 +122,29 @@ namespace fho
     using invoke_func_t         = decltype(&invoke_func<void (*)()>);
     using invoke_special_func_t = decltype(&invoke_special_func<void (*)()>);
     static_assert(sizeof(invoke_func_t) == sizeof(invoke_special_func_t));
-    inline constexpr std::uint8_t header_size   = sizeof(std::uint8_t);
-    inline constexpr std::uint8_t func_ptr_size = sizeof(invoke_func_t);
-    inline constexpr std::size_t  function_buffer_meta_size =
+    inline constexpr std::uint_fast8_t  header_size   = sizeof(std::uint_fast8_t);
+    inline constexpr std::uint_fast8_t  func_ptr_size = sizeof(invoke_func_t);
+    inline constexpr std::uint_fast32_t function_buffer_meta_size =
       details::header_size + (details::func_ptr_size * 2);
 
     /// @brief Gets a reference to the buffer's size field.
     /// @details Returns a reference to the first byte, storing the callable's size.
     /// @param `buf` Pointer to the buffer.
-    /// @return Reference to the size field (`uint8_t`).
+    /// @return Reference to the size field (`uint_fast8_t`).
     inline auto
-    size(std::byte* buf) noexcept -> std::uint8_t&
+    size(std::byte* buf) noexcept -> std::uint_fast8_t&
     {
-      return reinterpret_cast<std::uint8_t&>(*buf); // NOLINT
+      return reinterpret_cast<std::uint_fast8_t&>(*buf); // NOLINT
     }
 
     /// @brief Gets the buffer's size field value.
     /// @details Returns the first byte's value, representing the callable's size.
     /// @param `buf` Const pointer to the buffer.
-    /// @return The size field value (`uint8_t`).
+    /// @return The size field value (`uint_fast8_t`).
     inline auto
-    size(std::byte const* buf) noexcept -> std::uint8_t
+    size(std::byte const* buf) noexcept -> std::uint_fast8_t
     {
-      return static_cast<std::uint8_t>(*buf);
+      return static_cast<std::uint_fast8_t>(*buf);
     }
 
     /// @brief Sets the buffer's size field.
@@ -152,7 +152,7 @@ namespace fho
     /// @param `buf` Pointer to the buffer.
     /// @param `s` Size value to set.
     inline void
-    size(std::byte* buf, std::uint8_t s) noexcept
+    size(std::byte* buf, std::uint_fast8_t s) noexcept
     {
       size(buf) = s;
     }
@@ -316,7 +316,8 @@ namespace fho
   template<std::size_t Size>
   class function_buffer
   {
-    static_assert(Size <= std::numeric_limits<std::uint8_t>::max(), "Buffer size must be <= 255");
+    static_assert(Size <= std::numeric_limits<std::uint_fast8_t>::max(),
+                  "Buffer size must be <= 255");
     using buffer_t = std::array<std::byte, Size>;
 
   public:
@@ -405,7 +406,7 @@ namespace fho
     {
       using value_t = std::remove_reference_t<Func>;
 
-      static constexpr std::uint8_t total_size = required_buffer_size_v<Func>;
+      static constexpr std::uint_fast8_t total_size = required_buffer_size_v<Func>;
 
       static_assert(std::copy_constructible<Func> || std::move_constructible<Func>,
                     "Callable must be copy- or move-constructible");
@@ -539,7 +540,7 @@ namespace fho
     /// @details Returns the number of bytes currently used by the stored callable.
     /// @return The size of the stored callable in bytes.
     [[nodiscard]] inline auto
-    size() const noexcept -> std::uint8_t
+    size() const noexcept -> std::uint_fast8_t
     {
       return details::size(data());
     }
@@ -669,7 +670,7 @@ namespace fho
     /// stored.
     /// @return The size of the stored callable in bytes.
     [[nodiscard]] inline auto
-    size() const noexcept -> std::uint8_t
+    size() const noexcept -> std::uint_fast8_t
     {
       return buffer_ ? details::size(buffer_) : 0;
     }
@@ -874,7 +875,7 @@ namespace fho
     /// @details Returns the number of bytes used by the stored callable.
     /// @return The size of the stored callable in bytes.
     [[nodiscard]] inline auto
-    size() const noexcept -> std::uint8_t
+    size() const noexcept -> std::uint_fast8_t
     {
       return buffer_.size();
     }

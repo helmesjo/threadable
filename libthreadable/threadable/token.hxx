@@ -9,7 +9,7 @@
 
 namespace fho
 {
-  enum slot_state : std::uint8_t
+  enum slot_state : std::uint_fast8_t
   {
     /// @brief empty, with no value assigned.
     empty = 0,

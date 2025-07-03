@@ -732,7 +732,7 @@ SCENARIO("function: Conversion")
     {
       fho::function_dyn funcDyn = func;
 
-      static_assert(sizeof(funcDyn) == sizeof(std::unique_ptr<std::uint8_t*>));
+      static_assert(sizeof(funcDyn) == sizeof(std::unique_ptr<std::byte*>));
       REQUIRE(funcDyn);
       REQUIRE(funcDyn.size() == func.size());
 

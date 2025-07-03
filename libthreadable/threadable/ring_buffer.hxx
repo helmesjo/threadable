@@ -60,7 +60,7 @@ namespace fho
     using slot_type             = ring_slot<T>;
     using allocator_type        = Allocator;
     using value_type            = T;
-    using atomic_index_t        = std::atomic_size_t;
+    using atomic_index_t        = std::atomic_uint_fast64_t;
     using index_t               = typename atomic_index_t::value_type;
     using ring_iterator_t       = ring_iterator<slot_type, index_mask>;
     using const_ring_iterator_t = ring_iterator<slot_type const, index_mask>;
