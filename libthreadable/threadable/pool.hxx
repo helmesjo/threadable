@@ -148,7 +148,7 @@ namespace fho
     /// @brief Creates a new job queue with the specified execution policy.
     /// @details Adds a new `ring_buffer` to the pool with the given execution policy (sequential or
     /// parallel).
-    /// @param `policy` The execution policy for the new queue. Defaults to `execution::parallel`.
+    /// @param `policy` The execution policy for the new queue. Defaults to `execution::par`.
     /// @return A reference to the newly created queue.
     [[nodiscard]] auto
     create(execution policy = execution::par) noexcept -> queue_t&
@@ -230,14 +230,19 @@ namespace fho
 
   namespace details
   {
-    using pool_t = fho::pool<>;
-    extern auto pool() -> pool_t&;
+    using pool_t  = fho::pool<>;
     using queue_t = pool_t::queue_t;
+
+    /// @brief External linkage (since C++20) to make sure one and the same
+    ///        instance is used regardless if linking static or shared.
+    inline std::unique_ptr<pool_t> default_pool = nullptr; // NOLINT
+    /// @brief Lazy-initializes `default_pool`.
+    extern auto pool() -> pool_t&;
   }
 
   /// @brief Creates a new job queue in the default thread pool with the specified execution policy.
   /// @details This function is a convenience wrapper around `details::pool().create(policy)`.
-  /// @param `policy` The execution policy for the new queue. Defaults to `execution::parallel`.
+  /// @param `policy` The execution policy for the new queue. Defaults to `execution::par`.
   /// @return A reference to the newly created queue.
   [[nodiscard]] inline auto
   create(execution policy = execution::par) noexcept -> decltype(auto)
@@ -259,7 +264,7 @@ namespace fho
   /// @brief Pushes a job into a new queue with the specified policy in the default thread pool.
   /// @details Creates a new queue with the given policy if needed and pushes the callable and
   /// arguments into it.
-  /// @tparam `Policy` The execution policy for the queue, defaults to `execution::parallel`.
+  /// @tparam `Policy` The execution policy for the queue, defaults to `execution::par`.
   /// @tparam `Func` The type of the callable, must be copy-constructible and invocable.
   /// @tparam `Args` The types of the arguments.
   /// @param `func` The callable to push.

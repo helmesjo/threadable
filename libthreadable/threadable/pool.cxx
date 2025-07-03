@@ -1,5 +1,6 @@
 #include <threadable/pool.hxx>
 
+// #include <iostream>
 #include <memory>
 
 namespace fho::details
@@ -8,17 +9,11 @@ namespace fho::details
   pool() -> pool_t&
   {
     static auto once = std::once_flag{};
-    static auto inst = std::unique_ptr<pool_t>{};
     std::call_once(once,
                    []
                    {
-                     inst = std::make_unique<fho::details::pool_t>();
-                     std::atexit(
-                       []
-                       {
-                         inst = nullptr;
-                       });
+                     default_pool = std::make_unique<fho::details::pool_t>(); // NOLINT
                    });
-    return *inst;
+    return *default_pool;
   }
 }
