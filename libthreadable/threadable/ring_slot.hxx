@@ -7,6 +7,11 @@
 #include <memory>
 #include <type_traits>
 
+#ifndef NDEBUG
+  #include <algorithm>
+  #include <ranges>
+#endif
+
 #ifdef _WIN32
   #pragma warning(push)
   #pragma warning(disable : 4324)
@@ -74,7 +79,11 @@ namespace fho
                       { value() } -> std::convertible_to<bool>;
                     })
       {
-        assert(!value());
+        assert(std::ranges::all_of(value_,
+                                   [](auto b)
+                                   {
+                                     return b == std::byte{0};
+                                   }));
       }
       // Must be claimed
       assert(state_.load(std::memory_order_acquire) == slot_state::claimed);
@@ -102,6 +111,9 @@ namespace fho
       {
         std::destroy_at<T>(data());
       }
+#ifndef NDEBUG
+      value_ = {};
+#endif
       state_.store(slot_state::empty, std::memory_order_release);
       state_.notify_all();
     }
