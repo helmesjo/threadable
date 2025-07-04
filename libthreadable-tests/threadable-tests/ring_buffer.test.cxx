@@ -90,7 +90,7 @@ SCENARIO("ring_buffer: push & claim")
         }
       };
 
-      std::ignore = ring.push(type{});
+      ring.push(type{});
       REQUIRE(ring.size() == 1);
 
       called    = 0;
@@ -108,10 +108,10 @@ SCENARIO("ring_buffer: push & claim")
       AND_WHEN("ring is destroyed")
       {
         {
-          auto ring2  = fho::ring_buffer<func_t, 2>{};
-          std::ignore = ring2.push(type{});
-          called      = 0;
-          destroyed   = 0;
+          auto ring2 = fho::ring_buffer<func_t, 2>{};
+          ring2.push(type{});
+          called    = 0;
+          destroyed = 0;
         }
         THEN("it resets & destroys pushed jobs")
         {
@@ -176,7 +176,7 @@ SCENARIO("ring_buffer: push & claim")
         int                   called  = 0;
         static constexpr auto too_big = fho::details::slot_size * 2;
         // both capturing big data & passing as argument
-        std::ignore = ring.push(
+        ring.push(
           [&called, bigData = std::make_shared<std::byte[]>(
                       too_big)](int arg, std::shared_ptr<std::byte[]> const& data)
           {
@@ -203,7 +203,7 @@ SCENARIO("ring_buffer: push & claim")
       auto executed = std::vector<std::size_t>(ring.max_size(), 0);
       for (std::size_t i = 1; i <= ring.max_size(); ++i)
       {
-        std::ignore = ring.push(
+        ring.push(
           [i, &executed]
           {
             executed[i - 1] = i;
@@ -262,7 +262,7 @@ SCENARIO("ring_buffer: alignment")
   {
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      std::ignore = ring.push([] {});
+      ring.push([] {});
     }
     THEN("all are aligned to cache line boundaries")
     {
@@ -374,7 +374,7 @@ SCENARIO("ring_buffer: stress-test")
           {
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              std::ignore = ring.push(
+              ring.push(
                 [&jobsExecuted]
                 {
                   ++jobsExecuted;
@@ -470,7 +470,7 @@ SCENARIO("ring_buffer: standard algorithms")
     {
       while (ring.size() < ring.max_size())
       {
-        std::ignore = ring.push(
+        ring.push(
           [&jobsExecuted]
           {
             ++jobsExecuted;
