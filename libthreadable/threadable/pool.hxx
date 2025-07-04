@@ -273,6 +273,25 @@ namespace fho
     static auto& queue = create(Policy);
     return queue.push(FWD(func), FWD(args)...);
   }
+
+  /// @brief Pushes a job into a new queue with the specified policy in the default thread pool.
+  /// @details Creates a new queue with the given policy if needed and pushes the callable and
+  /// arguments into it.
+  /// @tparam `Policy` The execution policy for the queue, defaults to `execution::par`.
+  /// @tparam `Func` The type of the callable, must be copy-constructible and invocable.
+  /// @tparam `Args` The types of the arguments.
+  /// @param `func` The callable to push.
+  /// @param `token` Reference to reusable token. Passed as first argument to `func`.
+  /// @param `args` The additional arguments to pass to the callable.
+  /// @return The reused `token` reference for the submitted job.
+  template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
+  inline auto
+  push(Func&& func, slot_token& token, Args&&... args) noexcept -> decltype(auto)
+    requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
+  {
+    static auto& queue = create(Policy);
+    return queue.push(token, FWD(func), FWD(args)...);
+  }
 }
 
 #undef FWD
