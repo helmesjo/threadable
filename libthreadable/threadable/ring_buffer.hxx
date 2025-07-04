@@ -279,7 +279,7 @@ namespace fho
     /// ```
     template<std::move_constructible Func, typename... Args>
       requires std::invocable<Func, Args...> || std::invocable<Func, slot_token&, Args...>
-    auto
+    [[nodiscard]] auto
     push(Func&& func, Args&&... args) noexcept -> slot_token
     {
       slot_token token;

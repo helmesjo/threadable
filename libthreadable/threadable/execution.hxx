@@ -191,7 +191,7 @@ namespace fho
     stop() noexcept
     {
       // Release thread if waiting.
-      work_.push(
+      std::ignore = work_.push(
         [this]
         {
           stop_ = true;
