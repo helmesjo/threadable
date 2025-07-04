@@ -67,10 +67,11 @@ namespace fho
       scheduler_ = std::thread(
         [this, threads]
         {
-          auto const mt    = threads > 0;
-          auto       rd    = std::random_device{};
-          auto       gen   = std::mt19937(rd());
-          auto       distr = std::uniform_int_distribution<std::size_t>(0, mt ? threads - 1 : 0);
+          auto const mt      = threads > 0;
+          auto       rd      = std::random_device{};
+          auto       gen     = std::mt19937(rd());
+          auto       distr   = std::uniform_int_distribution<std::size_t>(0, mt ? threads - 1 : 0);
+          constexpr auto cap = std::size_t{4096};
 
           while (true)
           {
@@ -91,13 +92,18 @@ namespace fho
             for (auto& queue : queues)
             {
               auto& [policy, buffer] = *queue;
-              if (auto range = buffer.consume(); !range.empty()) [[likely]]
+              // assign to (random) worker
+              // @TODO: Implement a proper load balancer, both
+              //        for range size & executor selection.
+              // @NOTE: Both `cap` and `i < 13` are arbitrary
+              //        and should be dealt with by a load
+              //        balancer.
+              int i = 0;
+              for (auto range = buffer.consume(cap); !range.empty() && i < 13;
+                   range      = buffer.consume(cap), ++i) [[likely]]
               {
                 if (mt) [[likely]]
                 {
-                  // assign to (random) worker
-                  // @TODO: Implement a proper load balancer, both
-                  //        for range size & executor selection.
                   executor& e = *executors_[distr(gen)];
                   e.submit(std::move(range), policy);
                 }
