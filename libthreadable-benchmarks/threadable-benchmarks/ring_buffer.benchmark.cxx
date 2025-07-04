@@ -17,8 +17,12 @@ namespace bench = ankerl::nanobench;
 
 namespace
 {
-  constexpr auto jobs_per_iteration = 1 << 20;
-  auto           val                = 1; // NOLINT
+#ifdef NDEBUG
+  constexpr auto jobs_per_iteration = 1 << 21;
+#else
+  constexpr auto jobs_per_iteration = 1 << 18;
+#endif
+  auto val = 1; // NOLINT
 
   using func_t = fho::fast_func_t;
 }

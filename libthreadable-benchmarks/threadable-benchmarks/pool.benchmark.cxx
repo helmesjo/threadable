@@ -11,8 +11,12 @@ namespace bench = ankerl::nanobench;
 
 namespace
 {
+#ifdef NDEBUG
   constexpr auto jobs_per_iteration = 1 << 21;
-  auto           val                = 1; // NOLINT
+#else
+  constexpr auto jobs_per_iteration = 1 << 18;
+#endif
+  auto val = 1; // NOLINT
 }
 
 TEST_CASE("pool: job execution")
