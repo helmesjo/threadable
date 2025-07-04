@@ -89,38 +89,39 @@ namespace fho
             }
 
             auto executed = false;
-            for (auto& queue : queues)
+            do
             {
-              auto& [policy, buffer] = *queue;
-              // assign to (random) worker
-              // @TODO: Implement a proper load balancer, both
-              //        for range size & executor selection.
-              // @NOTE: Both `cap` and `i < 13` are arbitrary
-              //        and should be dealt with by a load
-              //        balancer.
-              int i = 0;
-              for (auto range = buffer.consume(cap); !range.empty() && i < 13;
-                   range      = buffer.consume(cap), ++i) [[likely]]
+              executed = false;
+              for (auto& queue : queues)
               {
-                if (mt) [[likely]]
+                auto& [policy, buffer] = *queue;
+                // assign to (random) worker
+                // @TODO: Implement a proper load balancer, both
+                //        for range size & executor selection.
+                // @NOTE: The `cap` is arbitrary and should be
+                //        dealt with by a load balancer.
+                //        Runs until queues are exhausted.
+                for (auto range = buffer.consume(cap); !range.empty(); range = buffer.consume(cap))
+                  [[likely]]
                 {
-                  executor& e = *executors_[distr(gen)];
-                  e.submit(std::move(range), policy);
-                }
-                else [[unlikely]]
-                {
-                  for (auto& j : range)
+                  if (mt) [[likely]]
                   {
-                    j();
+                    executor& e = *executors_[distr(gen)];
+                    e.submit(std::move(range), policy);
                   }
+                  else [[unlikely]]
+                  {
+                    for (auto& j : range)
+                    {
+                      j();
+                    }
+                  }
+                  executed = true;
                 }
-                executed = true;
               }
             }
-            if (!executed) [[unlikely]]
-            {
-              std::this_thread::yield();
-            }
+            while (executed);
+            std::this_thread::yield();
           }
         });
     }

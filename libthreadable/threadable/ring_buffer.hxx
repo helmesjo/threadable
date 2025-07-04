@@ -307,7 +307,6 @@ namespace fho
     auto
     consume(index_t max = max_size()) noexcept
     {
-      assert(max <= max_size());
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
       auto const cap  = tail + std::min<index_t>(max, head - tail); // Cap range size
