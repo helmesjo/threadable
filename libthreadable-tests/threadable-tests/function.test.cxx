@@ -102,6 +102,27 @@ SCENARIO("function_buffer")
       REQUIRE(passedArg2 == doctest::Approx(3.4f));
     }
   }
+  WHEN("constructed with callable larger than buffer size")
+  {
+    int called = 0;
+    // both capturing big data & passing as argument
+    // NOLINTBEGIN
+    using big_data_t = std::array<std::byte, 64 * 2>;
+    auto buffer      = fho::function_buffer<64>(
+      [&called, bigData = big_data_t{}](int arg, big_data_t const& data)
+      {
+        called = arg;
+        (void)data;
+      },
+      16, big_data_t{});
+    // NOLINTEND
+
+    THEN("it can be invoked")
+    {
+      fho::details::invoke(buffer.data());
+      REQUIRE(called == 16);
+    }
+  }
   WHEN("constructed with fho::function")
   {
     thread_local int copyCtor = 0;
