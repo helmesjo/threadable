@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -322,43 +323,134 @@ namespace fho
     using buffer_t = std::array<std::byte, Size>;
 
   public:
-    /// @brief Assigns a `function<Size>` object to the buffer.
-    /// @details Copies the provided `function<Size>` object into the buffer.
-    /// @tparam `Func` The `function<S>` type.
-    /// @param `func` The `function<S>` object to assign.
-    /// @requires `S <= Size`
-    template<std::invocable Func>
-      requires (is_function_v<Func> && required_buffer_size_v<Func> <= Size)
-    auto
-    operator=(Func&& func) -> function_buffer&
-    {
-      *this = std::forward_like<Func>(FWD(func).buffer());
-      return *this;
-    }
-
-    /// @brief Assigns a callable that does not fit within the buffer size.
-    /// @details Stores the callable on the heap using a `std::shared_ptr` and creates a lambda to
-    /// invoke it.
+    /// @brief Assigns a callable and its arguments to the buffer.
+    /// @details Stores the callable and its arguments, potentially wrapping them in a
+    /// `deferred_callable`.
     /// @tparam `Func` The type of the callable.
-    /// @param `callable` The callable to store.
-    /// @requires `required_buffer_size_v<Func> > Size`
-    template<std::invocable Func>
-      requires (!is_function_v<Func>)
-    auto
-    operator=(Func&& func) noexcept -> function_buffer& // NOLINT
+    /// @tparam `Args` The types of the arguments.
+    /// @param `func` The callable to store.
+    /// @param `args` The arguments to bind to the callable.
+    /// @requires `std::invocable<Func&&, Args&&...>`
+    template<typename Func, typename... Args>
+    void
+    assign(Func&& func, Args&&... args) noexcept
+      requires std::invocable<Func&&, Args&&...> && (sizeof...(args) > 0)
     {
-      if constexpr (required_buffer_size_v<Func> <= Size)
+      using value_t = std::remove_reference_t<decltype(func)>;
+      if constexpr (std::is_function_v<value_t> || std::is_member_function_pointer_v<value_t>)
       {
-        assign(FWD(func));
+        assign(
+          [func, ... args = FWD(args)]() mutable
+          {
+            std::invoke(func, FWD(args)...);
+          });
       }
       else
       {
-        *this = [func = std::make_shared<std::remove_reference_t<Func>>(FWD(func))]
-        {
-          std::forward<Func> (*func)();
-        };
+        assign(details::deferred_callable(FWD(func), FWD(args)...));
       }
-      return *this;
+    }
+
+    /// @brief Assigns a callable that fits within the buffer size.
+    /// @details Directly constructs the callable in the buffer.
+    /// @tparam `Func` The type of the callable.
+    /// @param `callable` The callable to store.
+    /// @requires `required_buffer_size_v<Func> <= Size`
+    template<std::invocable Func>
+    void
+    assign(Func&& func) noexcept
+      requires (!is_function_v<Func>) && (required_buffer_size_v<Func> <= Size)
+    {
+      using value_t = std::remove_reference_t<Func>;
+
+      static constexpr std::uint_fast8_t total_size = required_buffer_size_v<Func>;
+
+      static_assert(std::copy_constructible<Func> || std::move_constructible<Func>,
+                    "Callable must be copy- or move-constructible");
+      reset();
+
+      // header (size)
+      // body (invocation pointer)
+      // body (destructor pointer)
+      // body (callable)
+      details::size(buffer_.data(), total_size);
+      details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<value_t>));
+      details::special_func_ptr(buffer_.data(),
+                                std::addressof(details::invoke_special_func<value_t>));
+      std::construct_at(reinterpret_cast<std::remove_const_t<value_t>*>( // NOLINT
+                          details::body_ptr(buffer_.data())),
+                        FWD(func));
+    }
+
+    /// @brief Default constructor.
+    /// @details Initializes the buffer with a size of 0, indicating no callable is stored.
+    function_buffer() noexcept
+    {
+      details::size(buffer_.data(), 0);
+    }
+
+    /// @brief Copy constructor.
+    /// @details Creates a new `function_buffer` by copying the contents of another
+    /// `function_buffer`. This involves copying the stored callable if one exists.
+    /// @param `buffer` The `function_buffer` to copy from.
+    function_buffer(function_buffer const& buffer)
+    {
+      *this = buffer;
+    }
+
+    /// @brief Move constructor.
+    /// @details Creates a new `function_buffer` by moving the contents from another
+    /// `function_buffer`. This transfers ownership of the stored callable.
+    /// @param `buffer` The `function_buffer` to move from.
+    function_buffer(function_buffer&& buffer) noexcept
+    {
+      *this = std::move(buffer);
+    }
+
+    /// @brief Constructor that takes a `function<Size>` object.
+    /// @details Initializes the buffer with the provided `function<Size>` object, which must fit
+    /// within the buffer size.
+    /// @tparam `S` The size of the function.
+    /// @param `func` The `function<Size>` object to store.
+    /// @requires `S` <= Size
+    template<std::invocable Func>
+      requires (is_function_v<Func> && required_buffer_size_v<Func> <= Size)
+    explicit function_buffer(Func&& func) noexcept
+      : function_buffer(std::forward_like<Func>(FWD(func).buffer()))
+    {}
+
+    /// @brief Constructor that takes a callable.
+    /// @details Initializes the buffer with a callable.
+    /// @tparam `Func` The type of the callable.
+    /// @param `func` The callable to store.
+    template<std::invocable Func>
+    explicit function_buffer(Func&& callable) noexcept
+      requires (!is_function_v<Func>)
+    {
+      details::size(buffer_.data(), 0);
+      *this = FWD(callable);
+    }
+
+    /// @brief Constructor that takes a callable and its arguments.
+    /// @details Initializes the buffer with a callable and its arguments, potentially wrapping them
+    /// in a `deferred_callable`.
+    /// @tparam `Func` The type of the callable.
+    /// @tparam `Args` The types of the arguments.
+    /// @param `func` The callable to store.
+    /// @param `args` The arguments to bind to the callable.
+    /// @requires `std::invocable<Func&&, Args&&...>`
+    explicit function_buffer(auto&& callable, auto&&... args) noexcept
+      requires (sizeof...(args) > 0)
+    {
+      details::size(buffer_.data(), 0);
+      assign(FWD(callable), FWD(args)...);
+    }
+
+    /// @brief Destructor.
+    /// @details Calls `reset()` to properly destroy the stored callable if one exists.
+    ~function_buffer()
+    {
+      reset();
     }
 
     /// @brief Copy assignment operator.
@@ -403,134 +495,43 @@ namespace fho
       return *this;
     }
 
-    /// @brief Assigns a callable and its arguments to the buffer.
-    /// @details Stores the callable and its arguments, potentially wrapping them in a
-    /// `deferred_callable`.
-    /// @tparam `Func` The type of the callable.
-    /// @tparam `Args` The types of the arguments.
-    /// @param `func` The callable to store.
-    /// @param `args` The arguments to bind to the callable.
-    /// @requires `std::invocable<Func&&, Args&&...>`
-    template<typename Func, typename... Args>
-    void
-    assign(Func&& func, Args&&... args) noexcept
-      requires std::invocable<Func&&, Args&&...> && (sizeof...(args) > 0)
+    /// @brief Assigns a `function<Size>` object to the buffer.
+    /// @details Copies the provided `function<Size>` object into the buffer.
+    /// @tparam `Func` The `function<S>` type.
+    /// @param `func` The `function<S>` object to assign.
+    /// @requires `S <= Size`
+    template<std::invocable Func>
+      requires (is_function_v<Func> && required_buffer_size_v<Func> <= Size)
+    auto
+    operator=(Func&& func) -> function_buffer&
     {
-      using value_t = std::remove_reference_t<decltype(func)>;
-      if constexpr (std::is_function_v<value_t> || std::is_member_function_pointer_v<value_t>)
+      *this = std::forward_like<Func>(FWD(func).buffer());
+      return *this;
+    }
+
+    /// @brief Assigns a callable that does not fit within the buffer size.
+    /// @details Stores the callable on the heap using a `std::shared_ptr` and creates a lambda to
+    /// invoke it.
+    /// @tparam `Func` The type of the callable.
+    /// @param `callable` The callable to store.
+    /// @requires `required_buffer_size_v<Func> > Size`
+    template<std::invocable Func>
+      requires (!is_function_v<Func>)
+    auto
+    operator=(Func&& func) noexcept -> function_buffer& // NOLINT
+    {
+      if constexpr (required_buffer_size_v<Func> <= Size)
       {
-        assign(
-          [func, ... args = FWD(args)]() mutable
-          {
-            std::invoke(func, FWD(args)...);
-          });
+        assign(FWD(func));
       }
       else
       {
-        assign(details::deferred_callable(FWD(func), FWD(args)...));
+        *this = [func = std::make_shared<std::remove_reference_t<Func>>(FWD(func))]
+        {
+          std::forward<Func> (*func)();
+        };
       }
-    }
-
-    /// @brief Assigns a callable that fits within the buffer size.
-    /// @details Directly constructs the callable in the buffer.
-    /// @tparam `Func` The type of the callable.
-    /// @param `callable` The callable to store.
-    /// @requires `required_buffer_size_v<Func> <= Size`
-    template<std::invocable Func>
-    void
-    assign(Func&& callable) noexcept
-      requires (!is_function_v<Func>) && (required_buffer_size_v<Func> <= Size)
-    {
-      using value_t = std::remove_reference_t<Func>;
-
-      static constexpr std::uint_fast8_t total_size = required_buffer_size_v<Func>;
-
-      static_assert(std::copy_constructible<Func> || std::move_constructible<Func>,
-                    "Callable must be copy- or move-constructible");
-      reset();
-
-      // header (size)
-      // body (invocation pointer)
-      // body (destructor pointer)
-      // body (callable)
-      details::size(buffer_.data(), total_size);
-      details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<value_t>));
-      details::special_func_ptr(buffer_.data(),
-                                std::addressof(details::invoke_special_func<value_t>));
-      std::construct_at(reinterpret_cast<std::remove_const_t<value_t>*>( // NOLINT
-                          details::body_ptr(buffer_.data())),
-                        FWD(callable));
-    }
-
-    /// @brief Default constructor.
-    /// @details Initializes the buffer with a size of 0, indicating no callable is stored.
-    function_buffer()
-    {
-      details::size(buffer_.data(), 0);
-    }
-
-    /// @brief Copy constructor.
-    /// @details Creates a new `function_buffer` by copying the contents of another
-    /// `function_buffer`. This involves copying the stored callable if one exists.
-    /// @param `buffer` The `function_buffer` to copy from.
-    function_buffer(function_buffer const& buffer)
-    {
-      *this = buffer;
-    }
-
-    /// @brief Move constructor.
-    /// @details Creates a new `function_buffer` by moving the contents from another
-    /// `function_buffer`. This transfers ownership of the stored callable.
-    /// @param `buffer` The `function_buffer` to move from.
-    function_buffer(function_buffer&& buffer) noexcept
-    {
-      *this = std::move(buffer);
-    }
-
-    /// @brief Constructor that takes a `function<Size>` object.
-    /// @details Initializes the buffer with the provided `function<Size>` object, which must fit
-    /// within the buffer size.
-    /// @tparam `S` The size of the function.
-    /// @param `func` The `function<Size>` object to store.
-    /// @requires `S` <= Size
-    template<std::invocable Func>
-      requires (is_function_v<Func> && required_buffer_size_v<Func> <= Size)
-    explicit function_buffer(Func&& func) noexcept
-      : function_buffer(std::forward_like<Func>(FWD(func).buffer()))
-    {}
-
-    /// @brief Constructor that takes a callable.
-    /// @details Initializes the buffer with a callable.
-    /// @tparam `Func` The type of the callable.
-    /// @param `func` The callable to store.
-    template<std::invocable Func>
-    function_buffer(Func&& callable) noexcept
-      requires (!is_function_v<Func>)
-    {
-      details::size(buffer_.data(), 0);
-      *this = FWD(callable);
-    }
-
-    /// @brief Constructor that takes a callable and its arguments.
-    /// @details Initializes the buffer with a callable and its arguments, potentially wrapping them
-    /// in a `deferred_callable`.
-    /// @tparam `Func` The type of the callable.
-    /// @tparam `Args` The types of the arguments.
-    /// @param `func` The callable to store.
-    /// @param `args` The arguments to bind to the callable.
-    /// @requires `std::invocable<Func&&, Args&&...>`
-    function_buffer(auto&& callable, auto&&... args) noexcept
-      requires (sizeof...(args) > 0)
-    {
-      details::size(buffer_.data(), 0);
-      assign(FWD(callable), FWD(args)...);
-    }
-
-    /// @brief Destructor.
-    /// @details Calls `reset()` to properly destroy the stored callable if one exists.
-    ~function_buffer()
-    {
-      reset();
+      return *this;
     }
 
     /// @brief Resets the buffer.
@@ -810,14 +811,14 @@ namespace fho
   public:
     /// @brief Default constructor.
     /// @details Initializes an empty `function` object with no stored callable.
-    function() = default;
+    explicit function() noexcept = default;
 
     /// @brief Constructor that takes a `buffer_t`.
     /// @details Initializes the `function` with the provided `buffer_t`, which is a
     /// `function_buffer`.
     /// @param `buffer` The `buffer_t` to initialize with.
-    function(buffer_t buffer)
-      : buffer_(std::move(buffer))
+    explicit function(std::common_reference_with<buffer_t> auto&& buffer)
+      : buffer_(FWD(buffer))
     {}
 
     /// @brief Copy constructor.
@@ -860,26 +861,22 @@ namespace fho
     /// @details Assigns the contents of another `function` to this one.
     /// @param `func` The `function` to copy from.
     /// @return A reference to this `function`.
-    auto operator=(function const& func) noexcept -> function& = default;
+    auto operator=(function const& func) -> function& = default;
 
     /// @brief Move assignment operator.
     /// @details Moves the contents from another `function` to this one.
     /// @param `func` The `function` to move from.
     /// @return A reference to this `function`.
-    auto
-    operator=(function&& func) noexcept -> function&
-    {
-      buffer_ = std::move(func.buffer_);
-      return *this;
-    }
+    auto operator=(function&& func) noexcept -> function& = default;
 
     /// @brief Assignment operator for invocable objects.
     /// @details Assigns a new callable to this `function`.
     /// @param `func` The callable to assign.
     /// @return A reference to this `function`.
+    template<std::invocable Func>
+      requires (!is_function_v<Func> && !is_function_dyn_v<Func>)
     auto
-    operator=(std::invocable auto&& func) noexcept -> function&
-      requires std::same_as<function, std::remove_cvref_t<decltype(func)>> || true
+    operator=(Func&& func) noexcept -> function&
     {
       assign(FWD(func));
       return *this;
