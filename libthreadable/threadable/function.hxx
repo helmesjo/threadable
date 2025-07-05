@@ -819,7 +819,7 @@ namespace fho
     /// @details Initializes the `function` with the provided `buffer_t`, which is a
     /// `function_buffer`.
     /// @param `buffer` The `buffer_t` to initialize with.
-    explicit function(std::common_reference_with<buffer_t> auto&& buffer)
+    explicit function(std::common_reference_with<function_buffer<Size>> auto&& buffer)
       : buffer_(FWD(buffer))
     {}
 
