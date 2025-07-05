@@ -1,6 +1,5 @@
 #include <threadable/pool.hxx>
 
-// #include <iostream>
 #include <memory>
 
 namespace fho::details
