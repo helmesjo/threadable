@@ -173,17 +173,16 @@ SCENARIO("ring_buffer: push & claim")
       THEN("a callable that is larger than buffer size can be pushed")
       {
         // NOLINTBEGIN
-        int                   called  = 0;
-        static constexpr auto too_big = fho::details::slot_size * 2;
+        int called       = 0;
+        using big_data_t = std::array<std::byte, fho::details::slot_size * 2>;
         // both capturing big data & passing as argument
         ring.push(
-          [&called, bigData = std::make_shared<std::byte[]>(
-                      too_big)](int arg, std::shared_ptr<std::byte[]> const& data)
+          [&called, bigData = big_data_t{}](int arg, big_data_t const& data)
           {
             called = arg;
             (void)data;
           },
-          16, std::make_shared<std::byte[]>(too_big));
+          16, big_data_t{});
         // NOLINTEND
 
         REQUIRE(ring.size() == 1);
