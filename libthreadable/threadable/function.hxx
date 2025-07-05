@@ -1,6 +1,7 @@
 #pragma once
 
 #include <threadable/std_concepts.hxx>
+#include <threadable/std_traits.hxx>
 
 #include <array>
 #include <cassert>
@@ -428,7 +429,7 @@ namespace fho
     template<std::invocable Func>
       requires (is_function_v<Func> && required_buffer_size_v<Func> <= Size)
     explicit function_buffer(Func&& func) noexcept
-      : function_buffer(std::forward_like<Func>(FWD(func).buffer()))
+      : function_buffer(stdext::forward_like<Func>(FWD(func).buffer()))
     {}
 
     /// @brief Constructor that takes a callable.
@@ -517,7 +518,7 @@ namespace fho
     auto
     operator=(Func&& func) -> function_buffer&
     {
-      *this = std::forward_like<Func>(FWD(func).buffer());
+      *this = stdext::forward_like<Func>(FWD(func).buffer());
       return *this;
     }
 
