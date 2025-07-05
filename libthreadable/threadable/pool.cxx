@@ -13,6 +13,11 @@ namespace fho::details
                    []
                    {
                      default_pool = std::make_unique<fho::details::pool_t>(); // NOLINT
+                     std::atexit(
+                       []
+                       {
+                         default_pool = nullptr;
+                       });
                    });
     return *default_pool;
   }
