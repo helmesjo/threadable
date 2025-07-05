@@ -102,10 +102,10 @@ SCENARIO("function_buffer")
       REQUIRE(passedArg2 == doctest::Approx(3.4f));
     }
   }
-  WHEN("constructed with copy")
+  WHEN("constructed with fho::function")
   {
-    thread_local int constCopied = 0;
-    thread_local int moveCopied  = 0;
+    thread_local int copyCtor = 0;
+    thread_local int moveCtor = 0;
 
     struct type
     {
@@ -114,12 +114,12 @@ SCENARIO("function_buffer")
 
       type(type const&)
       {
-        ++constCopied;
+        ++copyCtor;
       }
 
       type(type&&) noexcept
       {
-        ++moveCopied;
+        ++moveCtor;
       }
 
       auto operator=(type const&) -> type& = delete;
@@ -133,18 +133,18 @@ SCENARIO("function_buffer")
     static_assert(std::copy_constructible<type>);
 
     auto buffer = fho::function_buffer(type{});
-    constCopied = 0;
-    moveCopied  = 0;
+    copyCtor    = 0;
+    moveCtor    = 0;
     THEN("the callables' copy-ctor is invoked")
     {
       auto copy = buffer;
-      REQUIRE(constCopied == 1);
+      REQUIRE(copyCtor == 1);
       REQUIRE_NOTHROW(fho::details::invoke(buffer.data()));
     }
     THEN("the callables' move-ctor is invoked")
     {
-      auto copy = std::move(buffer);
-      REQUIRE(moveCopied == 1);
+      auto moved = std::move(buffer);
+      REQUIRE(moveCtor == 1);
       REQUIRE_NOTHROW(fho::details::invoke(buffer.data()));
     }
   }
@@ -275,7 +275,7 @@ SCENARIO("function_dyn")
       REQUIRE(called == 1);
     }
   }
-  WHEN("constructed with function_buffer")
+  WHEN("constructed with fho::function_buffer")
   {
     int  called = 0;
     auto func   = fho::function_dyn(fho::function_buffer(
@@ -290,7 +290,7 @@ SCENARIO("function_dyn")
       REQUIRE(called == 1);
     }
   }
-  WHEN("constructed with function")
+  WHEN("constructed with fho::function")
   {
     int  called = 0;
     auto func   = fho::function_dyn(fho::function(
