@@ -351,6 +351,18 @@ namespace fho
       }
     }
 
+    template<std::invocable Func>
+    void
+    assign(Func&& func) noexcept // NOLINT
+      requires (!is_function_v<Func>) && (required_buffer_size_v<Func> > Size)
+    {
+      assign(
+        [func = std::make_shared<std::remove_reference_t<Func>>(FWD(func))]
+        {
+          std::forward<Func> (*func)();
+        });
+    }
+
     /// @brief Assigns a callable that fits within the buffer size.
     /// @details Directly constructs the callable in the buffer.
     /// @tparam `Func` The type of the callable.
@@ -520,17 +532,7 @@ namespace fho
     auto
     operator=(Func&& func) noexcept -> function_buffer& // NOLINT
     {
-      if constexpr (required_buffer_size_v<Func> <= Size)
-      {
-        assign(FWD(func));
-      }
-      else
-      {
-        *this = [func = std::make_shared<std::remove_reference_t<Func>>(FWD(func))]
-        {
-          std::forward<Func> (*func)();
-        };
-      }
+      assign(FWD(func));
       return *this;
     }
 
