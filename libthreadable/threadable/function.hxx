@@ -150,16 +150,6 @@ namespace fho
       return static_cast<std::uint_fast8_t>(*buf);
     }
 
-    /// @brief Sets the buffer's size field.
-    /// @details Updates the first byte with the provided size value.
-    /// @param `buf` Pointer to the buffer.
-    /// @param `s` Size value to set.
-    inline void
-    size(std::byte* buf, std::uint_fast8_t s) noexcept
-    {
-      size(buf) = s;
-    }
-
     /// @brief Gets a reference to the buffer's invoke function pointer.
     /// @details Returns a reference to the invoke function pointer for calling the callable.
     /// @param `buf` Pointer to the buffer.
@@ -168,16 +158,6 @@ namespace fho
     invoke_ptr(std::byte* buf) noexcept -> invoke_func_t&
     {
       return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size)); // NOLINT
-    }
-
-    /// @brief Sets the buffer's invoke function pointer.
-    /// @details Updates the invoke function pointer with the provided function.
-    /// @param `buf` Pointer to the buffer.
-    /// @param `func` Invoke function to set.
-    inline void
-    invoke_ptr(std::byte* buf, invoke_func_t func) noexcept
-    {
-      invoke_ptr(buf) = func;
     }
 
     /// @brief Gets a reference to the buffer's special function pointer.
@@ -190,16 +170,6 @@ namespace fho
     {
       return *static_cast<invoke_special_func_t*>(
         static_cast<void*>(buf + header_size + func_ptr_size)); // NOLINT
-    }
-
-    /// @brief Sets the buffer's special function pointer.
-    /// @details Updates the special function pointer with the provided function.
-    /// @param `buf` Pointer to the buffer.
-    /// @param `func` Special function to set.
-    inline void
-    special_func_ptr(std::byte* buf, invoke_special_func_t func) noexcept
-    {
-      special_func_ptr(buf) = func;
     }
 
     /// @brief Gets a pointer to the buffer's callable body.
@@ -321,7 +291,6 @@ namespace fho
   {
     static_assert(Size <= std::numeric_limits<std::uint_fast8_t>::max(),
                   "Buffer size must be <= 255");
-    using buffer_t = std::array<std::byte, Size>;
 
   public:
     /// @brief Assigns a callable and its arguments to the buffer.
@@ -386,10 +355,10 @@ namespace fho
       // body (invocation pointer)
       // body (destructor pointer)
       // body (callable)
-      details::size(buffer_.data(), total_size);
-      details::invoke_ptr(buffer_.data(), std::addressof(details::invoke_func<value_t>));
-      details::special_func_ptr(buffer_.data(),
-                                std::addressof(details::invoke_special_func<value_t>));
+      details::size(buffer_.data())       = total_size;
+      details::invoke_ptr(buffer_.data()) = std::addressof(details::invoke_func<value_t>);
+      details::special_func_ptr(buffer_.data()) =
+        std::addressof(details::invoke_special_func<value_t>);
       std::construct_at(reinterpret_cast<std::remove_const_t<value_t>*>( // NOLINT
                           details::body_ptr(buffer_.data())),
                         FWD(func));
@@ -399,7 +368,7 @@ namespace fho
     /// @details Initializes the buffer with a size of 0, indicating no callable is stored.
     function_buffer() noexcept
     {
-      details::size(buffer_.data(), 0);
+      details::size(buffer_.data()) = 0;
     }
 
     /// @brief Copy constructor.
@@ -423,8 +392,8 @@ namespace fho
     /// @brief Constructor that takes a `function<Size>` object.
     /// @details Initializes the buffer with the provided `function<Size>` object, which must fit
     /// within the buffer size.
-    /// @tparam `S` The size of the function.
-    /// @param `func` The `function<Size>` object to store.
+    /// @tparam `Func` The `function<S>` type.
+    /// @param `func` The `function<S>` object to store.
     /// @requires `S` <= Size
     template<std::invocable Func>
       requires (is_function_v<Func> && required_buffer_size_v<Func> <= Size)
@@ -440,7 +409,8 @@ namespace fho
     explicit function_buffer(Func&& callable) noexcept
       requires (!is_function_v<Func>)
     {
-      details::size(buffer_.data(), 0);
+      details::size(buffer_.data()) = 0;
+
       *this = FWD(callable);
     }
 
@@ -455,7 +425,7 @@ namespace fho
     explicit function_buffer(auto&& callable, auto&&... args) noexcept
       requires (sizeof...(args) > 0)
     {
-      details::size(buffer_.data(), 0);
+      details::size(buffer_.data()) = 0;
       assign(FWD(callable), FWD(args)...);
     }
 
@@ -545,7 +515,7 @@ namespace fho
       if (size() > 0) [[likely]]
       {
         details::invoke_special_func(data(), details::method::dtor);
-        details::size(buffer_.data(), 0);
+        details::size(buffer_.data()) = 0;
       }
     }
 
@@ -577,7 +547,7 @@ namespace fho
     }
 
   private:
-    buffer_t buffer_;
+    std::array<std::byte, Size> buffer_;
   };
 
   template<typename Func, typename... Args>

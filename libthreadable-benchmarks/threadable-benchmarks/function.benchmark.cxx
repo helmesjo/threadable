@@ -24,8 +24,8 @@ TEST_CASE("function")
     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val));
   };
   using lambda_t = decltype(lambda);
-  auto func      = fho::function<>(lambda);
-  auto funcStd   = std::function<void()>(lambda);
+  auto func      = fho::function(lambda);
+  auto funcStd   = std::function(lambda);
 
   b.title("function: assign")
     .run("lambda",
