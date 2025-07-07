@@ -7,10 +7,12 @@ namespace fho
 {
   /// @brief A random access iterator for a ring buffer.
   /// @details This iterator provides random access and contiguous iteration capabilities for a ring
-  /// buffer, allowing efficient traversal and manipulation of elements in a circular fashion. It is
-  /// designed to work with the `ring_buffer` class.
+  /// buffer, enabling efficient traversal and manipulation of elements in a circular manner. It
+  /// uses a mask to wrap indices around the buffer size, optimized for capacities that are powers
+  /// of two.
   /// @tparam `T` The type of elements stored in the ring buffer.
-  /// @tparam `Mask` A (capacity) mask used to wrap indices around the buffer size.
+  /// @tparam `Mask` A mask equal to `capacity - 1`, where `capacity` is a power of two, used to
+  /// wrap indices efficiently via bitwise operations.
   template<typename T, size_t Mask>
   class ring_iterator
   {
@@ -25,9 +27,11 @@ namespace fho
 
     inline static constexpr size_t buffer_size = Mask + 1;
 
-    /// @brief Masks an index to wrap around the buffer size.
+    /// @brief Masks an index to wrap it around the buffer size.
+    /// @details Applies a bitwise AND operation with `Mask` to compute the effective position
+    /// within the buffer, equivalent to `index % capacity` for power-of-two capacities.
     /// @param `index` The index to mask.
-    /// @return The masked index.
+    /// @return The masked index, ensuring it stays within the buffer bounds.
     inline static constexpr auto
     mask(size_t index) noexcept
     {
@@ -36,29 +40,30 @@ namespace fho
 
     ring_iterator() = default;
 
-    /// @brief Constructor with buffer pointer and index.
-    /// @details Initializes the iterator with the given buffer pointer and starting index.
+    /// @brief Constructs an iterator with a buffer pointer and starting index.
+    /// @details Initializes the iterator with a pointer to the ring buffer's start and a logical
+    /// index. The current position is set to the masked index offset from the buffer start.
     /// @param `jobs` Pointer to the beginning of the ring buffer.
-    /// @param `index` The starting index in the buffer.
+    /// @param `index` The starting logical index in the buffer.
     explicit ring_iterator(pointer jobs, size_t index) noexcept
       : jobs_(jobs)
       , current_(jobs + mask(index))
       , index_(index)
     {}
 
-    /// @brief Subscript operator for random access.
-    /// @details Returns a reference to the element at the specified offset from the current
-    /// position.
-    /// @param `rhs` The offset from the current position.
-    /// @return Reference to the element at the offset position.
+    /// @brief Provides random access to elements via subscripting.
+    /// @details Returns a reference to the element at the specified offset from the current index,
+    /// wrapping around the buffer using the mask.
+    /// @param `rhs` The offset (positive or negative) from the current position.
+    /// @return Reference to the element at the computed position.
     inline auto
     operator[](difference_type rhs) const noexcept -> reference
     {
       return jobs_[mask(index_ + rhs)];
     }
 
-    /// @brief Dereference operator.
-    /// @details Returns a reference to the current element.
+    /// @brief Dereferences the iterator to access the current element.
+    /// @details Returns a reference to the element at the iterator's current position.
     /// @return Reference to the current element.
     inline auto
     operator*() noexcept -> reference
@@ -67,15 +72,18 @@ namespace fho
     }
 
     /// @brief Friend function for dereferencing.
-    /// @details Allows dereferencing the iterator from outside the class.
+    /// @details Enables dereferencing the iterator from outside the class, mirroring the behavior
+    /// of `operator*`.
+    /// @param `it` The iterator to dereference.
+    /// @return Reference to the current element.
     friend inline auto
     operator*(ring_iterator const& it) -> reference
     {
       return *it.current_;
     }
 
-    /// @brief Member access operator.
-    /// @details Returns a pointer to the current element.
+    /// @brief Provides pointer-like access to the current element.
+    /// @details Returns a pointer to the current element for member access (e.g., `it->member`).
     /// @return Pointer to the current element.
     inline auto
     operator->() const noexcept -> pointer
@@ -83,29 +91,33 @@ namespace fho
       return current_;
     }
 
-    /// @brief Three-way comparison operator.
-    /// @details Compares this iterator with another based on their indices.
+    /// @brief Compares two iterators using three-way comparison.
+    /// @details Uses the spaceship operator to compare iterators based on their logical indices,
+    /// enabling ordering.
     /// @param `rhs` The iterator to compare with.
-    /// @return The result of the comparison.
+    /// @return A `std::strong_ordering` result indicating relative position.
     inline auto
     operator<=>(ring_iterator const& rhs) const noexcept
     {
       return index_ <=> rhs.index_;
     }
 
-    /// @brief Equality operator.
-    /// @details Checks if this iterator points to the same element as another.
+    /// @brief Checks equality between two iterators.
+    /// @details Determines if two iterators point to the same physical position in the buffer by
+    /// comparing their current pointers.
     /// @param `rhs` The iterator to compare with.
-    /// @return True if both iterators point to the same element, false otherwise.
+    /// @return `true` if both point to the same element, `false` otherwise.
     inline auto
     operator==(ring_iterator const& rhs) const noexcept -> bool
     {
       return current_ == rhs.current_;
     }
 
-    /// @brief Addition operator with another iterator.
-    /// @details Adds the indices of two iterators.
-    /// @param `rhs` The iterator to add.
+    /// @brief Computes the sum of two iterators' indices.
+    /// @details Adds the logical indices of two iterators, returning the result as a difference
+    /// type. Note: This is not a standard iterator operation and may be intended for specific use
+    /// cases.
+    /// @param `rhs` The iterator whose index is added.
     /// @return The sum of the indices.
     inline auto
     operator+(ring_iterator const& rhs) const noexcept -> difference_type
@@ -113,19 +125,21 @@ namespace fho
       return index_ + rhs.index_;
     }
 
-    /// @brief Subtraction operator with another iterator.
-    /// @details Subtracts the index of one iterator from another.
+    /// @brief Computes the distance between two iterators.
+    /// @details Subtracts the index of one iterator from another, yielding the number of positions
+    /// between them, as required for random access iterators.
     /// @param `rhs` The iterator to subtract.
-    /// @return The difference of the indices.
+    /// @return The difference in logical indices.
     inline auto
     operator-(ring_iterator const& rhs) const noexcept -> difference_type
     {
       return index_ - rhs.index_;
     }
 
-    /// @brief Addition with a difference type.
-    /// @details Returns a new iterator offset by the given difference.
-    /// @param `rhs` The offset.
+    /// @brief Advances the iterator by an offset.
+    /// @details Creates a new iterator positioned `rhs` elements after the current one, with
+    /// wrapping handled by the constructor.
+    /// @param `rhs` The number of positions to advance.
     /// @return A new iterator at the offset position.
     inline auto
     operator+(difference_type rhs) const noexcept -> ring_iterator
@@ -133,9 +147,10 @@ namespace fho
       return ring_iterator(jobs_, index_ + rhs);
     }
 
-    /// @brief Subtraction with a difference type.
-    /// @details Returns a new iterator offset by the negative of the given difference.
-    /// @param `rhs` The offset.
+    /// @brief Retreats the iterator by an offset.
+    /// @details Creates a new iterator positioned `rhs` elements before the current one, with
+    /// wrapping handled by the constructor.
+    /// @param `rhs` The number of positions to retreat.
     /// @return A new iterator at the offset position.
     inline auto
     operator-(difference_type rhs) const noexcept -> ring_iterator
@@ -143,32 +158,33 @@ namespace fho
       return ring_iterator(jobs_, index_ - rhs);
     }
 
-    /// @brief Friend function for adding a difference type to an iterator.
-    /// @details Adds a difference to the iterator.
-    /// @param `lhs` The difference to add.
-    /// @param `rhs` The iterator.
-    /// @return A new iterator at the sum position.
+    /// @brief Allows adding an offset to an iterator from the left.
+    /// @details Enables expressions like `5 + it`, creating a new iterator advanced by `lhs`.
+    /// @param `lhs` The offset to add.
+    /// @param `rhs` The original iterator.
+    /// @return A new iterator at the offset position.
     friend inline auto
     operator+(difference_type lhs, ring_iterator const& rhs) noexcept -> ring_iterator
     {
       return ring_iterator(rhs.jobs_, lhs + rhs.index_);
     }
 
-    /// @brief Friend function for subtracting a difference type from an iterator.
-    /// @details Subtracts a difference from the iterator.
-    /// @param `lhs` The difference to subtract.
-    /// @param `rhs` The iterator.
-    /// @return A new iterator at the difference position.
+    /// @brief Allows subtracting an offset from an iterator from the left.
+    /// @details Enables expressions like `5 - it`, creating a new iterator retreated by `lhs`.
+    /// @param `lhs` The offset to subtract.
+    /// @param `rhs` The original iterator.
+    /// @return A new iterator at the offset position.
     friend inline auto
     operator-(difference_type lhs, ring_iterator const& rhs) noexcept -> ring_iterator
     {
       return ring_iterator(rhs.jobs_, lhs - rhs.index_);
     }
 
-    /// @brief Addition assignment with a difference type.
-    /// @details Offsets the iterator by the given difference.
-    /// @param `rhs` The offset.
-    /// @return Reference to this iterator.
+    /// @brief Advances the iterator in place by an offset.
+    /// @details Updates the iterator's index and current position, wrapping around the buffer as
+    /// needed.
+    /// @param `rhs` The number of positions to advance.
+    /// @return Reference to this modified iterator.
     inline auto
     operator+=(difference_type rhs) noexcept -> ring_iterator&
     {
@@ -177,19 +193,21 @@ namespace fho
       return *this;
     }
 
-    /// @brief Subtraction assignment with a difference type.
-    /// @details Offsets the iterator by the negative of the given difference.
-    /// @param `rhs` The offset.
-    /// @return Reference to this iterator.
+    /// @brief Retreats the iterator in place by an offset.
+    /// @details Updates the iterator's index and current position by moving backward, wrapping as
+    /// needed.
+    /// @param `rhs` The number of positions to retreat.
+    /// @return Reference to this modified iterator.
     inline auto
     operator-=(difference_type rhs) noexcept -> ring_iterator&
     {
       return *this += -rhs;
     }
 
-    /// @brief Pre-increment operator.
-    /// @details Advances the iterator to the next element, wrapping around if necessary.
-    /// @return Reference to this iterator.
+    /// @brief Advances the iterator to the next element (pre-increment).
+    /// @details Increments the index and updates the current pointer, wrapping to the buffer's
+    /// start if the end is exceeded.
+    /// @return Reference to this modified iterator.
     inline auto
     operator++() noexcept -> ring_iterator&
     {
@@ -201,9 +219,9 @@ namespace fho
       return *this;
     }
 
-    /// @brief Post-increment operator.
-    /// @details Advances the iterator to the next element and returns the previous state.
-    /// @return The iterator before incrementing.
+    /// @brief Advances the iterator to the next element (post-increment).
+    /// @details Increments the iterator and returns its previous state.
+    /// @return A copy of the iterator before incrementing.
     inline auto
     operator++(int) noexcept -> ring_iterator
     {
@@ -212,9 +230,10 @@ namespace fho
       return prev;
     }
 
-    /// @brief Pre-decrement operator.
-    /// @details Moves the iterator to the previous element, wrapping around if necessary.
-    /// @return Reference to this iterator.
+    /// @brief Moves the iterator to the previous element (pre-decrement).
+    /// @details Decrements the index and updates the current pointer, wrapping to the buffer's end
+    /// if below the start.
+    /// @return Reference to this modified iterator.
     inline auto
     operator--() noexcept -> ring_iterator&
     {
@@ -226,9 +245,9 @@ namespace fho
       return *this;
     }
 
-    /// @brief Post-decrement operator.
-    /// @details Moves the iterator to the previous element and returns the previous state.
-    /// @return The iterator before decrementing.
+    /// @brief Moves the iterator to the previous element (post-decrement).
+    /// @details Decrements the iterator and returns its previous state.
+    /// @return A copy of the iterator before decrementing.
     inline auto
     operator--(int) noexcept -> ring_iterator
     {
@@ -237,20 +256,27 @@ namespace fho
       return prev;
     }
 
-    /// @brief Returns the current index of the iterator.
-    /// @return The current index.
+    /// @brief Retrieves the current logical index.
+    /// @details Returns the iterator's index, which may exceed the buffer size due to wrapping.
+    /// @return The current logical index.
     [[nodiscard]] inline auto
     index() const noexcept
     {
       return index_;
     }
 
+    /// @brief Provides access to the buffer's starting pointer (non-const).
+    /// @details Returns a pointer to the beginning of the ring buffer for direct manipulation.
+    /// @return Pointer to the buffer's start.
     [[nodiscard]] inline auto
     data() noexcept
     {
       return jobs_;
     }
 
+    /// @brief Provides access to the buffer's starting pointer (const).
+    /// @details Returns a const pointer to the beginning of the ring buffer.
+    /// @return Const pointer to the buffer's start.
     [[nodiscard]] inline auto
     data() const noexcept
     {
@@ -258,12 +284,12 @@ namespace fho
     }
 
   private:
-    pointer jobs_    = nullptr;
-    pointer current_ = nullptr;
-    size_t  index_   = 0;
+    pointer jobs_    = nullptr; ///< Pointer to the start of the ring buffer.
+    pointer current_ = nullptr; ///< Pointer to the current element.
+    size_t  index_   = 0;       ///< Logical index, may exceed buffer size.
   };
 
-  // Make sure iterator is valid for parallelization with the standard algorithms
+  // Verify iterator compatibility with standard algorithms
   static_assert(std::random_access_iterator<ring_iterator<int, 1024>>);
   static_assert(std::contiguous_iterator<ring_iterator<int, 1024>>);
 }
