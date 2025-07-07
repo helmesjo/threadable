@@ -45,8 +45,9 @@ namespace fho
     inline auto
     operator=(ring_slot&& that) noexcept -> ring_slot&
     {
-      state_ = std::move(that.state_.load(std::memory_order_relaxed));
+      state_ = that.state_.load(std::memory_order_relaxed);
       value_ = std::move(that.value_);
+      return *this;
     }
 
     inline
