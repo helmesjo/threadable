@@ -31,25 +31,37 @@ namespace fho
   }
 
   /// @brief A `fho::function` alias optimized to cache line size for use within a `ring_buffer`.
-  /// @details The size of the function object is exactly that of the target systems (deduced)
+  /// @details The size of the function object is exactly that of the target system's (deduced)
   ///          cache line size minus `1` byte reserved for the `ring_slot` state handling.
   using fast_func_t = function<details::slot_size>;
 
   /// @brief A Multi-Producer Single-Consumer (MPSC) ring buffer for managing objects in a
   /// threading environment.
   /// @details This class provides a lock-free ring buffer that allows multiple producers to add
-  /// objects concurrently and a single consumer to consume. It uses atomic
-  /// operations to manage the buffer's state. The buffer is templated on its capacity, which must
-  /// be a power of 2 and greater than 1.
-  /// @tparam `T` The value type.
+  /// objects concurrently and a single consumer to remove them. It uses atomic operations to
+  /// manage the buffer's state, ensuring thread safety. The buffer has a fixed capacity, which
+  /// must be a power of 2 greater than 1, and uses a mask to handle index wrapping. Slots are
+  /// aligned to cache lines to reduce false sharing and improve performance in concurrent
+  /// scenarios.
+  /// @tparam `T` The type of elements stored in the buffer. Must be movable and destructible.
+  ///             Defaults to `fast_func_t`, a callable optimized for cache line size.
   /// @tparam `Capacity` The size of the ring buffer, must be a power of 2 and greater than 1.
-  /// Defaults to 65536 (`1 << 16`).
-  /// @tparam `Allocator` The allocator type.
+  ///                    Defaults to 65536 (`1 << 16`).
+  /// @tparam `Allocator` The allocator type used for the buffer's slots. Defaults to an aligned
+  ///                     allocator for `ring_slot<T>`.
+  /// @note The buffer uses three atomic indices: `tail_` (next slot to consume), `head_` (next
+  ///       slot to produce into), and `next_` (next slot to claim for production).
+  /// @warning Only one consumer should call `consume()` at a time to ensure thread safety.
+  ///          Multiple producers can safely call `push()` concurrently.
   /// @example
   /// ```cpp
-  /// auto buffer = fho::ring_buffer<int>{};
-  /// buffer.push(1);
+  /// auto buffer = fho::ring_buffer<>{}; // Uses fast_func_t by default
+  /// auto token = buffer.push([]() { std::cout << "Hello, World!\n"; });
   /// auto range = buffer.consume();
+  /// for (auto& func : range) {
+  ///     func();
+  /// }
+  /// token.wait(); // Wait for the job to complete
   /// ```
   template<typename T = fast_func_t, std::size_t Capacity = details::default_capacity,
            typename Allocator = aligned_allocator<ring_slot<T>, details::cache_line_size>>
@@ -66,6 +78,12 @@ namespace fho
     using const_ring_iterator_t = ring_iterator<slot_type const, index_mask>;
 
   public:
+    /// @brief A subrange of active slots in the buffer.
+    /// @details Represents a range of consumed slots ready for processing. It manages the
+    ///          lifetime of these slots, releasing them when the subrange is destroyed to prevent
+    ///          reuse before processing is complete. Uses a `shared_ptr` with a static dummy
+    ///          object to handle cleanup without extra allocation.
+    /// @tparam `Iterator` The iterator type (`ring_iterator_t` or `const_ring_iterator_t`).
     template<typename Iterator>
     class active_subrange final : public std::ranges::subrange<Iterator>
     {
@@ -101,11 +119,9 @@ namespace fho
 
     private:
       /// @brief Static dummy object and `shared_ptr` for reference counting to trigger cleanup.
-      /// @details This is a hack to use `shared_ptr<void>` for reference counting but without
-      /// allocating memory. The static `dummy` char serves as a valid, non-owned placeholder
-      /// with program-long lifetime. The `shared_ptr`'s control block tracks references, and the
-      /// custom deleter runs when the last instance is destroyed, releasing all `slot_type`
-      /// elements in the range.
+      /// @details Uses a static `dummy` char as a placeholder to avoid memory allocation. The
+      ///          `shared_ptr` tracks references, and its custom deleter releases all slots in
+      ///          the range when the last reference is destroyed.
       inline static char    dummy = 1;
       std::shared_ptr<void> resetter_ =
         std::shared_ptr<void>(&dummy,
@@ -173,17 +189,19 @@ namespace fho
                   "Buffer slot size must be a multiple of the cache line size");
 
     /// @brief Default constructor.
-    /// @details Initializes the (pre-allocated) ring buffer.
+    /// @details Initializes the ring buffer with pre-allocated slots of size `Capacity`.
     ring_buffer() noexcept          = default;
     ring_buffer(ring_buffer const&) = delete;
 
+    /// @brief Destructor.
+    /// @details Consumes all remaining items to ensure proper cleanup.
     ~ring_buffer()
     {
       std::ignore = consume();
     }
 
     /// @brief Move constructor.
-    /// @details Moves the contents of another ring buffer into this one.
+    /// @details Transfers ownership of the buffer's contents from another instance.
     /// @param `rhs` The ring buffer to move from.
     ring_buffer(ring_buffer&& rhs) noexcept
       : tail_(rhs.tail_.load(std::memory_order::relaxed))
@@ -199,9 +217,9 @@ namespace fho
     auto operator=(ring_buffer const&) -> ring_buffer& = delete;
 
     /// @brief Move assignment operator.
-    /// @details Moves the contents of another ring buffer into this one.
+    /// @details Transfers ownership of the buffer's contents from another instance.
     /// @param `rhs` The ring buffer to move from.
-    /// @return A reference to this ring buffer.
+    /// @return Reference to this ring buffer.
     auto
     operator=(ring_buffer&& rhs) noexcept -> ring_buffer&
     {
@@ -212,19 +230,24 @@ namespace fho
       return *this;
     }
 
-    /// @brief Pushes a value into the ring buffer with a token.
-    /// @details Adds a callable to the buffer, associating it with a token for state
-    /// monitoring.
-    /// @tparam `Func` The type of the callable.
-    /// @tparam `Args` The types of the arguments.
-    /// @param `token` The token to associate with the slot.
-    /// @param `func` The callable to add to the buffer.
-    /// @param `args` The arguments to pass to the callable.
-    /// @return A reference to the token.
+    /// @brief Pushes a value into the buffer with an existing token.
+    /// @details Adds a callable to the buffer, associating it with a provided token. The process
+    ///          involves:
+    ///          1. **Claim a slot**: Atomically increments `next_` to reserve a slot.
+    ///          2. **Assign the value**: Constructs the value in the slot and sets it active.
+    ///          3. **Commit the slot**: Updates `head_` to make the slot available.
+    ///          Blocks if the buffer is full until space is freed by the consumer.
+    /// @tparam `Func` Type of the callable.
+    /// @tparam `Args` Types of the arguments.
+    /// @param `token` Token to associate with the slot.
+    /// @param `func` Callable to add to the buffer.
+    /// @param `args` Arguments for the callable.
+    /// @return Reference to the token.
+    /// @note Thread-safe for multiple producers.
     /// @example
     /// ```cpp
     /// auto token = fho::slot_token{};
-    /// buffer.push(token, val);
+    /// buffer.push(token, []() { std::cout << "Task\n"; });
     /// ```
     template<std::move_constructible Func, typename... Args>
       requires std::invocable<Func, Args...> || std::invocable<Func, slot_token&, Args...>
@@ -252,7 +275,7 @@ namespace fho
       index_t expected; // NOLINT
       do
       {
-        // Check if full before comitting.
+        // Check if full before committing.
         if (auto tail = tail_.load(std::memory_order_acquire);
             ring_iterator_t::mask(slot + 1 - tail) == 0) [[unlikely]]
         {
@@ -266,16 +289,17 @@ namespace fho
       return token;
     }
 
-    /// @brief Pushes a value into the ring buffer.
-    /// @details Adds a callable to the buffer and returns a new token.
-    /// @tparam `Func` The type of the callable.
-    /// @tparam `Args` The types of the arguments.
-    /// @param `func` The callable to add to the buffer.
-    /// @param `args` The arguments to pass to the callable.
-    /// @return A new token for the acquired slot.
+    /// @brief Pushes a value into the buffer and returns a new token.
+    /// @details Adds a callable to the buffer and returns a new token for tracking.
+    /// @tparam `Func` Type of the callable.
+    /// @tparam `Args` Types of the arguments.
+    /// @param `func` Callable to add to the buffer.
+    /// @param `args` Arguments for the callable.
+    /// @return New token associated with the slot.
+    /// @note Thread-safe for multiple producers.
     /// @example
     /// ```cpp
-    /// auto token = buffer.push(val);
+    /// auto token = buffer.push([]() { std::cout << "Task\n"; });
     /// ```
     template<std::move_constructible Func, typename... Args>
       requires std::invocable<Func, Args...> || std::invocable<Func, slot_token&, Args...>
@@ -287,8 +311,8 @@ namespace fho
       return token;
     }
 
-    /// @brief Waits until there are values available in the buffer.
-    /// @details Blocks until the buffer is not empty.
+    /// @brief Waits until the buffer has items available.
+    /// @details Blocks until `head_ > tail_`, indicating items are ready for consumption.
     void
     wait() const noexcept
     {
@@ -300,10 +324,18 @@ namespace fho
       }
     }
 
-    /// @brief Consumes values from the buffer.
-    /// @details Retrieves a range of values from the buffer for execution.
-    /// @param `max` The maximum number of values to consume. Defaults to `max_size()`.
-    /// @return A subrange pointing to the consumed values.
+    /// @brief Consumes a range of items from the buffer.
+    /// @details Retrieves a range of values from `tail_` to `head_`, up to a specified maximum.
+    ///          Returns a `subrange_type` that must be processed within its lifetime; slots are
+    ///          released when the subrange is destroyed.
+    /// @param `max` Maximum number of items to consume. Defaults to `max_size()`.
+    /// @return Subrange of consumed values.
+    /// @warning Only one consumer should call this at a time to avoid race conditions.
+    /// @example
+    /// ```cpp
+    /// auto range = buffer.consume(10);
+    /// for (auto& value : range) { /* Process value */ }
+    /// ```
     auto
     consume(index_t max = max_size()) noexcept
     {
@@ -317,17 +349,18 @@ namespace fho
       return subrange_type(std::ranges::subrange(b, e), value_accessor);
     }
 
-    /// @brief Clears all values from the buffer.
-    /// @details Resets all values in the buffer to an empty state.
+    /// @brief Clears all items from the buffer.
+    /// @details Consumes all available items, leaving the buffer empty.
     void
     clear() noexcept
     {
       std::ignore = consume();
     }
 
-    /// @brief Returns an iterator to the beginning (tail) of the buffer.
-    /// @details Provides access to the first value in the buffer.
-    /// @return A const iterator to the beginning of the buffer.
+    /// @brief Returns a const iterator to the buffer's start.
+    /// @details Points to the first consumable item at `tail_`. Returns a const iterator due to
+    ///          single-consumer design.
+    /// @return Const iterator to the start of the buffer.
     auto
     begin() const noexcept
     {
@@ -335,9 +368,9 @@ namespace fho
       return std::ranges::next(constRange_.begin(), tail);
     }
 
-    /// @brief Returns an iterator to the end (head) of the buffer.
-    /// @details Provides access to the position after the last value in the buffer.
-    /// @return A const iterator to the end of the buffer.
+    /// @brief Returns a const iterator to the buffer's end.
+    /// @details Points past the last consumable item at `head_`.
+    /// @return Const iterator to the end of the buffer.
     auto
     end() const noexcept
     {
@@ -345,18 +378,18 @@ namespace fho
       return std::ranges::next(constRange_.begin(), head);
     }
 
-    /// @brief Returns the maximum size of the buffer.
-    /// @details The maximum number of values the buffer can hold, which is `capacity - 1`.
-    /// @return The maximum size of the buffer.
+    /// @brief Returns the maximum capacity of the buffer.
+    /// @details Returns `Capacity - 1`, as one slot is reserved to distinguish full from empty.
+    /// @return Maximum number of items the buffer can hold.
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
       return Capacity - 1;
     }
 
-    /// @brief Returns the current number of values in the buffer.
-    /// @details Calculates the number of values currently in the buffer.
-    /// @return The number of values in the buffer.
+    /// @brief Returns the current number of items in the buffer.
+    /// @details Computes the masked difference between `head_` and `tail_`.
+    /// @return Current number of items.
     auto
     size() const noexcept -> std::size_t
     {
@@ -366,17 +399,18 @@ namespace fho
     }
 
     /// @brief Checks if the buffer is empty.
-    /// @details Returns true if there are no values in the buffer, false otherwise.
-    /// @return True if the buffer is empty, false otherwise.
+    /// @details Returns true if `size() == 0`.
+    /// @return True if empty, false otherwise.
     auto
     empty() const noexcept -> bool
     {
       return size() == 0;
     }
 
-    /// @brief Returns a pointer to the underlying data.
-    /// @details Provides direct access to the buffer's data.
-    /// @return A pointer to the first element in the buffer.
+    /// @brief Provides direct access to the underlying data.
+    /// @details Returns a pointer to the buffer's slot array.
+    /// @return Pointer to the first slot.
+    /// @warning Direct access may not be thread-safe; use with caution.
     auto
     data() const noexcept -> decltype(auto)
     {
