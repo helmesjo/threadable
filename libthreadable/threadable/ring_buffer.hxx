@@ -231,17 +231,15 @@ namespace fho
     }
 
     /// @brief Pushes a value into the buffer with an existing token.
-    /// @details Adds a callable to the buffer, associating it with a provided token. The process
+    /// @details Adds a value to the buffer, associating it with a provided token. The process
     ///          involves:
     ///          1. **Claim a slot**: Atomically increments `next_` to reserve a slot.
     ///          2. **Assign the value**: Constructs the value in the slot and sets it active.
     ///          3. **Commit the slot**: Updates `head_` to make the slot available.
     ///          Blocks if the buffer is full until space is freed by the consumer.
-    /// @tparam `Func` Type of the callable.
-    /// @tparam `Args` Types of the arguments.
     /// @param `token` Token to associate with the slot.
-    /// @param `func` Callable to add to the buffer.
-    /// @param `args` Arguments for the callable.
+    /// @param `val` Value to add to the buffer.
+    /// @param `args` Additional arguments.
     /// @return Reference to the token.
     /// @note Thread-safe for multiple producers.
     /// @example
@@ -249,9 +247,8 @@ namespace fho
     /// auto token = fho::slot_token{};
     /// buffer.push(token, []() { std::cout << "Task\n"; });
     /// ```
-    template<std::move_constructible Func, typename... Args>
     auto
-    push(slot_token& token, Func&& func, Args&&... args) noexcept -> slot_token&
+    push(slot_token& token, auto&& val, auto&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_acquire);
@@ -259,13 +256,13 @@ namespace fho
       elem.acquire();
 
       // 2. Assign `value_type`.
-      if constexpr (std::invocable<Func, slot_token&, Args...>)
+      if constexpr (std::invocable<decltype(val), slot_token&, decltype(args)...>)
       {
-        elem.assign(FWD(func), std::ref(token), FWD(args)...);
+        elem.assign(FWD(val), std::ref(token), FWD(args)...);
       }
       else
       {
-        elem.assign(FWD(func), FWD(args)...);
+        elem.assign(FWD(val), FWD(args)...);
       }
 
       elem.token(token);
@@ -289,23 +286,20 @@ namespace fho
     }
 
     /// @brief Pushes a value into the buffer and returns a new token.
-    /// @details Adds a callable to the buffer and returns a new token for tracking.
-    /// @tparam `Func` Type of the callable.
-    /// @tparam `Args` Types of the arguments.
-    /// @param `func` Callable to add to the buffer.
-    /// @param `args` Arguments for the callable.
+    /// @details Adds a value to the buffer and returns a new token for tracking.
+    /// @param `val` Value to add to the buffer.
+    /// @param `args` Additional arguments.
     /// @return New token associated with the slot.
     /// @note Thread-safe for multiple producers.
     /// @example
     /// ```cpp
     /// auto token = buffer.push([]() { std::cout << "Task\n"; });
     /// ```
-    template<std::move_constructible Func, typename... Args>
     auto
-    push(Func&& func, Args&&... args) noexcept -> slot_token
+    push(auto&& val, auto&&... args) noexcept -> slot_token
     {
       slot_token token;
-      std::ignore = push(token, FWD(func), FWD(args)...);
+      std::ignore = push(token, FWD(val), FWD(args)...);
       return token;
     }
 
