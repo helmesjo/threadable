@@ -1,6 +1,5 @@
 #pragma once
 
-#include <threadable/std_concepts.hxx>
 #include <threadable/std_traits.hxx>
 
 #include <array>

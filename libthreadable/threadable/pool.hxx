@@ -3,7 +3,6 @@
 #include <threadable/execution.hxx>
 #include <threadable/function.hxx>
 #include <threadable/ring_buffer.hxx>
-#include <threadable/std_concepts.hxx>
 
 #include <algorithm>
 #include <atomic>
