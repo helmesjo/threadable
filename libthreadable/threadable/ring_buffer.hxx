@@ -250,7 +250,6 @@ namespace fho
     /// buffer.push(token, []() { std::cout << "Task\n"; });
     /// ```
     template<std::move_constructible Func, typename... Args>
-      requires std::invocable<Func, Args...> || std::invocable<Func, slot_token&, Args...>
     auto
     push(slot_token& token, Func&& func, Args&&... args) noexcept -> slot_token&
     {
@@ -302,7 +301,6 @@ namespace fho
     /// auto token = buffer.push([]() { std::cout << "Task\n"; });
     /// ```
     template<std::move_constructible Func, typename... Args>
-      requires std::invocable<Func, Args...> || std::invocable<Func, slot_token&, Args...>
     auto
     push(Func&& func, Args&&... args) noexcept -> slot_token
     {
