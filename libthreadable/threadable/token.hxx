@@ -28,7 +28,8 @@ namespace fho
   /// @example
   /// ```cpp
   /// auto s = fho::ring_slot<fho::function<64>>{};
-  /// auto t = fho::slot_token(s.state);
+  /// auto t = fho::token{};
+  /// s.token(t);
   /// s.assign([]() { /* job */ });
   /// t.wait(); // Waits for the `ring_slot` to be processed by another thread
   /// ```
