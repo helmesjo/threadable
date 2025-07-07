@@ -21,13 +21,17 @@ namespace fho
     par
   };
 
-  /// @brief Executes a range of callables.
-  /// @details Invokes the callables in the provided range with the provided arguments.
-  /// @tparam `R` The type of the range.
-  /// @param `r` The range of callables to execute.
-  /// @tparam `Args` The types of the arguments.
-  /// @param `args` The arguments forwarded to each invocation.
-  /// @return The number of callables executed.
+  /// @brief Executes a range of callables with specified execution policy.
+  /// @details Invokes each callable in the provided range with the given arguments.
+  ///          Supports sequential (`seq`) or parallel (`par`) execution when the C++17 execution
+  ///          policies are available; otherwise, defaults to a sequential loop.
+  /// @tparam R The type of the range containing invocable objects.
+  /// @param exPo The execution policy (e.g., `fho::execution::seq`, `fho::execution::par`, or a
+  /// standard policy).
+  /// @param r The range of callables to execute.
+  /// @tparam Args Variadic argument types to pass to each callable.
+  /// @param args Arguments forwarded to each callable invocation.
+  /// @return The number of callables executed, equivalent to the range's size.
   template<std::ranges::range R, typename... Args>
   inline constexpr auto
   execute(auto&& exPo, R&& r, Args&&... args)
@@ -73,6 +77,14 @@ namespace fho
     return r.size();
   }
 
+  /// @brief Executes a range of callables with default sequential execution.
+  /// @details Invokes each callable in the range sequentially with the provided arguments.
+  ///          Uses `std::execution::seq` if available; otherwise, falls back to a simple loop.
+  /// @tparam R The type of the range containing invocable objects.
+  /// @param r The range of callables to execute.
+  /// @tparam Args Variadic argument types to pass to each callable.
+  /// @param args Arguments forwarded to each callable invocation.
+  /// @return The number of callables executed, equivalent to the range's size.
   template<std::ranges::range R, typename... Args>
   inline constexpr auto
   execute(R&& r, Args&&... args)
@@ -85,24 +97,23 @@ namespace fho
 #endif
   }
 
-  /// @brief A class that manages a single thread for executing jobs.
-  /// @details The `executor` class encapsulates a single thread that continuously executes jobs
-  /// submitted to it via the `submit` method. It uses a sequential `ring_buffer` to store and
-  /// manage the jobs. The executor can be stopped using the `stop` method, which sets a flag to
-  /// halt the execution loop and clears any remaining jobs in the buffer.
+  /// @brief Manages a single-threaded job execution system.
+  /// @details The `executor` class runs a single thread that processes jobs submitted via `submit`.
+  ///          Jobs are stored in a `ring_buffer` and executed sequentially. Use `stop` to halt the
+  ///          executor and clear pending jobs.
   /// @example
   /// ```cpp
-  /// auto exec = fho::executor();
+  /// fho::executor exec;
   /// auto range = queue.consume();
-  /// auto t = exec.submit(range);
-  /// t.wait();
+  /// auto token = exec.submit(range, fho::execution::seq);
+  /// token.wait();
   /// ```
   class executor
   {
   public:
-    /// @brief Default constructor that starts the executor thread.
-    /// @details Initializes the executor and starts a new thread that runs the `run` method, which
-    /// is responsible for executing jobs from the internal `ring_buffer`.
+    /// @brief Constructs an executor and starts its thread.
+    /// @details Initializes the internal `ring_buffer` and spawns a thread running the `run`
+    ///          method to process submitted jobs.
     executor()
       : thread_(
           [this]
@@ -111,9 +122,9 @@ namespace fho
           })
     {}
 
-    /// @brief Destructor that stops the executor and joins the thread.
-    /// @details Calls `stop()` to halt the execution loop and then joins the executor thread to
-    /// ensure all jobs are completed before destruction.
+    /// @brief Destroys the executor, stopping it and joining the thread.
+    /// @details Invokes `stop` to terminate the execution loop and joins the thread to ensure
+    ///          all jobs complete before cleanup.
     ~executor()
     {
       stop();
@@ -128,36 +139,27 @@ namespace fho
     auto operator=(executor const&) -> executor& = delete;
     auto operator=(executor&&) -> executor&      = delete;
 
-    /// @brief Submits a range of jobs to be executed as a single job by the executor.
-    /// @details This method creates a new job that, when executed, will run all the jobs in the
-    /// provided range sequentially. This new job is then pushed into the internal `ring_buffer`.
-    /// @tparam `T` The type of the range, must be a subrange of jobs.
-    /// @param `range` The range of jobs to be executed together as a single job.
-    /// @return A `slot_token` for the submitted job, which represents the entire range.
+    /// @brief Submits a range of jobs as a single task with specified execution policy.
+    /// @details Wraps the range in a lambda that executes all jobs in the range based on the
+    ///          policy (`seq` or `par`). For `seq`, ensures prior `ring_buffer` slots complete.
+    /// @tparam T The range type, must contain invocable objects.
+    /// @param range The range of jobs to execute as a single task.
+    /// @param policy The execution policy (`execution::seq` or `execution::par`).
+    /// @return A `slot_token` representing the submitted task in the `ring_buffer`.
     auto
     submit(std::ranges::range auto&& range, execution policy) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
-      // NOTE: Take range as l-value to claim ownership if it was
-      //       passed as r-value reference to make sure it is
-      //       correctly released when the lambda completes.
-      //       See `active_subrange` destruction for details.
       return work_.push(
-        [policy](std::ranges::range auto r /* Must be passed by value */) mutable
+        [policy](std::ranges::range auto r) mutable
         {
-          // Special rule for `ring_buffer` ranges:
-          // If sequential execution policy, wait for completion of
-          // previous slot.
-          // NOTE: We call `.base()` since `ring_buffer` internally uses
-          //       a transform view adapter, and we look for `ring_slot`.
-          if constexpr (requires { range.begin().base()->wait(); })
+          if constexpr (requires { r.begin().base()->wait(); })
           {
             if (policy == execution::seq) [[unlikely]]
             {
               auto const b    = r.begin().base();
               auto const e    = r.end().base();
               auto const prev = b - 1;
-              // Make sure previous slot has been processed.
               if (b != e && prev != e && prev < b) [[unlikely]]
               {
                 prev->wait();
@@ -172,25 +174,23 @@ namespace fho
         FWD(range));
     }
 
-    /// @brief Submits a single job to be executed by the executor.
-    /// @details This method pushes the given callable into the internal `ring_buffer`. The job will
-    /// be executed by the executor thread.
-    /// @tparam `Func` The type of the callable, must be invocable.
-    /// @param `work` The callable to be executed as a job.
-    /// @return A `slot_token` for the submitted job, which can be used to monitor its state.
+    /// @brief Submits a single job to the executor.
+    /// @details Adds the callable to the `ring_buffer` for execution by the thread.
+    /// @tparam Func The type of the callable, must be invocable.
+    /// @param work The callable to execute.
+    /// @return A `slot_token` for tracking the job’s state in the `ring_buffer`.
     auto
     submit(std::invocable auto&& work) noexcept
     {
       return work_.push(FWD(work));
     }
 
-    /// @brief Stops the executor from accepting new jobs and consumes any remaining jobs.
-    /// @details Sets the stop flag to true and consumes all remaining jobs in the internal
-    /// `ring_buffer`, effectively clearing the queue.
+    /// @brief Halts the executor and clears remaining jobs.
+    /// @details Sets the `stop_` flag and pushes a job to clear the `ring_buffer`, ensuring the
+    ///          thread exits its loop.
     void
     stop() noexcept
     {
-      // Release thread if waiting.
       work_.push(
         [this]
         {
@@ -200,6 +200,9 @@ namespace fho
     }
 
   private:
+    /// @brief Internal thread loop to process jobs.
+    /// @details Continuously consumes and executes jobs from the `ring_buffer` until stopped.
+    ///          Avoids sleeping to minimize contention and delays.
     void
     run()
     {
@@ -214,9 +217,6 @@ namespace fho
         }
         else
         {
-          // NOTE: Don't sleep here, as even (especially?) small sleeps (nanosecond)
-          //       will 1. increase ring buffer contention but also 2. accumulate
-          //       in user code with many executors causing unexpected delays.
           work_.wait();
         }
       }
