@@ -4,11 +4,6 @@ import libs += \
   doctest%lib{doctest} \
   libnanobench%lib{nanobench}
 
-if($cxx.id == 'gcc')
-{
-  cxx.coptions += -Wno-interference-size
-}
-
 exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
 {
   test = true
@@ -17,3 +12,8 @@ exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
 }
 
 cxx.poptions =+ "-I$out_root" "-I$src_root"
+
+if($cxx.id == 'gcc')
+{
+  cxx.coptions += -Wno-interference-size
+}

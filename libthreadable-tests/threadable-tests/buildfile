@@ -3,11 +3,6 @@ import libs += \
   libthreadable%lib{threadable} \
   doctest%lib{doctest}
 
-if($cxx.id == 'gcc')
-{
-  cxx.coptions += -Wno-interference-size
-}
-
 exe{threadable-tests}: {hxx ixx txx cxx}{**} $libs
 {
   test = true
@@ -16,3 +11,8 @@ exe{threadable-tests}: {hxx ixx txx cxx}{**} $libs
 }
 
 cxx.poptions =+ "-I$out_root" "-I$src_root"
+
+if($cxx.id == 'gcc')
+{
+  cxx.coptions += -Wno-interference-size
+}
