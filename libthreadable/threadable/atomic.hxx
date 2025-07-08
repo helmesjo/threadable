@@ -142,7 +142,7 @@ namespace fho
       else
       {
         // Clear the bits
-        return (this->fetch_and(~Mask, orders...) & Mask) != 0;
+        return (this->fetch_and(from_underlying<T>(~Mask), orders...) & Mask) != 0;
       }
     }
 
