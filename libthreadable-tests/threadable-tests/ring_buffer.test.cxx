@@ -490,21 +490,6 @@ SCENARIO("ring_buffer: standard algorithms")
           REQUIRE(ring.size() == 0);
         }
       }
-#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
-      AND_WHEN("std::for_each (parallel)")
-      {
-        std::for_each(std::execution::par, r.begin(), r.end(),
-                      [](auto& job)
-                      {
-                        job();
-                      });
-        THEN("all jobs executed")
-        {
-          REQUIRE(jobsExecuted.load() == ring.max_size());
-          REQUIRE(ring.size() == 0);
-        }
-      }
-#endif
     }
   }
 }

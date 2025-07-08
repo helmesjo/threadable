@@ -23,12 +23,6 @@ if ($cxx.target.system != 'win32-msvc')
   lib{threadable}: cxx.export.libs += -pthread
 }
 
-if($cxx.stdlib == 'libstdc++')
-{
-  cxx.libs += -ltbb
-  lib{threadable}: cxx.export.libs += -ltbb
-}
-
 if($cxx.id == 'gcc')
 {
   cxx.coptions += -Wno-interference-size

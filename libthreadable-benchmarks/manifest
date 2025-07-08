@@ -9,6 +9,7 @@ license: MIT ; MIT License.
 description-file: README.md
 url: https://github.com/helmesjo/threadable
 email: helmesjo@gmail.com
+builds: none ; dont run benchmarks on CI
 depends: * build2 >= 0.16.0
 depends: * bpkg >= 0.16.0
 depends: doctest ^2.4.7

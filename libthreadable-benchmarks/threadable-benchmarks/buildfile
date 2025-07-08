@@ -13,6 +13,12 @@ exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
 
 cxx.poptions =+ "-I$out_root" "-I$src_root"
 
+# apparently not required on MacOS with g++ & libstdc++.
+if($cxx.stdlib == 'libstdc++' && $cxx.target.class != 'macos')
+{
+  cxx.libs += -ltbb
+}
+
 if($cxx.id == 'gcc')
 {
   cxx.coptions += -Wno-interference-size
