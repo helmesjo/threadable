@@ -304,8 +304,8 @@ namespace fho
   template<std::size_t Size>
   class function_buffer
   {
-    static_assert(Size <= std::numeric_limits<std::uint_fast8_t>::max(),
-                  "Buffer size must be <= 255");
+    static_assert(Size - 1 <= std::numeric_limits<std::uint_fast8_t>::max(),
+                  "Buffer size must be within index range (0-255)");
 
   public:
     /// @brief Assigns a callable and its arguments to the buffer.
