@@ -1,12 +1,14 @@
 : 1
 name: libthreadable
 version: 0.2.0-a.0.z
-summary: threadable C++ library
+type: lib
+language: c++
+project: threadable
+summary: C++20 lock-free thread pool & MPSC ring buffer library with cache-aligned task processing
 license: MIT ; MIT License.
 description-file: README.md
 url: https://github.com/helmesjo/threadable
 email: helmesjo@gmail.com
-#build-error-email: helmesjo@gmail.com
 depends: * build2 >= 0.16.0
 depends: * bpkg >= 0.16.0
 tests: libthreadable-tests == $
