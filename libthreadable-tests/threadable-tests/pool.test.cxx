@@ -160,7 +160,7 @@ SCENARIO("pool: execution order")
     for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
       tokens += queue.push(
-        [i, &executed, &counter](fho::slot_token& token)
+        [i, &executed, &counter]()
         {
           executed[i] = counter++;
         });

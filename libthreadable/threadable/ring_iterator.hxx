@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <iterator>
+#include <ranges>
 
 namespace fho
 {
@@ -292,4 +293,27 @@ namespace fho
   // Verify iterator compatibility with standard algorithms
   static_assert(std::random_access_iterator<ring_iterator<int, 1024>>);
   static_assert(std::contiguous_iterator<ring_iterator<int, 1024>>);
+
+  /// @brief A type alias for a transformed view over a ring buffer's subrange.
+  /// @details The `ring_transform_view` alias defines a `std::ranges::transform_view` that applies
+  /// a transformation (via `Accessor`) to a subrange of elements in a ring buffer, specified by
+  /// `Iterator`. This enables convenient access to the values stored in the buffer's slots without
+  /// directly exposing the `ring_slot` objects. It is typically used with `ring_buffer` to provide
+  /// a view of the slot values (e.g., `T`) rather than the slots themselves.
+  /// @tparam `Iterator` The iterator type, typically `ring_iterator<T, Mask>` or
+  ///                   `ring_iterator<const T, Mask>`, defining the range of slots.
+  /// @tparam `Accessor` A callable type (e.g., lambda or function pointer) that transforms a slot
+  ///                    into a reference to its stored value (typically `T&` or `const T&`).
+  /// @example
+  /// ```cpp
+  /// auto buffer = fho::ring_buffer<>{};
+  /// buffer.push([]() { std::cout << "Task\n"; });
+  /// auto range = buffer.consume();
+  /// for (auto& func : range) { // range is a ring_transform_view
+  ///     func();
+  /// }
+  /// ```
+  template<typename Iterator, typename Accessor>
+  using ring_transform_view = // NOLINT
+    std::ranges::transform_view<std::ranges::subrange<Iterator>, Accessor>;
 }

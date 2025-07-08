@@ -112,6 +112,7 @@ SCENARIO("function_buffer")
       [&called, bigData = big_data_t{}](int arg, big_data_t const& data)
       {
         called = arg;
+        (void)bigData;
         (void)data;
       },
       16, big_data_t{});

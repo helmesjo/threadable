@@ -34,13 +34,13 @@ namespace fho
   /// @return The number of callables executed, equivalent to the range's size.
   template<std::ranges::range R, typename... Args>
   inline constexpr auto
-  execute(auto&& exPo, R&& r, Args&&... args)
+  execute([[maybe_unused]] auto&& exPo, R&& r, Args&&... args)
     requires std::invocable<std::ranges::range_value_t<R>, Args...>
   {
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
     using value_t = std::ranges::range_value_t<decltype(r)>;
     auto const b  = std::begin(r);
     auto const e  = std::end(r);
-#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
     if constexpr (std::same_as<std::remove_cvref_t<decltype(exPo)>, fho::execution>)
     {
       if (exPo == execution::seq)

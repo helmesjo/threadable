@@ -15,7 +15,7 @@
 #include <type_traits>
 #include <vector>
 
-#ifdef _WIN32
+#ifdef _MSC_VER
   #pragma warning(push)
   #pragma warning(disable : 4324)
 #endif
@@ -154,17 +154,12 @@ namespace fho
       return FWD(a).value();
     };
 
-    using transform_type =
-      std::ranges::transform_view<std::ranges::subrange<ring_iterator_t>, decltype(value_accessor)>;
-    using const_transform_type =
-      std::ranges::transform_view<std::ranges::subrange<const_ring_iterator_t>,
-                                  decltype(const_value_accessor)>;
-
     using subrange_type =
       decltype(active_subrange<ring_iterator_t>() | std::views::transform(value_accessor));
 
-    using const_subrange_type = decltype(active_subrange<const_ring_iterator_t>() |
-                                         std::views::transform(const_value_accessor));
+    using transform_type = ring_transform_view<ring_iterator_t, decltype(value_accessor)>;
+    using const_transform_type =
+      ring_transform_view<const_ring_iterator_t, decltype(const_value_accessor)>;
 
     using iterator       = std::ranges::iterator_t<transform_type>;       // NOLINT
     using const_iterator = std::ranges::iterator_t<const_transform_type>; // NOLINT
@@ -197,7 +192,7 @@ namespace fho
     /// @details Consumes all remaining items to ensure proper cleanup.
     ~ring_buffer()
     {
-      std::ignore = consume();
+      (void)consume();
     }
 
     /// @brief Move constructor.
@@ -299,7 +294,7 @@ namespace fho
     push(auto&& val, auto&&... args) noexcept -> slot_token
     {
       slot_token token;
-      std::ignore = push(token, FWD(val), FWD(args)...);
+      (void)push(token, FWD(val), FWD(args)...);
       return token;
     }
 
@@ -346,7 +341,7 @@ namespace fho
     void
     clear() noexcept
     {
-      std::ignore = consume();
+      (void)consume();
     }
 
     /// @brief Returns a const iterator to the buffer's start.
@@ -444,6 +439,6 @@ namespace fho
 
 #undef FWD
 
-#ifdef _WIN32
+#ifdef _MSC_VER
   #pragma warning(pop)
 #endif

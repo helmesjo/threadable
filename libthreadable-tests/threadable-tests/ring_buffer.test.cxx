@@ -180,6 +180,7 @@ SCENARIO("ring_buffer: push & claim")
           [&called, bigData = big_data_t{}](int arg, big_data_t const& data)
           {
             called = arg;
+            (void)bigData;
             (void)data;
           },
           16, big_data_t{});
