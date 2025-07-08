@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <concepts>
+#include <cstdint>
 #include <type_traits>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -12,7 +13,8 @@ namespace fho
   {
     template<typename T>
     using underlying_type_t =
-      std::conditional_t<std::is_enum_v<T>, std::underlying_type<T>, std::type_identity<T>>::type;
+      typename std::conditional_t<std::is_enum_v<T>, std::underlying_type<T>,
+                                  std::type_identity<T>>::type;
   }
 
   /// @brief Converts a value to its underlying type.
