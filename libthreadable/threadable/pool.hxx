@@ -45,6 +45,18 @@ namespace fho
     /// @brief Structure representing a job queue with an associated execution policy.
     struct job_queue
     {
+      job_queue(job_queue const&)                    = delete;
+      job_queue(job_queue&&)                         = default;
+      auto operator=(job_queue const&) -> job_queue& = delete;
+      auto operator=(job_queue&&) -> job_queue&      = default;
+
+      job_queue(execution policy, queue_t buffer)
+        : policy(policy)
+        , buffer(std::move(buffer))
+      {}
+
+      ~job_queue() = default;
+
       alignas(details::cache_line_size) execution policy;
       alignas(details::cache_line_size) queue_t buffer;
     };
