@@ -7,31 +7,6 @@ if($cxx.id == 'gcc')
 {
   cxx.coptions += -Wno-interference-size
 }
-switch $cxx.stdlib: path.match, $cxx.id: path.match, $cxx.target.class: regex.match
-{
-  case 'libstdc++', '*', '^(?!windows$).*'
-  {
-    if ($cxx.target.class == 'macos')
-    {
-      poptions = -I/opt/homebrew/include
-      loptions = -L/opt/homebrew/lib
-
-      lib{threadable}:
-      {
-        cxx.poptions += $poptions
-        cxx.loptions += $loptions
-        cxx.export.poptions += $poptions
-        cxx.export.loptions += $loptions
-      }
-    }
-
-    lib{threadable}:
-    {
-      cxx.libs += -ltbb
-      cxx.export.libs += -ltbb
-    }
-  }
-}
 
 # Include the generated version header into the distribution (so that we don't
 # pick up an installed one) and don't remove it when cleaning in src (so that
@@ -46,6 +21,12 @@ hxx{version}: in{version} $src_root/manifest
 # Build options.
 #
 cxx.poptions =+ "-I$out_root" "-I$src_root"
+
+if ($cxx.target.system != 'win32-msvc')
+{
+  cxx.libs += -pthread
+  lib{threadable}: cxx.export.libs += -pthread
+}
 
 # Export options.
 libs{threadable}: def{threadable}: include = ($cxx.target.system == 'win32-msvc')
