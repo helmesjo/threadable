@@ -6,11 +6,6 @@
 #include <ranges>
 #include <thread>
 
-#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
-  #include <algorithm>
-  #include <execution>
-#endif
-
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
 namespace fho
@@ -20,82 +15,6 @@ namespace fho
     seq,
     par
   };
-
-  /// @brief Executes a range of callables with specified execution policy.
-  /// @details Invokes each callable in the provided range with the given arguments.
-  ///          Supports sequential (`seq`) or parallel (`par`) execution when the C++17 execution
-  ///          policies are available; otherwise, defaults to a sequential loop.
-  /// @tparam R The type of the range containing invocable objects.
-  /// @param exPo The execution policy (e.g., `fho::execution::seq`, `fho::execution::par`, or a
-  /// standard policy).
-  /// @param r The range of callables to execute.
-  /// @tparam Args Variadic argument types to pass to each callable.
-  /// @param args Arguments forwarded to each callable invocation.
-  /// @return The number of callables executed, equivalent to the range's size.
-  template<std::ranges::range R, typename... Args>
-  inline constexpr auto
-  execute([[maybe_unused]] auto&& exPo, R&& r, Args&&... args)
-    requires std::invocable<std::ranges::range_value_t<R>, Args...>
-  {
-#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
-    using value_t = std::ranges::range_value_t<decltype(r)>;
-    auto const b  = std::begin(r);
-    auto const e  = std::end(r);
-    if constexpr (std::same_as<std::remove_cvref_t<decltype(exPo)>, fho::execution>)
-    {
-      if (exPo == execution::seq)
-      {
-        std::for_each(std::execution::seq, b, e,
-                      [&](value_t& elem)
-                      {
-                        elem(FWD(args)...);
-                      });
-      }
-      else if (exPo == execution::par)
-      {
-        std::for_each(std::execution::par, b, e,
-                      [&](value_t& elem)
-                      {
-                        elem(FWD(args)...);
-                      });
-      }
-    }
-    else
-    {
-      std::for_each(exPo, b, e,
-                    [&](value_t& elem)
-                    {
-                      elem(FWD(args)...);
-                    });
-    }
-#else
-    for (auto&& c : FWD(r))
-    {
-      FWD(c)(FWD(args)...);
-    }
-#endif
-    return r.size();
-  }
-
-  /// @brief Executes a range of callables with default sequential execution.
-  /// @details Invokes each callable in the range sequentially with the provided arguments.
-  ///          Uses `std::execution::seq` if available; otherwise, falls back to a simple loop.
-  /// @tparam R The type of the range containing invocable objects.
-  /// @param r The range of callables to execute.
-  /// @tparam Args Variadic argument types to pass to each callable.
-  /// @param args Arguments forwarded to each callable invocation.
-  /// @return The number of callables executed, equivalent to the range's size.
-  template<std::ranges::range R, typename... Args>
-  inline constexpr auto
-  execute(R&& r, Args&&... args)
-    requires std::invocable<std::ranges::range_value_t<R>, Args...>
-  {
-#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
-    return execute(std::execution::seq, FWD(r), FWD(args)...);
-#else
-    return execute(0, FWD(r), FWD(args)...);
-#endif
-  }
 
   /// @brief Manages a single-threaded job execution system.
   /// @details The `executor` class runs a single thread that processes jobs submitted via `submit`.

@@ -320,6 +320,45 @@ namespace fho
     static auto& queue = create(Policy);
     return queue.push(token, FWD(func), FWD(args)...);
   }
+
+  /// @brief Executes a range of callables with specified execution policy.
+  /// @details Invokes each callable in the provided range with the given arguments.
+  ///          Supports sequential (`seq`) or parallel (`par`) execution.
+  /// @tparam R The type of the range containing invocable objects.
+  /// @param exPo The execution policy (`fho::execution::seq` or `fho::execution::par`).
+  /// @param r The range of callables to execute.
+  /// @tparam Args Variadic argument types to pass to each callable.
+  /// @param args Arguments forwarded to each callable invocation.
+  /// @return The number of callables executed, equivalent to the range's size.
+  template<std::ranges::range R, typename... Args>
+  inline constexpr auto
+  execute(execution exPo, R&& r, Args&&... args)
+    requires std::invocable<std::ranges::range_value_t<R>, Args...>
+  {
+    auto  tokens = token_group{};
+    auto& queue  = create(exPo);
+    for (auto&& c : FWD(r))
+    {
+      tokens += queue.push(FWD(c), FWD(args)...);
+    }
+    tokens.wait();
+    return r.size();
+  }
+
+  /// @brief Executes a range of callables with default sequential execution.
+  /// @details Invokes each callable in the range sequentially with the provided arguments.
+  /// @tparam R The type of the range containing invocable objects.
+  /// @param r The range of callables to execute.
+  /// @tparam Args Variadic argument types to pass to each callable.
+  /// @param args Arguments forwarded to each callable invocation.
+  /// @return The number of callables executed, equivalent to the range's size.
+  template<std::ranges::range R, typename... Args>
+  inline constexpr auto
+  execute(R&& r, Args&&... args)
+    requires std::invocable<std::ranges::range_value_t<R>, Args...>
+  {
+    return execute(execution::seq, FWD(r), FWD(args)...);
+  }
 }
 
 #undef FWD

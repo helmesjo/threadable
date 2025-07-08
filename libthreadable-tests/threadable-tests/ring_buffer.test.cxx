@@ -11,10 +11,6 @@
 #include <functional>
 #include <thread>
 
-#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
-  #include <execution>
-#endif
-
 namespace
 {
   template<typename T>
@@ -58,7 +54,7 @@ SCENARIO("ring_buffer: push & claim")
           REQUIRE_NOTHROW(ring.consume());
           REQUIRE(ring.size() == 0);
           REQUIRE(ring.empty());
-          REQUIRE(fho::execute(ring.consume()) == 0);
+          REQUIRE(ring.consume().empty());
           REQUIRE_NOTHROW(ring.clear());
         }
       }
@@ -138,11 +134,10 @@ SCENARIO("ring_buffer: push & claim")
         auto r = ring.consume();
         REQUIRE(r.begin() != r.end());
         REQUIRE(ring.size() == 0);
-        std::ranges::for_each(r,
-                              [](auto& job)
-                              {
-                                job();
-                              });
+        for (auto& job : r)
+        {
+          job();
+        }
         THEN("1 valid job executed")
         {
           REQUIRE(called == 1);
@@ -164,7 +159,10 @@ SCENARIO("ring_buffer: push & claim")
       THEN("the token will be passed when the job is executed")
       {
         token.cancel();
-        REQUIRE(fho::execute(ring.consume()) == 1);
+        for (auto& job : ring.consume())
+        {
+          job();
+        }
         REQUIRE(wasCancelled);
       }
     }
@@ -187,7 +185,10 @@ SCENARIO("ring_buffer: push & claim")
         // NOLINTEND
 
         REQUIRE(ring.size() == 1);
-        REQUIRE(fho::execute(ring.consume()) == 1);
+        for (auto& job : ring.consume())
+        {
+          job();
+        }
         REQUIRE(called == 16);
       }
     }
@@ -279,7 +280,12 @@ SCENARIO("ring_buffer: completion token")
   auto ring = fho::ring_buffer{};
   GIVEN("push job & store token")
   {
-    auto token = ring.push([] {});
+    int  called = 0;
+    auto token  = ring.push(
+      [&called]
+      {
+        ++called;
+      });
     THEN("token is NOT done when job is discarded")
     {
       for (auto const& job : ring)
@@ -294,7 +300,10 @@ SCENARIO("ring_buffer: completion token")
     }
     THEN("token is done after job was invoked")
     {
-      REQUIRE(fho::execute(ring.consume()) == 1);
+      for (auto& job : ring.consume())
+      {
+        job();
+      }
       REQUIRE(token.done());
     }
     WHEN("token is cancelled")
@@ -304,10 +313,17 @@ SCENARIO("ring_buffer: completion token")
       {
         REQUIRE(token.cancelled());
       }
-      THEN("job is not executed by ring")
+      THEN("job is still executed by ring")
       {
-        // TODO: Fix so it's not executed. See ring::end().
-        // REQUIRE(ring.execute() == 1);
+        // "cancel" only signals through the token,
+        // meant to be reacted upon by used code -
+        // the job will still be executed if
+        // processed by a background thread.
+        for (auto& job : ring.consume())
+        {
+          job();
+        }
+        REQUIRE(called == 1);
       }
     }
     // @TODO: Rework this. What to do if job is destroyed before token.wait()?
@@ -347,9 +363,15 @@ SCENARIO("ring_buffer: stress-test")
 
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
-      auto token = ring.push([] {});
-      REQUIRE(fho::execute(ring.consume()) == 1);
-      ++jobsExecuted;
+      auto token = ring.push(
+        [&jobsExecuted]
+        {
+          ++jobsExecuted;
+        });
+      for (auto& job : ring.consume())
+      {
+        job();
+      }
       REQUIRE(token.done());
     }
 
@@ -387,7 +409,10 @@ SCENARIO("ring_buffer: stress-test")
           {
             while (producer.joinable() || !ring.empty())
             {
-              fho::execute(ring.consume());
+              for (auto& job : ring.consume())
+              {
+                job();
+              }
             }
           });
 
@@ -442,7 +467,10 @@ SCENARIO("ring_buffer: stress-test")
                                      }) ||
                  !ring.empty())
           {
-            fho::execute(ring.consume());
+            for (auto& job : ring.consume())
+            {
+              job();
+            }
           }
         });
 

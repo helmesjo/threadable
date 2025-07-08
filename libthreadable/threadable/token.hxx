@@ -94,7 +94,7 @@ namespace fho
     /// @brief Checks if the associated `ring_slot` is done.
     /// @details Returns `true` if the `ring_slot` state is not `active` or if no `ring_slot` is
     /// associated.
-    auto
+    [[nodiscard]] auto
     done() const noexcept -> bool
     {
       auto state = state_.load(std::memory_order_acquire);
@@ -111,7 +111,7 @@ namespace fho
 
     /// @brief Checks if the `ring_slot` has been cancelled.
     /// @details Returns the cancellation flag status.
-    auto
+    [[nodiscard]] auto
     cancelled() const noexcept -> bool
     {
       return cancelled_.load(std::memory_order_acquire);
