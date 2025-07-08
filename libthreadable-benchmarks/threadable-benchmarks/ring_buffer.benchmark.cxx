@@ -218,11 +218,11 @@ TEST_CASE("ring: execute (parallel)")
     b.run("std::vector",
           [&]
           {
-            std::ranges::for_each(ring,
-                                  [](auto& job)
-                                  {
-                                    job();
-                                  });
+            std::for_each(std::execution::par, std::begin(ring), std::end(ring),
+                          [](auto& job)
+                          {
+                            job();
+                          });
           });
   }
   {
