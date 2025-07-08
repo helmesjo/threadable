@@ -395,7 +395,8 @@ namespace fho
     /// @param `buffer` The `function_buffer` to copy from.
     function_buffer(function_buffer const& buffer)
     {
-      *this = buffer;
+      details::size(buffer_.data()) = 0;
+      *this                         = buffer;
     }
 
     /// @brief Move constructor.
@@ -404,7 +405,8 @@ namespace fho
     /// @param `buffer` The `function_buffer` to move from.
     function_buffer(function_buffer&& buffer) noexcept
     {
-      *this = std::move(buffer);
+      details::size(buffer_.data()) = 0;
+      *this                         = std::move(buffer);
     }
 
     /// @brief Constructor that takes a `function<Size>` object.
