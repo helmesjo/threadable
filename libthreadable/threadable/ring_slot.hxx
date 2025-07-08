@@ -226,6 +226,12 @@ namespace fho
     alignas(T) std::array<std::byte, sizeof(T)> value_; ///< Aligned storage for the value of type
                                                         ///< `T`.
   };
+
+  template<typename T>
+  inline constexpr auto slot_value_accessor = [](auto&& a) -> std::add_lvalue_reference_t<T>
+  {
+    return FWD(a).value();
+  };
 }
 
 #undef FWD
