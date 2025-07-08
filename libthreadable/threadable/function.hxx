@@ -955,6 +955,9 @@ namespace fho
     buffer_t buffer_;
   };
 
+  template<typename... Args>
+  function(std::invocable<Args...> auto&&, Args&&...) -> function<>;
+
   static_assert(sizeof(function<details::cache_line_size>) == details::cache_line_size);
 }
 
