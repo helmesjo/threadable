@@ -1,7 +1,6 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/function.hxx>
 
-#include <format>
 #include <memory>
 #include <type_traits>
 
@@ -16,8 +15,8 @@ namespace
 
 SCENARIO("function: print system info")
 {
-  std::cerr << std::format("hardware_destructive_interference_size: {}\n",
-                           fho::details::cache_line_size);
+  std::cerr << "hardware_destructive_interference_size: " << fho::details::cache_line_size
+            << std::endl;
 }
 
 SCENARIO("function: type traits")
