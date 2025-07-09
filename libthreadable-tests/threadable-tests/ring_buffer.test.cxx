@@ -86,7 +86,7 @@ SCENARIO("ring_buffer: push & claim")
         }
       };
 
-      ring.push(type{});
+      ring.emplace_back(type{});
       REQUIRE(ring.size() == 1);
 
       called    = 0;
@@ -105,7 +105,7 @@ SCENARIO("ring_buffer: push & claim")
       {
         {
           auto ring2 = fho::ring_buffer<func_t, 2>{};
-          ring2.push(type{});
+          ring2.emplace_back(type{});
           called    = 0;
           destroyed = 0;
         }
@@ -149,7 +149,7 @@ SCENARIO("ring_buffer: push & claim")
       bool wasCancelled = false;
       auto token        = fho::slot_token{};
 
-      token = ring.push(
+      token = ring.emplace_back(
         [&wasCancelled](fho::slot_token& token)
         {
           wasCancelled = token.cancelled();
@@ -174,7 +174,7 @@ SCENARIO("ring_buffer: push & claim")
         int called       = 0;
         using big_data_t = std::array<std::byte, fho::details::slot_size * 2>;
         // both capturing big data & passing as argument
-        ring.push(
+        ring.emplace_back(
           [&called, bigData = big_data_t{}](int arg, big_data_t const& data)
           {
             called = arg;
@@ -204,7 +204,7 @@ SCENARIO("ring_buffer: push & claim")
       auto executed = std::vector<std::size_t>(ring.max_size(), 0);
       for (std::size_t i = 1; i <= ring.max_size(); ++i)
       {
-        ring.push(
+        ring.emplace_back(
           [i, &executed]
           {
             executed[i - 1] = i;
@@ -266,8 +266,8 @@ SCENARIO("ring_buffer: custom type")
   };
 
   auto ring = fho::ring_buffer<my_type>{};
-  ring.push(1, 2.5f);
-  ring.push(my_type{.x = 3, .y = 4.5f});
+  ring.emplace_back(1, 2.5f);
+  ring.emplace_back(my_type{.x = 3, .y = 4.5f});
 
   REQUIRE(ring.size() == 2);
   REQUIRE(ring.front() == my_type{.x = 1, .y = 2.5f});
@@ -286,7 +286,7 @@ SCENARIO("ring_buffer: alignment")
   {
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.push([] {});
+      ring.emplace_back([] {});
     }
     THEN("all are aligned to cache line boundaries")
     {
@@ -304,7 +304,7 @@ SCENARIO("ring_buffer: completion token")
   GIVEN("push job & store token")
   {
     int  called = 0;
-    auto token  = ring.push(
+    auto token  = ring.emplace_back(
       [&called]
       {
         ++called;
@@ -386,7 +386,7 @@ SCENARIO("ring_buffer: stress-test")
 
     for (std::size_t i = 0; i < nr_of_jobs; ++i)
     {
-      auto token = ring.push(
+      auto token = ring.emplace_back(
         [&jobsExecuted]
         {
           ++jobsExecuted;
@@ -419,7 +419,7 @@ SCENARIO("ring_buffer: stress-test")
           {
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              ring.push(
+              ring.emplace_back(
                 [&jobsExecuted]
                 {
                   ++jobsExecuted;
@@ -470,7 +470,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             for (std::size_t i = 0; i < ring.max_size() / nr_producers; ++i)
             {
-              tokens += ring.push(
+              tokens += ring.emplace_back(
                 [&jobsExecuted]
                 {
                   ++jobsExecuted;
@@ -521,7 +521,7 @@ SCENARIO("ring_buffer: standard algorithms")
     {
       while (ring.size() < ring.max_size())
       {
-        ring.push(
+        ring.emplace_back(
           [&jobsExecuted]
           {
             ++jobsExecuted;

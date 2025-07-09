@@ -61,7 +61,7 @@ TEST_CASE("pool: job execution")
              fho::token_group group;
              for (std::size_t i = 0; i < jobs_per_iteration; ++i)
              {
-               group += queue.push(job_t{});
+               group += queue.emplace_back(job_t{});
              }
              group.wait();
            });
@@ -83,7 +83,7 @@ TEST_CASE("pool: job execution")
              {
                for (decltype(pool)::queue_t& queue : queues)
                {
-                 group += queue.push(job_t{});
+                 group += queue.emplace_back(job_t{});
                }
              }
              group.wait();

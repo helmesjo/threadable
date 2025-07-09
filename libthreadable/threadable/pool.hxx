@@ -33,7 +33,7 @@ namespace fho
   /// ```cpp
   /// fho::pool<> pool;
   /// auto& queue = pool.create();
-  /// auto token = queue.push([]() { std::cout << "Job executed!\n"; });
+  /// auto token = queue.emplace_back([]() { std::cout << "Job executed!\n"; });
   /// token.wait();
   /// ```
   template<std::size_t Capacity = details::default_capacity>
@@ -295,11 +295,11 @@ namespace fho
   /// @return A `slot_token` representing the submitted job.
   template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
   [[nodiscard]] inline auto
-  push(Func&& func, Args&&... args) noexcept -> decltype(auto)
-    requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
+  async(Func&& func, Args&&... args) noexcept -> decltype(auto)
+    requires requires (details::queue_t q) { q.emplace_back(FWD(func), FWD(args)...); }
   {
     static auto& queue = create(Policy);
-    return queue.push(FWD(func), FWD(args)...);
+    return queue.emplace_back(FWD(func), FWD(args)...);
   }
 
   /// @brief Submits a job to a queue with the specified policy, reusing a token.
@@ -314,11 +314,11 @@ namespace fho
   /// @return Reference to the reused `token`.
   template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
   inline auto
-  push(Func&& func, slot_token& token, Args&&... args) noexcept -> decltype(auto)
-    requires requires (details::queue_t q) { q.push(FWD(func), FWD(args)...); }
+  async(Func&& func, slot_token& token, Args&&... args) noexcept -> decltype(auto)
+    requires requires (details::queue_t q) { q.emplace_back(FWD(func), FWD(args)...); }
   {
     static auto& queue = create(Policy);
-    return queue.push(token, FWD(func), FWD(args)...);
+    return queue.emplace_back(token, FWD(func), FWD(args)...);
   }
 
   /// @brief Executes a range of callables with specified execution policy.
@@ -339,7 +339,7 @@ namespace fho
     auto& queue  = create(exPo);
     for (auto&& c : FWD(r))
     {
-      tokens += queue.push(FWD(c), FWD(args)...);
+      tokens += queue.emplace_back(FWD(c), FWD(args)...);
     }
     tokens.wait();
     return r.size();

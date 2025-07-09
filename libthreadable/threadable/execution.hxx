@@ -69,7 +69,7 @@ namespace fho
     submit(std::ranges::range auto&& range, execution policy) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
-      return work_.push(
+      return work_.emplace_back(
         [policy](std::ranges::range auto r) mutable
         {
           if constexpr (requires { r.begin().base()->wait(); })
@@ -101,7 +101,7 @@ namespace fho
     auto
     submit(std::invocable auto&& work) noexcept
     {
-      return work_.push(FWD(work));
+      return work_.emplace_back(FWD(work));
     }
 
     /// @brief Halts the executor and clears remaining jobs.
@@ -110,7 +110,7 @@ namespace fho
     void
     stop() noexcept
     {
-      work_.push(
+      work_.emplace_back(
         [this]
         {
           stop_ = true;

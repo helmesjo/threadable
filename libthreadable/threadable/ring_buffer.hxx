@@ -116,11 +116,11 @@ namespace fho
   /// @note The buffer uses three atomic indices: `tail_` (next slot to consume), `head_` (next
   ///       slot to produce into), and `next_` (next slot to claim for production).
   /// @warning Only one consumer should call `consume()` at a time to ensure thread safety.
-  ///          Multiple producers can safely call `push()` concurrently.
+  ///          Multiple producers can safely call `emplace_back()` concurrently.
   /// @example
   /// ```cpp
   /// auto buffer = fho::ring_buffer<>{}; // Uses fast_func_t by default
-  /// auto token = buffer.push([]() { std::cout << "Hello, World!\n"; });
+  /// auto token = buffer.emplace_back([]() { std::cout << "Hello, World!\n"; });
   /// auto range = buffer.consume();
   /// for (auto& func : range) {
   ///     func();
@@ -218,7 +218,7 @@ namespace fho
       return *this;
     }
 
-    /// @brief Pushes a value into the buffer with an existing token.
+    /// @brief Constructs a value into the buffer with an existing token.
     /// @details Adds a value to the buffer, associating it with a provided token. The process
     ///          involves:
     ///          1. **Claim a slot**: Atomically increments `next_` to reserve a slot.
@@ -233,10 +233,10 @@ namespace fho
     /// @example
     /// ```cpp
     /// auto token = fho::slot_token{};
-    /// buffer.push(token, []() { std::cout << "Task\n"; });
+    /// buffer.emplace_back(token, []() { std::cout << "Task\n"; });
     /// ```
     auto
-    push(slot_token& token, auto&& val, auto&&... args) noexcept -> slot_token&
+    emplace_back(slot_token& token, auto&& val, auto&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_acquire);
@@ -273,7 +273,7 @@ namespace fho
       return token;
     }
 
-    /// @brief Pushes a value into the buffer and returns a new token.
+    /// @brief Constructs a value into the buffer and returns a new token.
     /// @details Adds a value to the buffer and returns a new token for tracking.
     /// @param `val` Value to add to the buffer.
     /// @param `args` Additional arguments.
@@ -281,13 +281,13 @@ namespace fho
     /// @note Thread-safe for multiple producers.
     /// @example
     /// ```cpp
-    /// auto token = buffer.push([]() { std::cout << "Task\n"; });
+    /// auto token = buffer.emplace_back([]() { std::cout << "Task\n"; });
     /// ```
     auto
-    push(auto&& val, auto&&... args) noexcept -> slot_token
+    emplace_back(auto&& val, auto&&... args) noexcept -> slot_token
     {
       slot_token token;
-      (void)push(token, FWD(val), FWD(args)...);
+      (void)emplace_back(token, FWD(val), FWD(args)...);
       return token;
     }
 

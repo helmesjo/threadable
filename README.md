@@ -13,14 +13,14 @@ int main() {
   // thread pool:
   auto  pool  = fho::pool();
   auto& queue = pool.create();
-  auto  token = queue.push( []() { cout << "Job executed!\n"; });
+  auto  token = queue.emplace_back( []() { cout << "Job executed!\n"; });
   token.wait();
 
   // generic ring buffer:
   auto ring = fho::ring_buffer<int>();
-  ring.push(1);
-  ring.push(2);
-  ring.push(3);
+  ring.emplace_back(1);
+  ring.emplace_back(2);
+  ring.emplace_back(3);
   assert(ring.size() == 3);
 
   for (auto v : ring)

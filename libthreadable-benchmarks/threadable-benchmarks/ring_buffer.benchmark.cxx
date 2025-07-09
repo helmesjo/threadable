@@ -27,7 +27,7 @@ namespace
   using func_t = fho::fast_func_t;
 }
 
-TEST_CASE("ring: push")
+TEST_CASE("ring: emplace")
 {
   bench::Bench b;
   b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
@@ -36,7 +36,7 @@ TEST_CASE("ring: push")
     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
-  b.title("ring: push");
+  b.title("ring: emplace");
   {
     auto ring = std::vector<std::function<void()>>();
     ring.reserve(jobs_per_iteration);
@@ -51,7 +51,7 @@ TEST_CASE("ring: push")
             }
           });
   }
-  b.title("ring: push");
+  b.title("ring: emplace");
   {
     auto ring  = fho::ring_buffer<func_t, jobs_per_iteration>();
     auto token = fho::slot_token{};
@@ -62,7 +62,7 @@ TEST_CASE("ring: push")
             ring.clear();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              bench::doNotOptimizeAway(ring.push(token, job_t{}));
+              bench::doNotOptimizeAway(ring.emplace_back(token, job_t{}));
             }
           });
   }
@@ -96,7 +96,7 @@ TEST_CASE("ring: iterate (sequential)")
     auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.push(job_t{});
+      ring.emplace_back(job_t{});
     }
 
     b.run("fho::ring_buffer",
@@ -140,7 +140,7 @@ TEST_CASE("ring: iterate (parallel)")
     auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.push(job_t{});
+      ring.emplace_back(job_t{});
     }
 
     b.run("fho::ring_buffer",
@@ -184,7 +184,7 @@ TEST_CASE("ring: execute (sequential)")
     auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.push(job_t{});
+      ring.emplace_back(job_t{});
     }
     auto range = ring.consume();
 
@@ -229,7 +229,7 @@ TEST_CASE("ring: execute (parallel)")
     auto ring = fho::ring_buffer<func_t, jobs_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.push(job_t{});
+      ring.emplace_back(job_t{});
     }
     auto range = ring.consume();
 
