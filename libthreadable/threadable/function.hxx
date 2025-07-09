@@ -297,7 +297,7 @@ namespace fho
   /// ```cpp
   /// auto buffer = fho::function_buffer<128>{};
   /// auto value = 10;
-  /// buffer.assign([](int val) { cout << format("val: {}\n", val); }, value);
+  /// buffer.emplace([](int val) { cout << format("val: {}\n", val); }, value);
   /// // Typically used through `fho::function` or `fho::function_dyn`
   /// details::invoke(buffer.data());
   /// ```
@@ -308,7 +308,7 @@ namespace fho
                   "Buffer size must be within index range (0-255)");
 
   public:
-    /// @brief Assigns a callable and its arguments to the buffer.
+    /// @brief Constructs a callable and its arguments to in buffer.
     /// @details Stores the callable and its arguments, potentially wrapping them in a
     /// `deferred_callable`.
     /// @tparam `Func` The type of the callable.
@@ -318,13 +318,13 @@ namespace fho
     /// @requires `std::invocable<Func&&, Args&&...>`
     template<typename Func, typename... Args>
     void
-    assign(Func&& func, Args&&... args) noexcept
+    emplace(Func&& func, Args&&... args) noexcept
       requires std::invocable<Func&&, Args&&...> && (sizeof...(args) > 0)
     {
       using value_t = std::remove_reference_t<decltype(func)>;
       if constexpr (std::is_function_v<value_t> || std::is_member_function_pointer_v<value_t>)
       {
-        assign(
+        emplace(
           [func, ... args = FWD(args)]() mutable
           {
             std::invoke(func, FWD(args)...);
@@ -332,18 +332,18 @@ namespace fho
       }
       else
       {
-        assign(details::deferred_callable(FWD(func), FWD(args)...));
+        emplace(details::deferred_callable(FWD(func), FWD(args)...));
       }
     }
 
-    /// @brief Assigns a callable that fits within the buffer size.
+    /// @brief Constructs a callable that fits within the buffer size.
     /// @details Directly constructs the callable in the buffer if it fits.
     /// @tparam `Func` The type of the callable.
     /// @param `func` The callable to store.
     /// @requires `required_buffer_size_v<Func> <= Size`
     template<std::invocable Func>
     void
-    assign(Func&& func) noexcept
+    emplace(Func&& func) noexcept
       requires (!is_function_v<Func>) && (required_buffer_size_v<Func> <= Size)
     {
       using value_t                                 = std::remove_reference_t<Func>;
@@ -365,17 +365,17 @@ namespace fho
                         FWD(func));
     }
 
-    /// @brief Assigns a callable that does not fit within the buffer size.
+    /// @brief Constructs a callable that does not fit within the buffer size.
     /// @details Stores a lambda that captures a `std::shared_ptr` to the callable.
     /// @tparam `Func` The type of the callable.
     /// @param `func` The callable to store.
     /// @requires `required_buffer_size_v<Func> > Size`
     template<std::invocable Func>
     void
-    assign(Func&& func) noexcept // NOLINT
+    emplace(Func&& func) noexcept // NOLINT
       requires (!is_function_v<Func>) && (required_buffer_size_v<Func> > Size)
     {
-      assign(
+      emplace(
         [func = std::make_shared<std::remove_reference_t<Func>>(FWD(func))]() mutable
         {
           (*func)();
@@ -445,7 +445,7 @@ namespace fho
       requires (sizeof...(args) > 0)
     {
       details::size(buffer_.data()) = 0;
-      assign(FWD(callable), FWD(args)...);
+      emplace(FWD(callable), FWD(args)...);
     }
 
     /// @brief Destructor.
@@ -521,7 +521,7 @@ namespace fho
     auto
     operator=(Func&& func) noexcept -> function_buffer&
     {
-      assign(FWD(func));
+      emplace(FWD(func));
       return *this;
     }
 
@@ -780,11 +780,10 @@ namespace fho
     std::byte* buffer_ = nullptr;
   };
 
-  // Concept to check if a buffer can be assigned a callable with arguments
-  template<typename Buffer, typename Func, typename... Args>
-  concept assignable = requires (Buffer&& buf, Func&& callable, Args&&... args) {
-                         buf.assign(FWD(callable), FWD(args)...);
-                       };
+  /// @brief Concept to check if `Args...` can be constructed in the buffer.
+  /// @details Checks if there exists a function `Buffer::emplace(Args...)`.
+  template<typename Buffer, typename... Args>
+  concept constructible_at = requires (Buffer&& buf, Args&&... args) { buf.emplace(FWD(args)...); };
 
   /// @brief A type-erased function wrapper with a fixed-size buffer.
   /// @details The `function` class template provides a way to store and invoke callable objects
@@ -838,9 +837,9 @@ namespace fho
     template<typename... Args>
     explicit function(std::invocable<Args...> auto&& callable, Args&&... args) noexcept
       requires (!is_function_v<decltype(callable)>) &&
-               assignable<buffer_t, decltype(callable), decltype(args)...>
+               constructible_at<buffer_t, decltype(callable), decltype(args)...>
     {
-      assign(FWD(callable), FWD(args)...);
+      emplace(FWD(callable), FWD(args)...);
     }
 
     /// @brief Destructor.
@@ -871,7 +870,7 @@ namespace fho
     auto
     operator=(Func&& func) noexcept -> function&
     {
-      assign(FWD(func));
+      emplace(FWD(func));
       return *this;
     }
 
@@ -928,10 +927,10 @@ namespace fho
     /// @requires `std::invocable<Func&&, Args&&...>`
     template<typename... Args>
     void
-    assign(std::invocable<Args...> auto&& callable, Args&&... args) noexcept
-      requires assignable<buffer_t, decltype(callable), decltype(args)...>
+    emplace(std::invocable<Args...> auto&& callable, Args&&... args) noexcept
+      requires constructible_at<buffer_t, decltype(callable), decltype(args)...>
     {
-      buffer_.assign(FWD(callable), FWD(args)...);
+      buffer_.emplace(FWD(callable), FWD(args)...);
     }
 
     /// @brief Resets the function.

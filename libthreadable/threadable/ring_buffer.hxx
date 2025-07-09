@@ -242,14 +242,14 @@ namespace fho
       // 2. Assign `value_type`.
       if constexpr (std::invocable<decltype(val), slot_token&, decltype(args)...>)
       {
-        elem.assign(FWD(val), std::ref(token), FWD(args)...);
+        elem.emplace(FWD(val), std::ref(token), FWD(args)...);
       }
       else
       {
-        elem.assign(FWD(val), FWD(args)...);
+        elem.emplace(FWD(val), FWD(args)...);
       }
 
-      elem.token(token);
+      elem.bind(token);
 
       // 3. Commit slot.
       index_t expected; // NOLINT

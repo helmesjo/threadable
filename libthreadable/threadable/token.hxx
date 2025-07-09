@@ -30,7 +30,7 @@ namespace fho
   /// auto s = fho::ring_slot<fho::function<64>>{};
   /// auto t = fho::token{};
   /// s.token(t);
-  /// s.assign([]() { /* job */ });
+  /// s.emplace([]() { /* job */ });
   /// t.wait(); // Waits for the `ring_slot` to be processed by another thread
   /// ```
   class slot_token
@@ -82,11 +82,11 @@ namespace fho
       return *this;
     }
 
-    /// @brief Assigns the token to a different `ring_slot` state.
+    /// @brief Rebinds the token to a different `ring_slot` state.
     /// @details Updates the internal state pointer.
     /// @param `state` A const reference to the new atomic state of the `ring_slot`.
     void
-    assign(atomic_state_t const& state) noexcept
+    rebind(atomic_state_t const& state) noexcept
     {
       state_.store(&state, std::memory_order_release);
     }
@@ -119,7 +119,7 @@ namespace fho
 
     /// @brief Waits for the associated `ring_slot` to be processed.
     /// @details Blocks until the `ring_slot` state changes from `active`.
-    /// NOTE: The underlying state pointer might be reassigned during waiting, for example, in
+    /// NOTE: The underlying state pointer might be rebound during waiting, for example, in
     /// recursive or self-queueing jobs. This function will wait until it's fully processed.
     void
     wait() const noexcept

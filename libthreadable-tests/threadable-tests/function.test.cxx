@@ -460,7 +460,7 @@ SCENARIO("function: assign/reset")
     }
     WHEN("callable is assigned")
     {
-      AND_WHEN("using assign()")
+      AND_WHEN("using emplace()")
       {
         func = [] {};
         REQUIRE(func);

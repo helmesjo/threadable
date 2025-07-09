@@ -122,7 +122,7 @@ namespace fho
     /// that the current value is all zeros if convertible to `bool`.
     /// @param `args` Arguments to forward to the constructor of `T`.
     inline void
-    assign(auto&&... args) noexcept
+    emplace(auto&&... args) noexcept
     {
 #ifndef NDEBUG
       if constexpr (requires {
@@ -175,14 +175,14 @@ namespace fho
       state_.notify_all();
     }
 
-    /// @brief Assigns the slot's state to a `slot_token`.
+    /// @brief Binds the slot's state to a `slot_token`.
     /// @details Enables external monitoring or control of the slot's state through the provided
     /// `slot_token`.
-    /// @param `t` The `slot_token` to assign the state to.
+    /// @param `t` The `slot_token` to bind the state to.
     inline void
-    token(slot_token& t) noexcept
+    bind(slot_token& t) noexcept
     {
-      t.assign(state_);
+      t.rebind(state_);
     }
 
     /// @brief Gets a pointer to the stored value.
