@@ -525,12 +525,22 @@ namespace fho
       return *this;
     }
 
+    /// @brief Conversion to bool.
+    /// @details Returns `true` if a callable is stored, `false` otherwise.
+    inline
+    operator bool() const noexcept
+    {
+      static_assert(sizeof(size()) == 1,
+                    "Implicit boolean conversion assumes size-field to be 1 byte");
+      return static_cast<bool>(*data());
+    }
+
     /// @brief Resets the buffer.
     /// @details Destroys the stored callable if one exists and sets the buffer size to `0`.
     inline void
     reset() noexcept
     {
-      if (size() > 0) [[likely]]
+      if (*this) [[unlikely]]
       {
         details::invoke_special_func(data(), details::method::dtor);
         details::size(buffer_.data()) = 0;
@@ -570,6 +580,8 @@ namespace fho
 
   template<typename Func, typename... Args>
   function_buffer(Func&&, Args&&...) -> function_buffer<required_buffer_size_v<Func, Args...>>;
+
+  function_buffer() -> function_buffer<details::cache_line_size>;
 
   static_assert(sizeof(function_buffer<details::cache_line_size>) == details::cache_line_size);
 

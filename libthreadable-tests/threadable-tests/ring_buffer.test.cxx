@@ -8,7 +8,6 @@
 #include <barrier>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <thread>
 
 namespace

@@ -43,6 +43,7 @@ SCENARIO("function_buffer")
   {
     int  called = 0;
     auto buffer = fho::function_buffer<64>(free_func, std::ref(called));
+    REQUIRE(buffer);
     THEN("it can be invoked")
     {
       fho::details::invoke(buffer.data());
@@ -62,6 +63,7 @@ SCENARIO("function_buffer")
 
     int  called = 0;
     auto buffer = fho::function_buffer<64>(&type::func, type{}, std::ref(called));
+    REQUIRE(buffer);
     THEN("it can be invoked")
     {
       fho::details::invoke(buffer.data());
@@ -76,6 +78,7 @@ SCENARIO("function_buffer")
       {
         ++called;
       });
+    REQUIRE(buffer);
     THEN("it can be invoked")
     {
       fho::details::invoke(buffer.data());
@@ -93,6 +96,7 @@ SCENARIO("function_buffer")
         passedArg2 = std::move(arg2);
       },
       1, 3.4f);
+    REQUIRE(buffer);
 
     THEN("it can be invoked & arguments are forwarded")
     {
@@ -116,6 +120,7 @@ SCENARIO("function_buffer")
       },
       16, big_data_t{});
     // NOLINTEND
+    REQUIRE(buffer);
 
     THEN("it can be invoked")
     {
@@ -159,12 +164,15 @@ SCENARIO("function_buffer")
     THEN("the callables' copy-ctor is invoked")
     {
       auto copy = buffer;
+      REQUIRE(copy);
       REQUIRE(copyCtor == 1);
       REQUIRE_NOTHROW(fho::details::invoke(buffer.data()));
     }
     THEN("the callables' move-ctor is invoked")
     {
       auto moved = std::move(buffer);
+      REQUIRE(moved);
+      REQUIRE_FALSE(buffer);
       REQUIRE(moveCtor == 1);
       REQUIRE_NOTHROW(fho::details::invoke(buffer.data()));
     }
@@ -213,6 +221,7 @@ SCENARIO("function_buffer")
       ++called;
     };
     auto buffer = fho::function_buffer(lambda);
+    REQUIRE(buffer);
     buffer.reset();
     buffer = lambda;
     THEN("it can be invoked")
@@ -232,6 +241,7 @@ SCENARIO("function_buffer")
     AND_WHEN("by value")
     {
       auto buffer = fho::function_buffer(func);
+      REQUIRE(buffer);
       THEN("it can be invoked")
       {
         fho::details::invoke(buffer.data());
@@ -241,6 +251,7 @@ SCENARIO("function_buffer")
     AND_WHEN("by r-value")
     {
       auto buffer = fho::function_buffer(std::move(func));
+      REQUIRE(buffer);
       THEN("it can be invoked")
       {
         fho::details::invoke(buffer.data());
@@ -256,11 +267,11 @@ SCENARIO("function_buffer")
       {
         ++called;
       });
-    auto buffer = fho::function_buffer(func);
-    buffer.reset();
+    auto buffer = fho::function_buffer();
     AND_WHEN("by value")
     {
       buffer = func;
+      REQUIRE(buffer);
       THEN("it can be invoked")
       {
         fho::details::invoke(buffer.data());
@@ -270,6 +281,7 @@ SCENARIO("function_buffer")
     AND_WHEN("by r-value")
     {
       buffer = std::move(func);
+      REQUIRE(buffer);
       THEN("it can be invoked")
       {
         fho::details::invoke(buffer.data());

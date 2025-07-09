@@ -32,15 +32,15 @@ TEST_CASE("pool: job execution")
   {
     // too slow with large batch size, but also unaffected for
     // stats reported.
-    static constexpr auto jobs_per_iteration_reduced = 1 << 14;
-    std::queue<job_t>     queue;
+    static constexpr auto             jobs_per_iteration_reduced = 1 << 14;
+    std::queue<std::function<void()>> queue;
     b.batch(jobs_per_iteration_reduced)
-      .run("std::queue",
+      .run("std::queue<function>",
            [&]
            {
              for (std::size_t i = 0; i < jobs_per_iteration_reduced; ++i)
              {
-               queue.emplace();
+               queue.emplace(job_t{});
              }
              while (!queue.empty())
              {
