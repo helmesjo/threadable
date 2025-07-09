@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <ranges>
 #include <type_traits>
@@ -222,21 +223,23 @@ namespace fho
     /// @details Adds a value to the buffer, associating it with a provided token. The process
     ///          involves:
     ///          1. **Claim a slot**: Atomically increments `next_` to reserve a slot.
-    ///          2. **Assign the value**: Constructs the value in the slot and sets it active.
-    ///          3. **Commit the slot**: Updates `head_` to make the slot available.
-    ///          Blocks if the buffer is full until space is freed by the consumer.
-    /// @param `token` Token to associate with the slot.
-    /// @param `val` Value to add to the buffer.
-    /// @param `args` Additional arguments.
-    /// @return Reference to the token.
+    ///          2. **Assign the value**: Constructs the value in the slot and binds the token.
+    ///          3. **Commit the slot**: Updates `head_` using a compare-exchange loop to make the
+    ///          slot available. Blocks via `tail_.wait()` if the buffer is full until space is
+    ///          freed by the consumer, then notifies via `head_.notify_one()`.
+    /// @param token Token to associate with the slot.
+    /// @param args Arguments to construct the value.
+    /// @return Reference to the provided token.
     /// @note Thread-safe for multiple producers.
     /// @example
     /// ```cpp
-    /// auto token = fho::slot_token{};
+    /// fho::slot_token token;
     /// buffer.emplace_back(token, []() { std::cout << "Task\n"; });
     /// ```
+    template<typename... Args>
+      requires std::constructible_from<T, Args...>
     auto
-    emplace_back(slot_token& token, auto&& val, auto&&... args) noexcept -> slot_token&
+    emplace_back(slot_token& token, Args&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_acquire);
@@ -244,15 +247,7 @@ namespace fho
       elem.acquire();
 
       // 2. Assign `value_type`.
-      if constexpr (std::invocable<decltype(val), slot_token&, decltype(args)...>)
-      {
-        elem.emplace(FWD(val), std::ref(token), FWD(args)...);
-      }
-      else
-      {
-        elem.emplace(FWD(val), FWD(args)...);
-      }
-
+      elem.emplace(FWD(args)...);
       elem.bind(token);
 
       // 3. Commit slot.
@@ -274,23 +269,75 @@ namespace fho
     }
 
     /// @brief Constructs a value into the buffer and returns a new token.
-    /// @details Adds a value to the buffer and returns a new token for tracking.
-    /// @param `val` Value to add to the buffer.
-    /// @param `args` Additional arguments.
+    /// @details Adds a value to the buffer by creating a new token and delegating to the
+    ///          token-based overload.
+    /// @param `args` Arguments to construct the value.
     /// @return New token associated with the slot.
     /// @note Thread-safe for multiple producers.
     /// @example
     /// ```cpp
     /// auto token = buffer.emplace_back([]() { std::cout << "Task\n"; });
     /// ```
+    template<typename... Args>
+      requires std::constructible_from<T, Args...>
     auto
-    emplace_back(auto&& val, auto&&... args) noexcept -> slot_token
+    emplace_back(Args&&... args) noexcept -> slot_token
     {
       slot_token token;
-      (void)emplace_back(token, FWD(val), FWD(args)...);
+      (void)emplace_back(token, FWD(args)...);
       return token;
     }
 
+    /// @brief Constructs a value into the buffer with an existing token, for callables that take a
+    ///        token.
+    /// @details Forwards the token to the callable by delegating to the primary `emplace_back`
+    ///          overload.
+    /// @param `token` Token to associate with the slot.
+    /// @param `val` Callable that takes a `slot_token&` and additional arguments.
+    /// @param `args` Additional arguments for the callable.
+    /// @return Reference to the provided token.
+    /// @note Thread-safe for multiple producers.
+    /// @example
+    /// ```cpp
+    /// fho::slot_token token;
+    /// buffer.emplace_back(token, [](slot_token& t) { std::cout << "Token: " << &t << "\n"; });
+    /// ```
+    template<typename U, typename... Args>
+      requires std::invocable<U, slot_token&, Args...>
+    auto
+    emplace_back(slot_token& token, U&& val, Args&&... args) noexcept -> slot_token&
+    {
+      return emplace_back(token, FWD(val), std::ref(token), FWD(args)...);
+    }
+
+    /// @brief Constructs a value into the buffer and returns a new token, for callables that take a
+    ///        token.
+    /// @details Creates a new token and forwards it to the callable by delegating to the primary
+    ///          `emplace_back` overload.
+    /// @param `val` Callable that takes a `slot_token&` and additional arguments.
+    /// @param `args` Additional arguments for the callable.
+    /// @return New token associated with the slot.
+    /// @note Thread-safe for multiple producers.
+    /// @example
+    /// ```cpp
+    /// auto token = buffer.emplace_back([](slot_token& t) { std::cout << "Token: " << &t << "\n";
+    /// });
+    /// ```
+    template<typename U, typename... Args>
+      requires std::invocable<U, slot_token&, Args...>
+    auto
+    emplace_back(U&& val, Args&&... args) noexcept -> slot_token
+    {
+      slot_token token;
+      (void)emplace_back(token, FWD(val), std::ref(token), FWD(args)...);
+      return token;
+    }
+
+    /// @brief Accesses the first element in the ring buffer.
+    /// @details Returns a const reference to the oldest element (at `tail_`). The buffer must not
+    ///          be empty.
+    /// @return Const reference to the front element.
+    /// @pre `size() > 0`
     [[nodiscard]] inline auto
     front() const noexcept -> const_reference
     {
@@ -299,6 +346,11 @@ namespace fho
       return elems_[ring_iterator_t::mask(tail)];
     }
 
+    /// @brief Accesses the last element in the ring buffer.
+    /// @details Returns a const reference to the most recently added element (at `head_ - 1`). The
+    ///          buffer must not be empty.
+    /// @return Const reference to the back element.
+    /// @pre `size() > 0`
     [[nodiscard]] inline auto
     back() const noexcept -> const_reference
     {
@@ -307,6 +359,12 @@ namespace fho
       return elems_[ring_iterator_t::mask(head - 1)];
     }
 
+    /// @brief Removes the first element from the ring buffer.
+    /// @details Releases the slot at the front (at `tail_`) and advances `tail_`. The buffer must
+    ///          not be empty.
+    ///          Thread-safe for a single consumer. Does not notify waiters; use a separate
+    ///          mechanism if notification is needed.
+    /// @pre `size() > 0`
     void
     pop() noexcept
     {

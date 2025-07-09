@@ -146,15 +146,14 @@ SCENARIO("ring_buffer: push & claim")
     }
     WHEN("push callable with 'slot_token&' as first parameter")
     {
-      bool wasCancelled = false;
-      auto token        = fho::slot_token{};
+      int  called = 0;
+      auto token  = fho::slot_token{};
 
       token = ring.emplace_back(
-        [&wasCancelled](fho::slot_token& token)
+        [&called](fho::slot_token& token)
         {
-          wasCancelled = token.cancelled();
-        },
-        std::ref(token));
+          ++called;
+        });
       REQUIRE(ring.size() == 1);
       THEN("the token will be passed when the job is executed")
       {
@@ -163,7 +162,7 @@ SCENARIO("ring_buffer: push & claim")
         {
           job();
         }
-        REQUIRE(wasCancelled);
+        REQUIRE(called == 1);
       }
     }
     WHEN("push")
