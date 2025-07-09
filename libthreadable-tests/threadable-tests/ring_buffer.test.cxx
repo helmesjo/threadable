@@ -255,6 +255,29 @@ SCENARIO("ring_buffer: push & claim")
   }
 }
 
+SCENARIO("ring_buffer: custom type")
+{
+  struct my_type
+  {
+    int   x;
+    float y;
+
+    auto operator<=>(my_type const&) const noexcept = default;
+  };
+
+  auto ring = fho::ring_buffer<my_type>{};
+  ring.push(1, 2.5f);
+  ring.push(my_type{.x = 3, .y = 4.5f});
+
+  REQUIRE(ring.size() == 2);
+  REQUIRE(ring.front() == my_type{.x = 1, .y = 2.5f});
+  REQUIRE(ring.back() == my_type{.x = 3, .y = 4.5f});
+  ring.pop();
+  REQUIRE(ring.front() == my_type{.x = 3, .y = 4.5f});
+  ring.pop();
+  REQUIRE(ring.size() == 0);
+}
+
 SCENARIO("ring_buffer: alignment")
 {
   static constexpr auto ring_capacity = 128;

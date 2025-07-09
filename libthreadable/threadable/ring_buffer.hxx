@@ -133,9 +133,13 @@ namespace fho
   {
     static constexpr auto index_mask = Capacity - 1u;
 
-    using slot_type             = ring_slot<T>;
-    using allocator_type        = Allocator;
-    using value_type            = T;
+    using value_type      = T;
+    using slot_type       = ring_slot<value_type>;
+    using size_type       = std::size_t;
+    using reference       = value_type&;
+    using const_reference = value_type const&;
+    using allocator_type  = Allocator;
+
     using atomic_index_t        = std::atomic_uint_fast64_t;
     using index_t               = typename atomic_index_t::value_type;
     using ring_iterator_t       = ring_iterator<slot_type, index_mask>;
@@ -285,6 +289,32 @@ namespace fho
       slot_token token;
       (void)push(token, FWD(val), FWD(args)...);
       return token;
+    }
+
+    [[nodiscard]] inline auto
+    front() const noexcept -> const_reference
+    {
+      assert(size() > 0);
+      auto const tail = tail_.load(std::memory_order_acquire);
+      return elems_[ring_iterator_t::mask(tail)];
+    }
+
+    [[nodiscard]] inline auto
+    back() const noexcept -> const_reference
+    {
+      assert(size() > 0);
+      auto const head = head_.load(std::memory_order_acquire);
+      return elems_[ring_iterator_t::mask(head - 1)];
+    }
+
+    void
+    pop() noexcept
+    {
+      assert(size() > 0);
+      auto const tail = tail_.load(std::memory_order_acquire);
+      slot_type& elem = elems_[ring_iterator_t::mask(tail)];
+      elem.release();
+      tail_.store(tail + 1, std::memory_order_release);
     }
 
     /// @brief Waits until the buffer has items available.
