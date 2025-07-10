@@ -257,6 +257,17 @@ SCENARIO("ring_buffer: custom type")
 {
   struct my_type
   {
+    my_type(my_type const&)                    = default;
+    my_type(my_type&&)                         = default;
+    ~my_type()                                 = default;
+    auto operator=(my_type const&) -> my_type& = default;
+    auto operator=(my_type&&) -> my_type&      = default;
+
+    my_type(int x, float y) // NOLINT
+      : x(x)
+      , y(y)
+    {}
+
     int   x;
     float y;
 
@@ -265,13 +276,13 @@ SCENARIO("ring_buffer: custom type")
 
   auto ring = fho::ring_buffer<my_type>{};
   ring.emplace_back(1, 2.5f);
-  ring.emplace_back(my_type{.x = 3, .y = 4.5f});
+  ring.emplace_back(my_type(3, 4.5f));
 
   REQUIRE(ring.size() == 2);
-  REQUIRE(ring.front() == my_type{.x = 1, .y = 2.5f});
-  REQUIRE(ring.back() == my_type{.x = 3, .y = 4.5f});
+  REQUIRE(ring.front() == my_type(1, 2.5f));
+  REQUIRE(ring.back() == my_type(3, 4.5f));
   ring.pop();
-  REQUIRE(ring.front() == my_type{.x = 3, .y = 4.5f});
+  REQUIRE(ring.front() == my_type(3, 4.5f));
   ring.pop();
   REQUIRE(ring.size() == 0);
 }
