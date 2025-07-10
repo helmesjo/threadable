@@ -41,14 +41,15 @@ int main() {
 
 ## Design Overview
 
-**Thread Pool** (`pool`):  
-Manages multiple job queues and worker threads, orchestrating
-job distribution via a scheduler.
+**Thread Pool** (`pool`) + **Worker Threads** (`executor`):  
+_Manages multiple job queues and worker threads,  
+orchestrating job distribution to executors running  
+in dedicated threads via a scheduler._
 
-**Job Queues** (`ring_buffer`) + **Worker Threads** (`executor`):  
-Lock-free ring buffers store jobs, processed sequentially by
-executors running in dedicated threads.
+**Job Queues** (`ring_buffer`):  
+_Lock-free multi-producer, single-consumer ring  
+buffers to store jobs._
 
 **Ring Iterator** (`ring_iterator`) + **Slot** (`ring_slot`):  
-Support the `ring_buffer` with efficient random access and state
-management for buffer elements.
+_Support the `ring_buffer` with efficient random access  
+and state management for buffer elements._
