@@ -27,9 +27,10 @@ SCENARIO("ring_buffer: push & claim")
 {
   GIVEN("ring with capacity 2 (max size 1)")
   {
+    static_assert(fho::ring_buffer<func_t, 2>::max_size() == 1);
+
     auto ring = fho::ring_buffer<func_t, 2>{};
     REQUIRE(ring.size() == 0);
-    static_assert(ring.max_size() == 1);
 
     WHEN("empty")
     {

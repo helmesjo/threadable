@@ -17,7 +17,7 @@ SCENARIO("pool: create/remove queues")
   GIVEN("queue is created")
   {
     auto& queue = pool.create();
-    static_assert(pool.max_size() == queue.max_size());
+    static_assert(fho::pool<8>::max_size() == decltype(pool)::queue_t::max_size());
 
     WHEN("job is pushed")
     {
