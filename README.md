@@ -1,9 +1,9 @@
 # threadable
 
 ## TLDR
-`libthreadable` is a C++ library for cache-aware, concurrent job execution
-using a thread pool with lock-free job queues. It simplifies parallel programming
-by managing threads and job distribution for performance-critical applications.
+`libthreadable` is a C++ library for cache-aware, concurrent task execution using  
+a thread pool with lock-free queues. It simplifies parallel programming by managing  
+threads and task distribution for performance-critical applications.
 
 ## Example
 ```cpp
@@ -13,7 +13,7 @@ int main() {
   // thread pool:
   auto  pool  = fho::pool();
   auto& queue = pool.create();
-  auto  token = queue.emplace_back( []() { cout << "Job executed!\n"; });
+  auto  token = queue.emplace_back( []() { cout << "task executed!\n"; });
   token.wait();
 
   // generic ring buffer:
@@ -42,13 +42,13 @@ int main() {
 ## Design Overview
 
 **Thread Pool** (`pool`) + **Worker Threads** (`executor`):  
-_Manages multiple job queues and worker threads,  
-orchestrating job distribution to executors running  
+_Manages multiple task queues and worker threads,  
+orchestrating task distribution to executors running  
 in dedicated threads via a scheduler._
 
-**Job Queues** (`ring_buffer`):  
-_Lock-free multi-producer, single-consumer ring  
-buffers to store jobs._
+**task Queues** (`ring_buffer`):  
+_Lock-free multi-producer, single-consumer ring buffer  
+to store tasks._
 
 **Ring Iterator** (`ring_iterator`) + **Slot** (`ring_slot`):  
 _Support the `ring_buffer` with efficient random access  

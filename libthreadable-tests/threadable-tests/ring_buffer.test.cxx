@@ -94,7 +94,7 @@ SCENARIO("ring_buffer: push & claim")
       AND_WHEN("cleared")
       {
         ring.clear();
-        THEN("it resets & destroys pushed jobs")
+        THEN("it resets & destroys pushed tasks")
         {
           REQUIRE(ring.empty());
           REQUIRE(called == 0);
@@ -109,36 +109,36 @@ SCENARIO("ring_buffer: push & claim")
           called    = 0;
           destroyed = 0;
         }
-        THEN("it resets & destroys pushed jobs")
+        THEN("it resets & destroys pushed tasks")
         {
           REQUIRE(called == 0);
           REQUIRE(destroyed == 1);
         }
       }
-      AND_WHEN("iterate jobs")
+      AND_WHEN("iterate tasks")
       {
-        auto nrJobs = 0;
-        for (auto const& job : ring)
+        auto nrtasks = 0;
+        for (auto const& task : ring)
         {
-          REQUIRE(job);
-          ++nrJobs;
+          REQUIRE(task);
+          ++nrtasks;
         }
-        THEN("1 valid job existed")
+        THEN("1 valid task existed")
         {
-          REQUIRE(nrJobs == 1);
+          REQUIRE(nrtasks == 1);
           REQUIRE(called == 0);
         }
       }
-      AND_WHEN("consume and execute jobs")
+      AND_WHEN("consume and execute tasks")
       {
         auto r = ring.consume();
         REQUIRE(r.begin() != r.end());
         REQUIRE(ring.size() == 0);
-        for (auto& job : r)
+        for (auto& task : r)
         {
-          job();
+          task();
         }
-        THEN("1 valid job executed")
+        THEN("1 valid task executed")
         {
           REQUIRE(called == 1);
         }
@@ -155,12 +155,12 @@ SCENARIO("ring_buffer: push & claim")
           ++called;
         });
       REQUIRE(ring.size() == 1);
-      THEN("the token will be passed when the job is executed")
+      THEN("the token will be passed when the task is executed")
       {
         token.cancel();
-        for (auto& job : ring.consume())
+        for (auto& task : ring.consume())
         {
-          job();
+          task();
         }
         REQUIRE(called == 1);
       }
@@ -184,9 +184,9 @@ SCENARIO("ring_buffer: push & claim")
         // NOLINTEND
 
         REQUIRE(ring.size() == 1);
-        for (auto& job : ring.consume())
+        for (auto& task : ring.consume())
         {
-          job();
+          task();
         }
         REQUIRE(called == 16);
       }
@@ -210,14 +210,14 @@ SCENARIO("ring_buffer: push & claim")
       }
       REQUIRE(ring.size() == ring.max_size());
 
-      AND_WHEN("consume and execute jobs")
+      AND_WHEN("consume and execute tasks")
       {
-        for (auto& job : ring.consume())
+        for (auto& task : ring.consume())
         {
-          REQUIRE(job);
-          job();
+          REQUIRE(task);
+          task();
         }
-        THEN("128 jobs were executed")
+        THEN("128 tasks were executed")
         {
           REQUIRE(executed.size() == ring.max_size());
           for (std::size_t i = 1; i <= ring.max_size(); ++i)
@@ -230,15 +230,15 @@ SCENARIO("ring_buffer: push & claim")
             REQUIRE(ring.size() == 0);
           }
 
-          AND_WHEN("iterate without executing jobs")
+          AND_WHEN("iterate without executing tasks")
           {
             std::ranges::fill(executed, 0);
 
-            for (auto const& job : ring)
+            for (auto const& task : ring)
             {
-              (void)job;
+              (void)task;
             }
-            THEN("0 jobs were executed")
+            THEN("0 tasks were executed")
             {
               REQUIRE(executed.size() == ring.max_size());
               for (std::size_t i = 0; i < ring.max_size(); ++i)
@@ -347,7 +347,7 @@ SCENARIO("ring_buffer: alignment")
 SCENARIO("ring_buffer: completion token")
 {
   auto ring = fho::ring_buffer{};
-  GIVEN("push job & store token")
+  GIVEN("push task & store token")
   {
     int  called = 0;
     auto token  = ring.emplace_back(
@@ -355,23 +355,23 @@ SCENARIO("ring_buffer: completion token")
       {
         ++called;
       });
-    THEN("token is NOT done when job is discarded")
+    THEN("token is NOT done when task is discarded")
     {
-      for (auto const& job : ring)
+      for (auto const& task : ring)
       {
-        (void)job; /* discard job */
+        (void)task; /* discard task */
       }
       REQUIRE_FALSE(token.done());
     }
-    THEN("token is NOT done before job is invoked")
+    THEN("token is NOT done before task is invoked")
     {
       REQUIRE_FALSE(token.done());
     }
-    THEN("token is done after job was invoked")
+    THEN("token is done after task was invoked")
     {
-      for (auto& job : ring.consume())
+      for (auto& task : ring.consume())
       {
-        job();
+        task();
       }
       REQUIRE(token.done());
     }
@@ -382,15 +382,15 @@ SCENARIO("ring_buffer: completion token")
       {
         REQUIRE(token.cancelled());
       }
-      THEN("job is still executed by ring")
+      THEN("task is still executed by ring")
       {
         // "cancel" only signals through the token,
         // meant to be reacted upon by used code -
-        // the job will still be executed if
+        // the task will still be executed if
         // processed by a background thread.
-        for (auto& job : ring.consume())
+        for (auto& task : ring.consume())
         {
-          job();
+          task();
         }
         REQUIRE(called == 1);
       }
@@ -406,26 +406,26 @@ SCENARIO("ring_buffer: stress-test")
 
     auto ring = fho::ring_buffer<func_t, capacity>();
 
-    static constexpr auto nr_of_jobs   = ring.max_size() * 2;
-    std::size_t           jobsExecuted = 0;
+    static constexpr auto nr_of_tasks   = ring.max_size() * 2;
+    std::size_t           tasksExecuted = 0;
 
-    for (std::size_t i = 0; i < nr_of_jobs; ++i)
+    for (std::size_t i = 0; i < nr_of_tasks; ++i)
     {
       auto token = ring.emplace_back(
-        [&jobsExecuted]
+        [&tasksExecuted]
         {
-          ++jobsExecuted;
+          ++tasksExecuted;
         });
-      for (auto& job : ring.consume())
+      for (auto& task : ring.consume())
       {
-        job();
+        task();
       }
       REQUIRE(token.done());
     }
 
-    THEN("all jobs are executed")
+    THEN("all tasks are executed")
     {
-      REQUIRE(jobsExecuted == nr_of_jobs);
+      REQUIRE(tasksExecuted == nr_of_tasks);
     }
   }
   GIVEN("1 producer & 1 consumer")
@@ -436,18 +436,18 @@ SCENARIO("ring_buffer: stress-test")
 
     THEN("there are no race conditions")
     {
-      auto jobsExecuted = std::atomic_size_t{0};
+      auto tasksExecuted = std::atomic_size_t{0};
       {
         // start producer
         auto producer = std::thread(
-          [&ring, &jobsExecuted]
+          [&ring, &tasksExecuted]
           {
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
               ring.emplace_back(
-                [&jobsExecuted]
+                [&tasksExecuted]
                 {
-                  ++jobsExecuted;
+                  ++tasksExecuted;
                 });
             }
           });
@@ -457,9 +457,9 @@ SCENARIO("ring_buffer: stress-test")
           {
             while (producer.joinable() || !ring.empty())
             {
-              for (auto& job : ring.consume())
+              for (auto& task : ring.consume())
               {
-                job();
+                task();
               }
             }
           });
@@ -467,7 +467,7 @@ SCENARIO("ring_buffer: stress-test")
         producer.join();
         consumer.join();
       }
-      REQUIRE(jobsExecuted.load() == ring.max_size());
+      REQUIRE(tasksExecuted.load() == ring.max_size());
     }
   }
   GIVEN("5 producers & 1 consumer")
@@ -480,23 +480,23 @@ SCENARIO("ring_buffer: stress-test")
 
     THEN("there are no race conditions")
     {
-      std::atomic_size_t jobsExecuted{0};
+      std::atomic_size_t tasksExecuted{0};
 
       // start producers
       std::vector<std::thread> producers;
       for (std::size_t i = 0; i < nr_producers; ++i)
       {
         producers.emplace_back(
-          [&barrier, &ring, &jobsExecuted]
+          [&barrier, &ring, &tasksExecuted]
           {
             auto tokens = fho::token_group{};
             barrier.arrive_and_wait();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
               tokens += ring.emplace_back(
-                [&jobsExecuted]
+                [&tasksExecuted]
                 {
-                  ++jobsExecuted;
+                  ++tasksExecuted;
                 });
             }
             tokens.wait();
@@ -513,9 +513,9 @@ SCENARIO("ring_buffer: stress-test")
                                      }) ||
                  !ring.empty())
           {
-            for (auto& job : ring.consume())
+            for (auto& task : ring.consume())
             {
-              job();
+              task();
             }
           }
         });
@@ -526,7 +526,7 @@ SCENARIO("ring_buffer: stress-test")
       }
       consumer.join();
 
-      REQUIRE(jobsExecuted.load() == ring.max_size() * nr_producers);
+      REQUIRE(tasksExecuted.load() == ring.max_size() * nr_producers);
     }
   }
 }
@@ -539,28 +539,28 @@ SCENARIO("ring_buffer: standard algorithms")
     auto                  ring     = fho::ring_buffer<func_t, capacity>{};
     REQUIRE(ring.size() == 0);
 
-    auto jobsExecuted = std::atomic_size_t{0};
+    auto tasksExecuted = std::atomic_size_t{0};
     WHEN("push all")
     {
       while (ring.size() < ring.max_size())
       {
         ring.emplace_back(
-          [&jobsExecuted]
+          [&tasksExecuted]
           {
-            ++jobsExecuted;
+            ++tasksExecuted;
           });
       }
       auto r = ring.consume();
       AND_WHEN("std::for_each")
       {
         std::ranges::for_each(r,
-                              [](auto& job)
+                              [](auto& task)
                               {
-                                job();
+                                task();
                               });
-        THEN("all jobs executed")
+        THEN("all tasks executed")
         {
-          REQUIRE(jobsExecuted.load() == ring.max_size());
+          REQUIRE(tasksExecuted.load() == ring.max_size());
           REQUIRE(ring.size() == 0);
         }
       }

@@ -30,7 +30,7 @@ namespace fho
   /// auto s = fho::ring_slot<fho::function<64>>{};
   /// auto t = fho::token{};
   /// s.token(t);
-  /// s.emplace([]() { /* job */ });
+  /// s.emplace([]() { /* task */ });
   /// t.wait(); // Waits for the `ring_slot` to be processed by another thread
   /// ```
   class slot_token
@@ -120,7 +120,7 @@ namespace fho
     /// @brief Waits for the associated `ring_slot` to be processed.
     /// @details Blocks until the `ring_slot` state changes from `active`.
     /// NOTE: The underlying state pointer might be rebound during waiting, for example, in
-    /// recursive or self-queueing jobs. This function will wait until it's fully processed.
+    /// recursive or self-queueing tasks. This function will wait until it's fully processed.
     void
     wait() const noexcept
     {
@@ -136,15 +136,15 @@ namespace fho
   static_assert(std::move_constructible<slot_token>);
   static_assert(std::is_move_assignable_v<slot_token>);
 
-  /// @brief A group of `ring_slot` tokens, allowing collective operations on multiple jobs.
+  /// @brief A group of `ring_slot` tokens, allowing collective operations on multiple tasks.
   /// @details The `token_group` class manages a collection of `slot_token` objects, providing
-  /// methods to check if all jobs are done, cancel all jobs, or wait for all jobs to complete.
+  /// methods to check if all tasks are done, cancel all tasks, or wait for all tasks to complete.
   /// @example
   /// ```cpp
   /// auto group = fho::token_group{};
   /// group += std::move(token1);
   /// group += std::move(token2);
-  /// group.wait(); // Waits for both jobs to complete
+  /// group.wait(); // Waits for both tasks to complete
   /// ```
   class token_group
   {
@@ -198,7 +198,7 @@ namespace fho
       return tokens_.size();
     }
 
-    /// @brief Checks if all jobs in the group are done.
+    /// @brief Checks if all tasks in the group are done.
     /// @details Returns `true` if every token in the group reports that its state is done.
     [[nodiscard]] auto
     done() const noexcept -> bool
@@ -210,7 +210,7 @@ namespace fho
                                  });
     }
 
-    /// @brief Cancels all jobs in the group.
+    /// @brief Cancels all tasks in the group.
     /// @details Calls `cancel` on each token in the group.
     void
     cancel() noexcept
@@ -221,7 +221,7 @@ namespace fho
       }
     }
 
-    /// @brief Waits for all jobs in the group to complete.
+    /// @brief Waits for all tasks in the group to complete.
     /// @details Calls `wait` on each token in the group.
     void
     wait() const noexcept

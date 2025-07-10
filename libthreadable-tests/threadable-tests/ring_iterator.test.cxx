@@ -9,7 +9,7 @@ SCENARIO("ring_iterator")
   using buffer_t                   = std::array<int, buf_size>;
   using iter_t                     = fho::ring_iterator<int, index_mask>;
 
-  static_assert((buf_size & index_mask) == 0, "number of jobs must be a power of 2");
+  static_assert((buf_size & index_mask) == 0, "number of tasks must be a power of 2");
   static_assert(buf_size == 16); // for comments to be accurate
 
   auto v   = buffer_t{};
@@ -26,7 +26,7 @@ SCENARIO("ring_iterator")
     THEN("it points to the same position as begin")
     {
       REQUIRE(it == begin);   // mask(16) = mask(0)
-      REQUIRE(*it == *begin); // Same job
+      REQUIRE(*it == *begin); // Same task
     }
   }
 

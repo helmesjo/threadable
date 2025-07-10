@@ -20,20 +20,20 @@
 
 namespace fho
 {
-  /// @brief A thread pool class that manages multiple executors and job queues with a fixed
+  /// @brief A thread pool class that manages multiple executors and task queues with a fixed
   /// capacity.
-  /// @details The `pool` class manages a collection of `executor` instances and multiple job queues
-  /// (instances of `ring_buffer<fast_func_t, Capacity>`). It includes a scheduler thread that
-  /// distributes jobs from the queues to the executors. The number of worker threads (executors) is
-  /// by default set to the number of hardware threads minus one. The pool can create new queues,
-  /// add existing queues, and remove queues. Each queue has a fixed capacity specified by the
-  /// template parameter `Capacity`, which must be a power of two.
-  /// @tparam Capacity The capacity of each job queue in the pool. Must be a power of two.
+  /// @details The `pool` class manages a collection of `executor` instances and multiple task
+  /// queues (instances of `ring_buffer<fast_func_t, Capacity>`). It includes a scheduler thread
+  /// that distributes tasks from the queues to the executors. The number of worker threads
+  /// (executors) is by default set to the number of hardware threads minus one. The pool can create
+  /// new queues, add existing queues, and remove queues. Each queue has a fixed capacity specified
+  /// by the template parameter `Capacity`, which must be a power of two.
+  /// @tparam Capacity The capacity of each task queue in the pool. Must be a power of two.
   /// @example
   /// ```cpp
   /// fho::pool<> pool;
   /// auto& queue = pool.create();
-  /// auto token = queue.emplace_back([]() { std::cout << "Job executed!\n"; });
+  /// auto token = queue.emplace_back([]() { std::cout << "task executed!\n"; });
   /// token.wait();
   /// ```
   template<std::size_t Capacity = details::default_capacity>
@@ -42,30 +42,30 @@ namespace fho
   public:
     using queue_t = ring_buffer<fast_func_t, Capacity>;
 
-    /// @brief Structure representing a job queue with an associated execution policy.
-    struct job_queue
+    /// @brief Structure representing a task queue with an associated execution policy.
+    struct task_queue
     {
-      job_queue(job_queue const&)                    = delete;
-      job_queue(job_queue&&)                         = default;
-      auto operator=(job_queue const&) -> job_queue& = delete;
-      auto operator=(job_queue&&) -> job_queue&      = default;
+      task_queue(task_queue const&)                    = delete;
+      task_queue(task_queue&&)                         = default;
+      auto operator=(task_queue const&) -> task_queue& = delete;
+      auto operator=(task_queue&&) -> task_queue&      = default;
 
-      job_queue(execution policy, queue_t buffer)
+      task_queue(execution policy, queue_t buffer)
         : policy(policy)
         , buffer(std::move(buffer))
       {}
 
-      ~job_queue() = default;
+      ~task_queue() = default;
 
       alignas(details::cache_line_size) execution policy;
       alignas(details::cache_line_size) queue_t buffer;
     };
 
-    using queues_t = std::vector<std::shared_ptr<job_queue>>;
+    using queues_t = std::vector<std::shared_ptr<task_queue>>;
 
     /// @brief Initializes the thread pool with a specified number of worker threads.
     /// @details Creates the specified number of `executor` instances, each running in its own
-    /// thread, and starts a separate scheduler thread that distributes jobs from the queues to
+    /// thread, and starts a separate scheduler thread that distributes tasks from the queues to
     /// these executors. If no number is specified, it defaults to the number of hardware threads
     /// minus one to account for the scheduler thread.
     /// @param threads The number of worker threads (executors) to create. Defaults to
@@ -91,7 +91,7 @@ namespace fho
           while (true)
           {
             // 1. Check if quit = true. If so, bail.
-            // 2. Distribute queues' jobs to executors.
+            // 2. Distribute queues' tasks to executors.
             if (stop_.load(std::memory_order_acquire)) [[unlikely]]
             {
               break;
@@ -149,7 +149,7 @@ namespace fho
 
     /// @brief Stops the thread pool and joins all threads.
     /// @details Sets the stop flag to signal the scheduler thread to exit, joins the scheduler
-    /// thread, and then stops and joins all executor threads to ensure all jobs are completed
+    /// thread, and then stops and joins all executor threads to ensure all tasks are completed
     /// before destruction.
     ~pool()
     {
@@ -164,9 +164,9 @@ namespace fho
       }
     }
 
-    /// @brief Creates and adds a new job queue to the pool with the specified execution policy.
+    /// @brief Creates and adds a new task queue to the pool with the specified execution policy.
     /// @details Instantiates a new `ring_buffer<fast_func_t, Capacity>` and adds it to the pool's
-    /// list of queues. The execution policy determines how jobs in this queue are executed
+    /// list of queues. The execution policy determines how tasks in this queue are executed
     /// (sequentially or in parallel).
     /// @param policy The execution policy for the new queue. Defaults to `execution::par`.
     /// @return A reference to the newly created `ring_buffer`.
@@ -178,17 +178,17 @@ namespace fho
 
     /// @brief Adds an existing queue to the pool's management.
     /// @details Moves the provided `ring_buffer` into the pool's list of queues, allowing the
-    /// scheduler to distribute its jobs to the executors.
+    /// scheduler to distribute its tasks to the executors.
     /// @param q The `ring_buffer` to add, moved into the pool.
     /// @param policy The execution policy for the queue.
     /// @return A reference to the added `ring_buffer`.
     [[nodiscard]] auto
     add(queue_t&& q, execution policy) -> queue_t&
     {
-      job_queue* queue = nullptr;
+      task_queue* queue = nullptr;
       {
         auto _ = std::scoped_lock{queueMutex_};
-        queue  = queues_.emplace_back(std::make_unique<job_queue>(policy, std::move(q))).get();
+        queue  = queues_.emplace_back(std::make_unique<task_queue>(policy, std::move(q))).get();
       }
 
       return queue->buffer;
@@ -219,10 +219,10 @@ namespace fho
       }
     }
 
-    /// @brief Counts the number of queues with pending jobs.
-    /// @details Iterates through the pool's queues and counts how many have at least one job
+    /// @brief Counts the number of queues with pending tasks.
+    /// @details Iterates through the pool's queues and counts how many have at least one task
     /// (i.e., `queue.size() > 0`).
-    /// @return The number of queues containing jobs.
+    /// @return The number of queues containing tasks.
     [[nodiscard]] auto
     size() const noexcept -> std::size_t
     {
@@ -235,7 +235,7 @@ namespace fho
 
     /// @brief Returns the maximum capacity of each queue.
     /// @details Each queue is a `ring_buffer<fast_func_t, Capacity>`, so this returns `Capacity`,
-    /// the maximum number of jobs each queue can hold.
+    /// the maximum number of tasks each queue can hold.
     /// @return The capacity of each queue.
     static constexpr auto
     max_size() noexcept -> std::size_t
@@ -263,7 +263,7 @@ namespace fho
     extern auto pool() -> pool_t&;
   }
 
-  /// @brief Creates a new job queue in the default thread pool.
+  /// @brief Creates a new task queue in the default thread pool.
   /// @details Uses a lazily-initialized default `pool` instance to create a new queue with the
   /// specified execution policy.
   /// @param policy The execution policy for the new queue. Defaults to `execution::par`.
@@ -284,7 +284,7 @@ namespace fho
     return details::pool().remove(std::move(queue));
   }
 
-  /// @brief Submits a job to a queue with the specified policy in the default thread pool.
+  /// @brief Submits a task to a queue with the specified policy in the default thread pool.
   /// @details Uses a static `ring_buffer` instance for each unique `Policy`, creating it if
   /// necessary, and pushes the callable with its arguments into that queue.
   /// @tparam Policy The execution policy for the queue, defaults to `execution::par`.
@@ -292,7 +292,7 @@ namespace fho
   /// @tparam Args The types of the arguments.
   /// @param func The callable to submit.
   /// @param args The arguments to pass to the callable.
-  /// @return A `slot_token` representing the submitted job.
+  /// @return A `slot_token` representing the submitted task.
   template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
   [[nodiscard]] inline auto
   async(Func&& func, Args&&... args) noexcept -> decltype(auto)
@@ -302,7 +302,7 @@ namespace fho
     return queue.emplace_back(FWD(func), FWD(args)...);
   }
 
-  /// @brief Submits a job to a queue with the specified policy, reusing a token.
+  /// @brief Submits a task to a queue with the specified policy, reusing a token.
   /// @details Similar to the other `push` overload but reuses an existing `slot_token`, which is
   /// passed as the first argument to the callable.
   /// @tparam Policy The execution policy for the queue, defaults to `execution::par`.

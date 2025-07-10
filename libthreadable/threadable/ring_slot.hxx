@@ -24,7 +24,7 @@ namespace fho
   /// @brief A slot in a ring buffer that holds a value of type `T` and manages its state
   /// atomically.
   /// @details The `ring_slot` class is designed for use in concurrent environments, such as thread
-  /// pools or job queues, where slots must be acquired, assigned values, processed, and released
+  /// pools or task queues, where slots must be acquired, assigned values, processed, and released
   /// efficiently. It uses atomic operations to manage state transitions between `empty`, `claimed`,
   /// and `active`. The class is aligned to the cache line size to prevent false sharing in
   /// multithreaded scenarios. Thread safety is ensured through atomic state management, but users
@@ -147,7 +147,7 @@ namespace fho
 
     /// @brief Waits for the slot to become inactive.
     /// @details Blocks until the slot's state is no longer `active`, typically indicating that the
-    /// stored value (e.g., a job) has been processed and released.
+    /// stored value (e.g., a task) has been processed and released.
     inline void
     wait() const noexcept
     {

@@ -32,7 +32,7 @@ SCENARIO("executor: Submit callables")
     WHEN("submitted to the executor")
     {
       tokens.wait();
-      THEN("all jobs are executed in order")
+      THEN("all tasks are executed in order")
       {
         REQUIRE(executed.size() == size);
         for (std::size_t i = 0; i < items.size(); ++i)

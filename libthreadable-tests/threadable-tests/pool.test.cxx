@@ -19,7 +19,7 @@ SCENARIO("pool: create/remove queues")
     auto& queue = pool.create();
     static_assert(fho::pool<8>::max_size() == decltype(pool)::queue_t::max_size());
 
-    WHEN("job is pushed")
+    WHEN("task is pushed")
     {
       int  called = 0;
       auto token  = queue.emplace_back(
@@ -41,10 +41,10 @@ SCENARIO("pool: create/remove queues")
   GIVEN("queue is pre-created")
   {
     auto queue = decltype(pool)::queue_t();
-    WHEN("added (without jobs) to pool")
+    WHEN("added (without tasks) to pool")
     {
       auto& q = pool.add(std::move(queue), fho::execution::par);
-      AND_WHEN("job is pushed")
+      AND_WHEN("task is pushed")
       {
         int  called = 0;
         auto token2 = q.emplace_back(
@@ -63,7 +63,7 @@ SCENARIO("pool: create/remove queues")
         REQUIRE(pool.remove(std::move(q)));
       }
     }
-    WHEN("added (with jobs) to pool")
+    WHEN("added (with tasks) to pool")
     {
       int  called = 0;
       auto token  = queue.emplace_back(
@@ -72,7 +72,7 @@ SCENARIO("pool: create/remove queues")
           ++called;
         });
       (void)pool.add(std::move(queue), fho::execution::par);
-      THEN("existing jobs are executed")
+      THEN("existing tasks are executed")
       {
         token.wait();
         REQUIRE(called == 1);
@@ -84,7 +84,7 @@ SCENARIO("pool: create/remove queues")
 SCENARIO("pool: execution order")
 {
   auto pool = fho::pool<1024>();
-  GIVEN("a job is submitted to a sequential queue")
+  GIVEN("a task is submitted to a sequential queue")
   {
     auto& queue    = pool.create(fho::execution::seq);
     auto  executed = std::vector<std::size_t>(queue.max_size(), 0);
@@ -106,7 +106,7 @@ SCENARIO("pool: execution order")
     }
     REQUIRE(tokens.size() == queue.max_size());
     tokens.wait();
-    THEN("all jobs are executed in order")
+    THEN("all tasks are executed in order")
     {
       REQUIRE(executed.size() == queue.max_size());
       for (std::size_t i = 0; i < queue.max_size(); ++i)
@@ -116,7 +116,7 @@ SCENARIO("pool: execution order")
     }
     (void)pool.remove(std::move(queue));
   }
-  GIVEN("a job is submitted to a parallel queue")
+  GIVEN("a task is submitted to a parallel queue")
   {
     auto& queue   = pool.create(fho::execution::par);
     auto  counter = std::atomic_size_t{0};
@@ -130,7 +130,7 @@ SCENARIO("pool: execution order")
         });
     }
     tokens.wait();
-    THEN("all jobs are executed")
+    THEN("all tasks are executed")
     {
       REQUIRE(counter == pool.max_size());
     }
@@ -138,16 +138,16 @@ SCENARIO("pool: execution order")
   }
 }
 
-SCENARIO("pool: submit jobs to global pool")
+SCENARIO("pool: submit tasks to global pool")
 {
-  constexpr auto nr_of_jobs = std::size_t{1024};
-  auto           executed   = std::vector<std::size_t>(nr_of_jobs, 0);
-  GIVEN("a job is submitted to the sequential queue")
+  constexpr auto nr_of_tasks = std::size_t{1024};
+  auto           executed   = std::vector<std::size_t>(nr_of_tasks, 0);
+  GIVEN("a task is submitted to the sequential queue")
   {
     std::ranges::fill(executed, 0);
     auto tokens  = fho::token_group{};
     auto counter = std::atomic_size_t{0};
-    for (std::size_t i = 0; i < nr_of_jobs; ++i)
+    for (std::size_t i = 0; i < nr_of_tasks; ++i)
     {
       tokens += fho::async<fho::execution::seq>(
         [i, &executed, &counter]
@@ -161,20 +161,20 @@ SCENARIO("pool: submit jobs to global pool")
       }
     }
     tokens.wait();
-    THEN("all jobs are executed in order")
+    THEN("all tasks are executed in order")
     {
-      REQUIRE(executed.size() == nr_of_jobs);
-      for (std::size_t i = 0; i < nr_of_jobs; ++i)
+      REQUIRE(executed.size() == nr_of_tasks);
+      for (std::size_t i = 0; i < nr_of_tasks; ++i)
       {
         REQUIRE(executed[i] == i);
       }
     }
   }
-  GIVEN("a job is submitted to the parallel queue")
+  GIVEN("a task is submitted to the parallel queue")
   {
     auto counter = std::atomic_size_t{0};
     auto tokens  = fho::token_group{};
-    for (std::size_t i = 0; i < nr_of_jobs; ++i)
+    for (std::size_t i = 0; i < nr_of_tasks; ++i)
     {
       tokens += fho::async<fho::execution::par>(
         [&counter]
@@ -183,9 +183,9 @@ SCENARIO("pool: submit jobs to global pool")
         });
     }
     tokens.wait();
-    THEN("all jobs are executed")
+    THEN("all tasks are executed")
     {
-      REQUIRE(counter == nr_of_jobs);
+      REQUIRE(counter == nr_of_tasks);
     }
   }
 }
@@ -197,7 +197,7 @@ SCENARIO("pool: stress-test")
 
   auto pool = fho::pool<capacity>(nr_producers);
 
-  GIVEN("multiple producers submit a large amount of jobs")
+  GIVEN("multiple producers submit a large amount of tasks")
   {
     constexpr auto nr_producers = 5;
 
@@ -211,7 +211,7 @@ SCENARIO("pool: stress-test")
         [&counter, &queue]
         {
           static_assert(decltype(pool)::max_size() % nr_producers == 0,
-                        "All jobs must be submitted");
+                        "All tasks must be submitted");
           auto tokens = fho::token_group{};
           for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
           {
@@ -235,7 +235,7 @@ SCENARIO("pool: stress-test")
       REQUIRE(counter.load() == queue.max_size());
     }
   }
-  GIVEN("multiple producers submit a large amount of jobs to their own queue and then remove it")
+  GIVEN("multiple producers submit a large amount of tasks to their own queue and then remove it")
   {
     static constexpr auto nr_producers = 3;
 
@@ -249,7 +249,7 @@ SCENARIO("pool: stress-test")
         [&counter, &pool, &barrier, &queue = pool.create(fho::execution::par)]
         {
           static_assert(decltype(pool)::max_size() % nr_producers == 0,
-                        "All jobs must be submitted");
+                        "All tasks must be submitted");
 
           auto tokens = fho::token_group{};
           barrier.arrive_and_wait();

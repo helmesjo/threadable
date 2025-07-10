@@ -44,11 +44,11 @@ namespace fho
     /// @brief Constructs an iterator with a buffer pointer and starting index.
     /// @details Initializes the iterator with a pointer to the ring buffer's start and a logical
     /// index. The current position is set to the masked index offset from the buffer start.
-    /// @param `jobs` Pointer to the beginning of the ring buffer.
+    /// @param `data` Pointer to the beginning of the ring buffer.
     /// @param `index` The starting logical index in the buffer.
-    explicit ring_iterator(pointer jobs, size_t index) noexcept
-      : jobs_(jobs)
-      , current_(jobs + mask(index))
+    explicit ring_iterator(pointer data, size_t index) noexcept
+      : data_(data)
+      , current_(data + mask(index))
       , index_(index)
     {}
 
@@ -60,7 +60,7 @@ namespace fho
     inline auto
     operator[](difference_type rhs) const noexcept -> reference
     {
-      return jobs_[mask(index_ + rhs)];
+      return data_[mask(index_ + rhs)];
     }
 
     /// @brief Dereferences the iterator to access the current element.
@@ -145,7 +145,7 @@ namespace fho
     inline auto
     operator+(difference_type rhs) const noexcept -> ring_iterator
     {
-      return ring_iterator(jobs_, index_ + rhs);
+      return ring_iterator(data_, index_ + rhs);
     }
 
     /// @brief Retreats the iterator by an offset.
@@ -156,7 +156,7 @@ namespace fho
     inline auto
     operator-(difference_type rhs) const noexcept -> ring_iterator
     {
-      return ring_iterator(jobs_, index_ - rhs);
+      return ring_iterator(data_, index_ - rhs);
     }
 
     /// @brief Allows adding an offset to an iterator from the left.
@@ -167,7 +167,7 @@ namespace fho
     friend inline auto
     operator+(difference_type lhs, ring_iterator const& rhs) noexcept -> ring_iterator
     {
-      return ring_iterator(rhs.jobs_, lhs + rhs.index_);
+      return ring_iterator(rhs.data_, lhs + rhs.index_);
     }
 
     /// @brief Allows subtracting an offset from an iterator from the left.
@@ -178,7 +178,7 @@ namespace fho
     friend inline auto
     operator-(difference_type lhs, ring_iterator const& rhs) noexcept -> ring_iterator
     {
-      return ring_iterator(rhs.jobs_, lhs - rhs.index_);
+      return ring_iterator(rhs.data_, lhs - rhs.index_);
     }
 
     /// @brief Advances the iterator in place by an offset.
@@ -190,7 +190,7 @@ namespace fho
     operator+=(difference_type rhs) noexcept -> ring_iterator&
     {
       index_ += rhs;
-      current_ = jobs_ + mask(index_);
+      current_ = data_ + mask(index_);
       return *this;
     }
 
@@ -213,9 +213,9 @@ namespace fho
     operator++() noexcept -> ring_iterator&
     {
       ++index_;
-      if (++current_ > (jobs_ + buffer_size - 1)) [[unlikely]]
+      if (++current_ > (data_ + buffer_size - 1)) [[unlikely]]
       {
-        current_ = jobs_;
+        current_ = data_;
       }
       return *this;
     }
@@ -239,9 +239,9 @@ namespace fho
     operator--() noexcept -> ring_iterator&
     {
       --index_;
-      if (--current_ < jobs_) [[unlikely]]
+      if (--current_ < data_) [[unlikely]]
       {
-        current_ = (jobs_ + buffer_size - 1);
+        current_ = (data_ + buffer_size - 1);
       }
       return *this;
     }
@@ -272,7 +272,7 @@ namespace fho
     [[nodiscard]] inline auto
     data() noexcept
     {
-      return jobs_;
+      return data_;
     }
 
     /// @brief Provides access to the buffer's starting pointer (const).
@@ -281,11 +281,11 @@ namespace fho
     [[nodiscard]] inline auto
     data() const noexcept
     {
-      return jobs_;
+      return data_;
     }
 
   private:
-    pointer jobs_    = nullptr; ///< Pointer to the start of the ring buffer.
+    pointer data_    = nullptr; ///< Pointer to the start of the ring buffer.
     pointer current_ = nullptr; ///< Pointer to the current element.
     size_t  index_   = 0;       ///< Logical index, may exceed buffer size.
   };

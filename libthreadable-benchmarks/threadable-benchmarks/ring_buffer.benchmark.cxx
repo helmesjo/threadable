@@ -18,9 +18,9 @@ namespace bench = ankerl::nanobench;
 namespace
 {
 #ifdef NDEBUG
-  constexpr auto jobs_per_iteration = 1 << 21;
+  constexpr auto tasks_per_iteration = 1 << 21;
 #else
-  constexpr auto jobs_per_iteration = 1 << 18;
+  constexpr auto tasks_per_iteration = 1 << 18;
 #endif
   auto val = 1; // NOLINT
 
@@ -31,30 +31,30 @@ namespace
 TEST_CASE("ring: emplace")
 {
   bench::Bench b;
-  b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
+  b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
-  using job_t = decltype([](){
+  using task_t = decltype([](){
     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("ring: emplace - sequential");
   {
     auto ring = std::vector<std_func_t>();
-    ring.reserve(jobs_per_iteration);
+    ring.reserve(tasks_per_iteration);
 
     b.run("std::vector<function>",
           [&]
           {
             ring.clear();
-            for (std::size_t i = 0; i < jobs_per_iteration; ++i)
+            for (std::size_t i = 0; i < tasks_per_iteration; ++i)
             {
-              bench::doNotOptimizeAway(ring.emplace_back(job_t{}));
+              bench::doNotOptimizeAway(ring.emplace_back(task_t{}));
             }
           });
   }
   b.title("ring: emplace - sequential");
   {
-    auto ring = fho::ring_buffer<fho_func_t, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
 
     b.run("fho::ring_buffer<function>",
           [&]
@@ -62,7 +62,7 @@ TEST_CASE("ring: emplace")
             ring.clear();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              bench::doNotOptimizeAway(ring.emplace_back(job_t{}));
+              bench::doNotOptimizeAway(ring.emplace_back(task_t{}));
             }
           });
   }
@@ -71,44 +71,44 @@ TEST_CASE("ring: emplace")
 TEST_CASE("ring: iterate (sequential)")
 {
   bench::Bench b;
-  b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
+  b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
-  using job_t = decltype([](){
+  using task_t = decltype([](){
     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("ring: iterate - sequential");
   {
     auto ring = std::vector<std_func_t>();
-    for (std::size_t i = 0; i < jobs_per_iteration; ++i)
+    for (std::size_t i = 0; i < tasks_per_iteration; ++i)
     {
-      ring.emplace_back(job_t{});
+      ring.emplace_back(task_t{});
     }
 
     b.run("std::vector<function>",
           [&]
           {
             std::ranges::for_each(ring,
-                                  [](auto const& job)
+                                  [](auto const& task)
                                   {
-                                    bench::doNotOptimizeAway(job);
+                                    bench::doNotOptimizeAway(task);
                                   });
           });
   }
   {
-    auto ring = fho::ring_buffer<fho_func_t, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.emplace_back(job_t{});
+      ring.emplace_back(task_t{});
     }
 
     b.run("fho::ring_buffer<function>",
           [&]
           {
             std::ranges::for_each(ring,
-                                  [](auto const& job)
+                                  [](auto const& task)
                                   {
-                                    bench::doNotOptimizeAway(job);
+                                    bench::doNotOptimizeAway(task);
                                   });
           });
   }
@@ -118,44 +118,44 @@ TEST_CASE("ring: iterate (sequential)")
 TEST_CASE("ring: iterate (parallel)")
 {
   bench::Bench b;
-  b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
+  b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
-  using job_t = decltype([](){
+  using task_t = decltype([](){
     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("ring: iterate - parallel");
   {
     auto ring = std::vector<std_func_t>();
-    for (std::size_t i = 0; i < jobs_per_iteration; ++i)
+    for (std::size_t i = 0; i < tasks_per_iteration; ++i)
     {
-      ring.emplace_back(job_t{});
+      ring.emplace_back(task_t{});
     }
 
     b.run("std::vector<function>",
           [&]
           {
             std::for_each(std::execution::par, std::begin(ring), std::end(ring),
-                          [](auto const& job)
+                          [](auto const& task)
                           {
-                            bench::doNotOptimizeAway(job);
+                            bench::doNotOptimizeAway(task);
                           });
           });
   }
   {
-    auto ring = fho::ring_buffer<fho_func_t, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.emplace_back(job_t{});
+      ring.emplace_back(task_t{});
     }
 
     b.run("fho::ring_buffer<function>",
           [&]
           {
             std::for_each(std::execution::par, std::begin(ring), std::end(ring),
-                          [](auto const& job)
+                          [](auto const& task)
                           {
-                            bench::doNotOptimizeAway(job);
+                            bench::doNotOptimizeAway(task);
                           });
           });
   }
@@ -165,36 +165,36 @@ TEST_CASE("ring: iterate (parallel)")
 TEST_CASE("ring: execute (sequential)")
 {
   bench::Bench b;
-  b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
+  b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
-  using job_t = decltype([](){
+  using task_t = decltype([](){
     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("ring: execute - sequential");
   {
     auto ring = std::vector<std_func_t>();
-    for (std::size_t i = 0; i < jobs_per_iteration; ++i)
+    for (std::size_t i = 0; i < tasks_per_iteration; ++i)
     {
-      ring.emplace_back(job_t{});
+      ring.emplace_back(task_t{});
     }
 
     b.run("std::vector<function>",
           [&]
           {
             std::ranges::for_each(ring,
-                                  [](auto& job)
+                                  [](auto& task)
                                   {
-                                    job();
-                                    bench::doNotOptimizeAway(job);
+                                    task();
+                                    bench::doNotOptimizeAway(task);
                                   });
           });
   }
   {
-    auto ring = fho::ring_buffer<fho_func_t, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.emplace_back(job_t{});
+      ring.emplace_back(task_t{});
     }
     auto range = ring.consume();
 
@@ -202,10 +202,10 @@ TEST_CASE("ring: execute (sequential)")
           [&]
           {
             std::ranges::for_each(range,
-                                  [](auto& job)
+                                  [](auto& task)
                                   {
-                                    job();
-                                    bench::doNotOptimizeAway(job);
+                                    task();
+                                    bench::doNotOptimizeAway(task);
                                   });
           });
   }
@@ -215,36 +215,36 @@ TEST_CASE("ring: execute (sequential)")
 TEST_CASE("ring: execute (parallel)")
 {
   bench::Bench b;
-  b.warmup(1).relative(true).batch(jobs_per_iteration).unit("job");
+  b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
-  using job_t = decltype([](){
+  using task_t = decltype([](){
     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
   b.title("ring: execute - parallel");
   {
     auto ring = std::vector<std_func_t>();
-    for (std::size_t i = 0; i < jobs_per_iteration; ++i)
+    for (std::size_t i = 0; i < tasks_per_iteration; ++i)
     {
-      ring.emplace_back(job_t{});
+      ring.emplace_back(task_t{});
     }
 
     b.run("std::vector<function>",
           [&]
           {
             std::for_each(std::execution::par, std::begin(ring), std::end(ring),
-                          [](auto& job)
+                          [](auto& task)
                           {
-                            job();
-                            bench::doNotOptimizeAway(job);
+                            task();
+                            bench::doNotOptimizeAway(task);
                           });
           });
   }
   {
-    auto ring = fho::ring_buffer<fho_func_t, jobs_per_iteration>();
+    auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.emplace_back(job_t{});
+      ring.emplace_back(task_t{});
     }
     auto range = ring.consume();
 
@@ -252,10 +252,10 @@ TEST_CASE("ring: execute (parallel)")
           [&]
           {
             std::for_each(std::execution::par, std::begin(range), std::end(range),
-                          [](auto& job)
+                          [](auto& task)
                           {
-                            job();
-                            bench::doNotOptimizeAway(job);
+                            task();
+                            bench::doNotOptimizeAway(task);
                           });
           });
   }

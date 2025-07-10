@@ -126,7 +126,7 @@ namespace fho
   /// for (auto& func : range) {
   ///     func();
   /// }
-  /// token.wait(); // Wait for the job to complete
+  /// token.wait(); // Wait for the task to complete
   /// ```
   template<typename T = fast_func_t, std::size_t Capacity = details::default_capacity,
            typename Allocator = aligned_allocator<ring_slot<T>, details::cache_line_size>>
