@@ -240,7 +240,7 @@ namespace fho
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
-      return Capacity;
+      return queue_t::max_size();
     }
 
   private:

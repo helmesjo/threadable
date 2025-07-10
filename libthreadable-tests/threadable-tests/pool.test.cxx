@@ -13,14 +13,16 @@ SCENARIO("pool: print system info")
 
 SCENARIO("pool: create/remove queues")
 {
-  auto pool = fho::pool();
+  auto pool = fho::pool<8>();
   GIVEN("queue is created")
   {
-    auto& queue  = pool.create();
-    int   called = 0;
+    auto& queue = pool.create();
+    static_assert(pool.max_size() == queue.max_size());
+
     WHEN("job is pushed")
     {
-      auto token = queue.emplace_back(
+      int  called = 0;
+      auto token  = queue.emplace_back(
         [&called]
         {
           ++called;
