@@ -150,7 +150,7 @@ SCENARIO("ring_buffer: push & claim")
       auto token  = fho::slot_token{};
 
       token = ring.emplace_back(
-        [&called](fho::slot_token& token)
+        [&called](fho::slot_token&)
         {
           ++called;
         });
