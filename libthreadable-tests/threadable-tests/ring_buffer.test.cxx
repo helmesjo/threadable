@@ -255,36 +255,74 @@ SCENARIO("ring_buffer: push & claim")
 
 SCENARIO("ring_buffer: custom type")
 {
-  struct my_type
+  GIVEN("a type that fits within one default slot buffer size")
   {
-    my_type(my_type const&)                    = default;
-    my_type(my_type&&)                         = default;
-    ~my_type()                                 = default;
-    auto operator=(my_type const&) -> my_type& = default;
-    auto operator=(my_type&&) -> my_type&      = default;
+    struct my_type
+    {
+      my_type(my_type const&)                    = default;
+      my_type(my_type&&)                         = default;
+      ~my_type()                                 = default;
+      auto operator=(my_type const&) -> my_type& = default;
+      auto operator=(my_type&&) -> my_type&      = default;
 
-    my_type(int x, float y) // NOLINT
-      : x(x)
-      , y(y)
-    {}
+      my_type(int x, float y) // NOLINT
+        : x(x)
+        , y(y)
+      {}
 
-    int   x;
-    float y;
+      int   x;
+      float y;
 
-    auto operator<=>(my_type const&) const noexcept = default;
-  };
+      auto operator<=>(my_type const&) const noexcept = default;
+    };
 
-  auto ring = fho::ring_buffer<my_type>{};
-  ring.emplace_back(1, 2.5f);
-  ring.emplace_back(my_type(3, 4.5f));
+    static_assert(sizeof(my_type) <= fho::details::slot_size);
 
-  REQUIRE(ring.size() == 2);
-  REQUIRE(ring.front() == my_type(1, 2.5f));
-  REQUIRE(ring.back() == my_type(3, 4.5f));
-  ring.pop();
-  REQUIRE(ring.front() == my_type(3, 4.5f));
-  ring.pop();
-  REQUIRE(ring.size() == 0);
+    THEN("slot size is exactly one cache line bytes")
+    {
+      auto ring    = fho::ring_buffer<my_type>{};
+      using slot_t = std::remove_cvref_t<decltype(*ring.begin().base())>;
+      static_assert(sizeof(slot_t) == fho::details::cache_line_size);
+
+      // basic sanity-tests:
+      ring.emplace_back(1, 2.5f);
+      ring.emplace_back(my_type(3, 4.5f));
+
+      REQUIRE(ring.size() == 2);
+      REQUIRE(ring.front() == my_type(1, 2.5f));
+      REQUIRE(ring.back() == my_type(3, 4.5f));
+      ring.pop();
+      REQUIRE(ring.front() == my_type(3, 4.5f));
+      ring.pop();
+      REQUIRE(ring.size() == 0);
+    }
+  }
+  GIVEN("a type that fits within two default slot buffer size")
+  {
+    struct my_too_big_type
+    {
+      std::array<std::byte, fho::details::slot_size * 2> padding = {};
+    };
+
+    static_assert(sizeof(my_too_big_type) == fho::details::slot_size * 2);
+
+    THEN("slot size is exactly two cache line bytes")
+    {
+      auto ring    = fho::ring_buffer<my_too_big_type>{};
+      using slot_t = std::remove_cvref_t<decltype(*ring.begin().base())>;
+      static_assert(sizeof(slot_t) == fho::details::cache_line_size * 2);
+
+      // basic sanity-tests:
+      ring.emplace_back();
+      ring.emplace_back(my_too_big_type());
+
+      REQUIRE(ring.size() == 2);
+      ring.pop();
+      REQUIRE(ring.size() == 1);
+      ring.pop();
+      REQUIRE(ring.size() == 0);
+    }
+  }
 }
 
 SCENARIO("ring_buffer: alignment")
