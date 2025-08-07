@@ -124,8 +124,10 @@ namespace fho
     void
     wait() const noexcept
     {
-      auto state = state_.load(std::memory_order_acquire);
-      state->wait<slot_state::active, true>(std::memory_order_acquire);
+      if (auto state = state_.load(std::memory_order_acquire)) [[likely]]
+      {
+        state->wait<slot_state::active, true>(std::memory_order_acquire);
+      }
     }
 
   private:
