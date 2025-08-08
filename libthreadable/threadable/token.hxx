@@ -83,11 +83,14 @@ namespace fho
     }
 
     /// @brief Rebinds the token to a different `ring_slot` state.
-    /// @details Updates the internal state pointer.
+    /// @details Clears token and re-assigns the associated state pointer.
     /// @param `state` A const reference to the new atomic state of the `ring_slot`.
     void
     rebind(atomic_state_t const& state) noexcept
     {
+      // @NOTE: Important to clear previous token state.
+      //        Default-initializing is more performant.
+      *this = {};
       state_.store(&state, std::memory_order_release);
     }
 
