@@ -146,7 +146,7 @@ SCENARIO("pool: submit tasks to global pool")
   {
     std::ranges::fill(executed, 0);
     auto tokens  = fho::token_group{};
-    auto counter = std::atomic_size_t{0};
+    auto counter = 0;
     for (std::size_t i = 0; i < nr_of_tasks; ++i)
     {
       tokens += fho::async<fho::execution::seq>(
@@ -184,6 +184,25 @@ SCENARIO("pool: submit tasks to global pool")
     }
     tokens.wait();
     THEN("all tasks are executed")
+    {
+      REQUIRE(counter.load() == nr_of_tasks);
+    }
+  }
+  GIVEN("a repeated task is submitted")
+  {
+    auto counter = 0;
+    auto token   = fho::slot_token{};
+    fho::repeat_async(token,
+                      [&counter, &token]() mutable
+                      {
+                        if (++counter >= nr_of_tasks)
+                        {
+                          token.cancel();
+                        }
+                      });
+    REQUIRE(!token.done());
+    token.wait();
+    THEN("it re-submits automatically")
     {
       REQUIRE(counter == nr_of_tasks);
     }

@@ -321,6 +321,46 @@ namespace fho
     return queue.emplace_back(token, FWD(func), FWD(args)...);
   }
 
+  /// @brief Submits a task to a queue with the specified policy, reusing a token, and re-submits it
+  /// until cancelled.
+  /// @details Submits a callable to a queue with the given execution policy, reusing an existing
+  /// `slot_token`. The task is automatically re-submitted after each execution unless the token is
+  /// cancelled (e.g., `token.cancelled() == true` once `token.cancel()` has been called by the
+  /// user).
+  /// @tparam Policy The execution policy for the queue, defaults to `execution::par`.
+  /// @tparam Args The types of the arguments.
+  /// @param token Reference to a reusable `slot_token` for tracking and cancellation.
+  /// @param func The callable to submit, invocable `args`.
+  /// @param args Additional arguments to pass to the callable.
+  /// @example
+  /// ```cpp
+  /// auto token = fho::slot_token{};
+  /// auto count = 0;
+  /// fho::repeat_async(token, [&count, &token]() {
+  ///     if (++count >= 5) token.cancel();
+  /// });
+  /// token.wait(); // Runs 5 times
+  /// // count == 5
+  /// ```
+  template<execution Policy = execution::par, typename... Args>
+  inline void
+  repeat_async(slot_token& token, std::invocable<Args...> auto&& func, Args&&... args) noexcept
+  {
+    static auto& queue = create(Policy);
+
+    auto lambda = [](auto&& self, fho::slot_token& token, decltype(func) func,
+                     decltype(args)... args) -> void
+    {
+      FWD(func)(FWD(args)...);
+
+      if (!token.cancelled())
+      {
+        queue.emplace_back(token, self, self, std::ref(token), FWD(func), FWD(args)...);
+      }
+    };
+    queue.emplace_back(token, lambda, lambda, std::ref(token), FWD(func), FWD(args)...);
+  }
+
   /// @brief Executes a range of callables with specified execution policy.
   /// @details Invokes each callable in the provided range with the given arguments.
   ///          Supports sequential (`seq`) or parallel (`par`) execution.
