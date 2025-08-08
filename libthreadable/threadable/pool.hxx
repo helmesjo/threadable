@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <concepts>
 #include <cstddef>
 #include <mutex>
 #include <random>
@@ -286,36 +287,35 @@ namespace fho
 
   /// @brief Submits a task to a queue with the specified policy in the default thread pool.
   /// @details Uses a static `ring_buffer` instance for each unique `Policy`, creating it if
-  /// necessary, and pushes the callable with its arguments into that queue.
+  /// necessary, and emplaces the callable with its arguments into that queue.
   /// @tparam Policy The execution policy for the queue, defaults to `execution::par`.
-  /// @tparam Func The type of the callable, must be copy-constructible and invocable.
+  /// @tparam Func The type of the callable, must be invocable with `args`.
   /// @tparam Args The types of the arguments.
   /// @param func The callable to submit.
   /// @param args The arguments to pass to the callable.
   /// @return A `slot_token` representing the submitted task.
-  template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
+  template<execution Policy = execution::par, typename... Args>
   [[nodiscard]] inline auto
-  async(Func&& func, Args&&... args) noexcept -> decltype(auto)
-    requires requires (details::queue_t q) { q.emplace_back(FWD(func), FWD(args)...); }
+  async(std::invocable<Args...> auto&& func, Args&&... args) noexcept -> decltype(auto)
   {
     static auto& queue = create(Policy);
     return queue.emplace_back(FWD(func), FWD(args)...);
   }
 
   /// @brief Submits a task to a queue with the specified policy, reusing a token.
-  /// @details Similar to the other `push` overload but reuses an existing `slot_token`, which is
-  /// passed as the first argument to the callable.
+  /// @details Similar to the other `async` overload but reuses an existing `slot_token`, which is
+  /// (optionally) passed by reference as the first argument to the callable.
   /// @tparam Policy The execution policy for the queue, defaults to `execution::par`.
-  /// @tparam Func The type of the callable, must be copy-constructible and invocable.
+  /// @tparam Func The type of the callable, must be invocable with `args`.
   /// @tparam Args The types of the arguments.
   /// @param func The callable to submit.
   /// @param token Reference to a reusable `slot_token`.
   /// @param args Additional arguments to pass to the callable.
   /// @return Reference to the reused `token`.
-  template<execution Policy = execution::par, std::copy_constructible Func, typename... Args>
+  template<execution Policy = execution::par, typename... Args>
   inline auto
-  async(Func&& func, slot_token& token, Args&&... args) noexcept -> decltype(auto)
-    requires requires (details::queue_t q) { q.emplace_back(FWD(func), FWD(args)...); }
+  async(slot_token& token, std::invocable<Args...> auto&& func,
+        Args&&... args) noexcept -> decltype(auto)
   {
     static auto& queue = create(Policy);
     return queue.emplace_back(token, FWD(func), FWD(args)...);
