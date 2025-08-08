@@ -29,7 +29,7 @@ namespace fho
 
   namespace details
   {
-    // NOTE: GCC/Clang incorrectly reports 64 bytes when targeting Apple Silicon.
+    // @NOTE: GCC/Clang incorrectly reports 64 bytes when targeting Apple Silicon.
 #if __cpp_lib_hardware_interference_size >= 201603 && !defined(__APPLE__)
     constexpr auto cache_line_size = std::hardware_destructive_interference_size;
 #else

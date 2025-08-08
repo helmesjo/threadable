@@ -122,7 +122,7 @@ namespace fho
 
     /// @brief Waits for the associated `ring_slot` to be processed.
     /// @details Blocks until the `ring_slot` state changes from `active`.
-    /// NOTE: The underlying state pointer might be rebound during waiting, for example, in
+    /// @note: The associated state pointer might be rebound during waiting, for example, in
     /// repeated/self-submitting tasks. This function will wait until it's fully processed.
     void
     wait() const noexcept

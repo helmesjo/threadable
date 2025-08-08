@@ -451,7 +451,7 @@ namespace fho
     alignas(details::cache_line_size) std::vector<slot_type, allocator_type> elems_{Capacity};
 
     /// @brief Pre-created to ensure iterator compatibility.
-    /// NOTE: MSVC in debug specifically does not like iterators from temporarily created &
+    /// @note MSVC in debug specifically does not like iterators from temporarily created &
     /// differing ranges
     const_ring_iterator_t const begin_ = const_ring_iterator_t(elems_.data(), 0);          // NOLINT
     const_ring_iterator_t const end_   = const_ring_iterator_t(elems_.data(), max_size()); // NOLINT

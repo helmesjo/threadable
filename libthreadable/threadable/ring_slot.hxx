@@ -141,8 +141,8 @@ namespace fho
 
       std::construct_at<T>(data(), FWD(args)...);
       state_.store(slot_state::active, std::memory_order_release);
-      // NOTE: Intentionally not notifying here since that is redundant (and costly),
-      //       it is designed to be waited on by checking state active -> inactive.
+      // @NOTE: Intentionally not notifying here since that is redundant (and costly),
+      //        it is designed to be waited on by checking state active -> inactive.
     }
 
     /// @brief Waits for the slot to become inactive.
