@@ -37,7 +37,7 @@ TEST_CASE("ring: emplace")
     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
   });
 
-  b.title("ring: emplace - sequential");
+  b.title("ring: emplace");
   {
     auto ring = std::vector<std_func_t>();
     ring.reserve(tasks_per_iteration);
@@ -52,7 +52,7 @@ TEST_CASE("ring: emplace")
             }
           });
   }
-  b.title("ring: emplace - sequential");
+  b.title("ring: emplace");
   {
     auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
 
