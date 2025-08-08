@@ -28,7 +28,7 @@ TEST_CASE("pool: task execution")
     bench::doNotOptimizeAway(val = fho::utils::do_non_trivial_work(val) );
   });
 
-  b.title("pool: push & wait");
+  b.title("pool: emplace & wait");
   {
     // too slow with large batch size, but also unaffected for
     // stats reported.

@@ -17,7 +17,8 @@ namespace fho
   };
 
   /// @brief Manages a single-threaded task execution system.
-  /// @details The `executor` class runs a single thread that processes tasks submitted via `submit`.
+  /// @details The `executor` class runs a single thread that processes tasks submitted via
+  /// `submit`.
   ///          tasks are stored in a `ring_buffer` and executed sequentially. Use `stop` to halt the
   ///          executor and clear pending tasks.
   /// @example
@@ -105,7 +106,7 @@ namespace fho
     }
 
     /// @brief Halts the executor and clears remaining tasks.
-    /// @details Sets the `stop_` flag and pushes a task to clear the `ring_buffer`, ensuring the
+    /// @details Sets the `stop_` flag and emplaces a task to clear the `ring_buffer`, ensuring the
     ///          thread exits its loop.
     void
     stop() noexcept

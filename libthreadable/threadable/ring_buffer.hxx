@@ -279,51 +279,6 @@ namespace fho
       return token;
     }
 
-    /// @brief Constructs a value into the buffer with an existing token, for callables that take a
-    ///        token.
-    /// @details Forwards the token to the callable by delegating to the primary `emplace_back`
-    ///          overload.
-    /// @param `token` Token to associate with the slot.
-    /// @param `val` Callable that takes a `slot_token&` and additional arguments.
-    /// @param `args` Additional arguments for the callable.
-    /// @return Reference to the provided token.
-    /// @note Thread-safe for multiple producers.
-    /// @example
-    /// ```cpp
-    /// fho::slot_token token;
-    /// buffer.emplace_back(token, [](slot_token& t) { std::cout << "Token: " << &t << "\n"; });
-    /// ```
-    template<typename U, typename... Args>
-      requires std::invocable<U, slot_token&, Args...>
-    auto
-    emplace_back(slot_token& token, U&& val, Args&&... args) noexcept -> slot_token&
-    {
-      return emplace_back(token, FWD(val), std::ref(token), FWD(args)...);
-    }
-
-    /// @brief Constructs a value into the buffer and returns a new token, for callables that take a
-    ///        token.
-    /// @details Creates a new token and forwards it to the callable by delegating to the primary
-    ///          `emplace_back` overload.
-    /// @param `val` Callable that takes a `slot_token&` and additional arguments.
-    /// @param `args` Additional arguments for the callable.
-    /// @return New token associated with the slot.
-    /// @note Thread-safe for multiple producers.
-    /// @example
-    /// ```cpp
-    /// auto token = buffer.emplace_back([](slot_token& t) { std::cout << "Token: " << &t << "\n";
-    /// });
-    /// ```
-    template<typename U, typename... Args>
-      requires std::invocable<U, slot_token&, Args...>
-    auto
-    emplace_back(U&& val, Args&&... args) noexcept -> slot_token
-    {
-      slot_token token;
-      (void)emplace_back(token, FWD(val), std::ref(token), FWD(args)...);
-      return token;
-    }
-
     /// @brief Accesses the first element in the ring buffer.
     /// @details Returns a const reference to the oldest element (at `tail_`). The buffer must not
     ///          be empty.

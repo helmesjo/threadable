@@ -19,7 +19,7 @@ SCENARIO("pool: create/remove queues")
     auto& queue = pool.create();
     static_assert(fho::pool<8>::max_size() == decltype(pool)::queue_t::max_size());
 
-    WHEN("task is pushed")
+    WHEN("task is emplaced")
     {
       int  called = 0;
       auto token  = queue.emplace_back(
@@ -44,7 +44,7 @@ SCENARIO("pool: create/remove queues")
     WHEN("added (without tasks) to pool")
     {
       auto& q = pool.add(std::move(queue), fho::execution::par);
-      AND_WHEN("task is pushed")
+      AND_WHEN("task is emplaced")
       {
         int  called = 0;
         auto token2 = q.emplace_back(
@@ -141,7 +141,7 @@ SCENARIO("pool: execution order")
 SCENARIO("pool: submit tasks to global pool")
 {
   constexpr auto nr_of_tasks = std::size_t{1024};
-  auto           executed   = std::vector<std::size_t>(nr_of_tasks, 0);
+  auto           executed    = std::vector<std::size_t>(nr_of_tasks, 0);
   GIVEN("a task is submitted to the sequential queue")
   {
     std::ranges::fill(executed, 0);

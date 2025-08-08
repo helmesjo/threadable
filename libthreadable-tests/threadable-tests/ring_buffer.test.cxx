@@ -23,7 +23,7 @@ namespace
   using func_t = fho::fast_func_t;
 }
 
-SCENARIO("ring_buffer: push & claim")
+SCENARIO("ring_buffer: emplace & consume")
 {
   GIVEN("ring with capacity 2 (max size 1)")
   {
@@ -60,7 +60,7 @@ SCENARIO("ring_buffer: push & claim")
       }
     }
 
-    WHEN("push 1")
+    WHEN("emplace 1")
     {
       thread_local int called    = 0;
       thread_local int destroyed = 0;
@@ -94,7 +94,7 @@ SCENARIO("ring_buffer: push & claim")
       AND_WHEN("cleared")
       {
         ring.clear();
-        THEN("it resets & destroys pushed tasks")
+        THEN("it resets & destroys emplaced tasks")
         {
           REQUIRE(ring.empty());
           REQUIRE(called == 0);
@@ -109,7 +109,7 @@ SCENARIO("ring_buffer: push & claim")
           called    = 0;
           destroyed = 0;
         }
-        THEN("it resets & destroys pushed tasks")
+        THEN("it resets & destroys emplaced tasks")
         {
           REQUIRE(called == 0);
           REQUIRE(destroyed == 1);
@@ -144,30 +144,9 @@ SCENARIO("ring_buffer: push & claim")
         }
       }
     }
-    WHEN("push callable with 'slot_token&' as first parameter")
+    WHEN("emplace")
     {
-      int  called = 0;
-      auto token  = fho::slot_token{};
-
-      token = ring.emplace_back(
-        [&called](fho::slot_token&)
-        {
-          ++called;
-        });
-      REQUIRE(ring.size() == 1);
-      THEN("the token will be passed when the task is executed")
-      {
-        token.cancel();
-        for (auto& task : ring.consume())
-        {
-          task();
-        }
-        REQUIRE(called == 1);
-      }
-    }
-    WHEN("push")
-    {
-      THEN("a callable that is larger than buffer size can be pushed")
+      THEN("a callable that is larger than buffer size can be emplaced")
       {
         // NOLINTBEGIN
         int called       = 0;
@@ -197,7 +176,7 @@ SCENARIO("ring_buffer: push & claim")
     auto ring = fho::ring_buffer<func_t, 128>{};
     REQUIRE(ring.size() == 0);
 
-    WHEN("push all")
+    WHEN("emplace all")
     {
       auto executed = std::vector<std::size_t>(ring.max_size(), 0);
       for (std::size_t i = 1; i <= ring.max_size(); ++i)
@@ -347,7 +326,7 @@ SCENARIO("ring_buffer: alignment")
 SCENARIO("ring_buffer: completion token")
 {
   auto ring = fho::ring_buffer{};
-  GIVEN("push task & store token")
+  GIVEN("emplace task & store token")
   {
     int  called = 0;
     auto token  = ring.emplace_back(
@@ -540,7 +519,7 @@ SCENARIO("ring_buffer: standard algorithms")
     REQUIRE(ring.size() == 0);
 
     auto tasksExecuted = std::atomic_size_t{0};
-    WHEN("push all")
+    WHEN("emplace all")
     {
       while (ring.size() < ring.max_size())
       {
