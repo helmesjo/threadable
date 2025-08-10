@@ -85,3 +85,58 @@ SCENARIO("async: submit tasks")
     }
   }
 }
+
+SCENARIO("execute: execute range of tasks")
+{
+  constexpr auto nr_of_tasks = std::size_t{1024};
+
+  auto executed = std::vector<std::size_t>(nr_of_tasks, 0);
+
+  auto task = [](decltype(executed)& executed, int& i, int& counter)
+  {
+    executed[i++] = counter++;
+    // simulate interruptions
+    if (i % 2 == 0)
+    {
+      std::this_thread::yield();
+    }
+  };
+  using task_t = decltype(task);
+
+  auto tasks = std::vector<task_t>(nr_of_tasks);
+
+  GIVEN("tasks are executed on the sequential queue")
+  {
+    std::ranges::fill(executed, 0);
+    auto tokens  = fho::token_group{};
+    auto counter = 0;
+    auto index   = 0;
+
+    fho::execute(fho::execution::seq, tasks, std::ref(executed), std::ref(index),
+                 std::ref(counter));
+
+    THEN("all tasks are executed in order")
+    {
+      REQUIRE(executed.size() == nr_of_tasks);
+      for (std::size_t i = 0; i < nr_of_tasks; ++i)
+      {
+        REQUIRE(executed[i] == i);
+      }
+    }
+  }
+  GIVEN("tasks are executed on the parallel queue")
+  {
+    std::ranges::fill(executed, 0);
+    auto tokens  = fho::token_group{};
+    auto counter = 0;
+    auto index   = 0;
+
+    fho::execute(fho::execution::par, tasks, std::ref(executed), std::ref(index),
+                 std::ref(counter));
+
+    THEN("all tasks are executed")
+    {
+      REQUIRE(executed.size() == nr_of_tasks);
+    }
+  }
+}
