@@ -71,7 +71,7 @@ namespace fho
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
       return work_.emplace_back(
-        [policy](std::ranges::range auto r) mutable
+        [policy](std::ranges::range auto r)
         {
           if constexpr (requires { r.begin().base()->wait(); })
           {
