@@ -119,6 +119,15 @@ namespace fho
         });
     }
 
+    /// @brief Checks if the executor is currently processing tasks.
+    /// @details Returns \`true\` if the executor is in the middle of
+    /// processing tasks, else \`false\` if it's waiting for new tasks.
+    auto
+    busy() const noexcept -> bool
+    {
+      return executing_.load(std::memory_order_acquire);
+    }
+
   private:
     /// @brief Internal thread loop to process tasks.
     /// @details Continuously consumes and executes tasks from the `ring_buffer` until stopped.
@@ -137,14 +146,17 @@ namespace fho
         }
         else
         {
+          executing_.store(false, std::memory_order_release);
           work_.wait();
+          executing_.store(true, std::memory_order_release);
         }
       }
     }
 
-    bool          stop_ = false;
-    ring_buffer<> work_;
-    std::thread   thread_;
+    std::atomic_bool executing_ = true;
+    bool             stop_      = false;
+    ring_buffer<>    work_;
+    std::thread      thread_;
   };
 }
 

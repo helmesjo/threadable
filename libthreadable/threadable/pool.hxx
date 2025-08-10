@@ -6,8 +6,8 @@
 
 #include <algorithm>
 #include <atomic>
-#include <concepts>
 #include <cstddef>
+#include <latch>
 #include <mutex>
 #include <random>
 #include <thread>
@@ -138,7 +138,34 @@ namespace fho
               }
             }
             while (executed);
-            std::this_thread::yield();
+
+            // Make an educated guess if it's unlikely there
+            // will be tasks to process immediately.
+            if (!std::ranges::any_of(executors_,
+                                     [](auto const& e) -> bool
+                                     {
+                                       return e->busy();
+                                     }) &&
+                !std::ranges::any_of(queues,
+                                     [](auto const& q) -> bool
+                                     {
+                                       return q->buffer.size() > 0;
+                                     }))
+            {
+              // We want to save CPU time while still being reactive, but
+              // `sleep()` is not precise enough (eg. min ~1ms on Windows)
+              // and `yield()` is too aggressive.
+              // Appoint random executor to wake us up.
+              // @TODO: Use proper load balancer.
+              auto  latch = std::latch{1};
+              auto& e     = *executors_[distr(gen)];
+              e.submit(
+                [&latch]
+                {
+                  latch.count_down();
+                });
+              latch.wait();
+            }
           }
         });
     }
