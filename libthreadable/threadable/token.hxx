@@ -21,6 +21,8 @@ namespace fho
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;
 
+  static constexpr auto null_state = atomic_state_t{slot_state::empty};
+
   /// @brief A token representing a claim on a `ring_slot` state.
   /// @details The `slot_token` class allows for monitoring and controlling the state of a
   /// `ring_slot`, including waiting for completion, cancelling, and checking if it's done or
@@ -91,12 +93,20 @@ namespace fho
     }
 
     /// @brief Rebinds the token to a different `ring_slot` state.
-    /// @details Clears token and re-assigns the associated state pointer.
+    /// @details Re-assigns the associated state pointer.
     /// @param `state` A const reference to the new atomic state of the `ring_slot`.
     void
     rebind(atomic_state_t const& state) noexcept
     {
       state_.store(&state, std::memory_order_release);
+    }
+
+    /// @brief Resets the token to a non-cancelled null-state.
+    /// @details This effectively default-initializes the token.
+    void
+    reset() noexcept
+    {
+      *this = {false, null_state};
     }
 
     /// @brief Checks if the associated `ring_slot` is done.
@@ -151,7 +161,7 @@ namespace fho
 
   private:
     std::atomic_bool                        cancelled_ = false;
-    std::atomic<fho::atomic_state_t const*> state_     = nullptr;
+    std::atomic<fho::atomic_state_t const*> state_     = &null_state;
   };
 
   static_assert(std::move_constructible<slot_token>);
