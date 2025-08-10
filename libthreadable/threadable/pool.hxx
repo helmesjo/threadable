@@ -256,13 +256,30 @@ namespace fho
   namespace details
   {
     using pool_t  = fho::pool<>;
-    using queue_t = pool_t::queue_t;
+    using queue_t = typename pool_t::queue_t;
 
-    /// @brief External linkage (since C++20) to make sure one and the same
-    ///        instance is used regardless if linking static or shared.
-    inline std::unique_ptr<pool_t> default_pool = nullptr; // NOLINT
-    /// @brief Lazy-initializes `default_pool`.
-    extern auto pool() -> pool_t&;
+    /// @brief Returns a reference to the default thread pool instance.
+    /// @details Provides a thread pool initialized lazily on first call using `std::call_once` for
+    /// thread safety. The pool is constructed with default values and cleaned up via `std::atexit`,
+    /// resetting the pointer at program exit.
+    /// @return Reference to the default `pool<>` instance.
+    inline static auto
+    default_pool() -> pool_t&
+    {
+      static auto default_pool = std::unique_ptr<pool_t>{}; // NOLINT
+      static auto once         = std::once_flag{};
+      std::call_once(once,
+                     []
+                     {
+                       default_pool = std::make_unique<fho::details::pool_t>();
+                       std::atexit(
+                         []
+                         {
+                           default_pool = nullptr;
+                         });
+                     });
+      return *default_pool;
+    }
   }
 
   /// @brief Creates a new task queue in the default thread pool.
@@ -273,7 +290,7 @@ namespace fho
   [[nodiscard]] inline auto
   create(execution policy = execution::par) noexcept -> decltype(auto)
   {
-    return details::pool().create(policy);
+    return details::default_pool().create(policy);
   }
 
   /// @brief Removes a queue from the default thread pool.
@@ -283,7 +300,7 @@ namespace fho
   inline auto
   remove(details::queue_t&& queue) noexcept -> decltype(auto)
   {
-    return details::pool().remove(std::move(queue));
+    return details::default_pool().remove(std::move(queue));
   }
 }
 
