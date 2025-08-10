@@ -96,9 +96,7 @@ namespace fho
     void
     rebind(atomic_state_t const& state) noexcept
     {
-      // @NOTE: Important to clear previous token state,
-      //        eg. that it's no longer cancelled.
-      *this = {false, state};
+      state_.store(&state, std::memory_order_release);
     }
 
     /// @brief Checks if the associated `ring_slot` is done.
@@ -135,7 +133,7 @@ namespace fho
     wait() const noexcept
     {
       auto state = state_.load(std::memory_order_acquire);
-      while (true)
+      while (state)
       {
         state->wait<slot_state::active, true>(std::memory_order_acquire);
         // Re-fetch to handle rebinding. If it
