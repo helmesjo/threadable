@@ -57,7 +57,7 @@ SCENARIO("async: submit tasks")
   }
   GIVEN("a repeated task is submitted")
   {
-    auto counter = 0;
+    auto counter = std::size_t{0};
     auto token   = fho::slot_token{};
     fho::repeat_async<fho::execution::seq>(
       token,
@@ -92,7 +92,7 @@ SCENARIO("execute: execute range of tasks")
 
   auto executed = std::vector<std::size_t>(nr_of_tasks, 0);
 
-  auto task = [](decltype(executed)& executed, int& i, int& counter)
+  auto task = [](decltype(executed)& executed, std::size_t& i, size_t& counter)
   {
     executed[i++] = counter++;
     // simulate interruptions
@@ -109,8 +109,8 @@ SCENARIO("execute: execute range of tasks")
   {
     std::ranges::fill(executed, 0);
     auto tokens  = fho::token_group{};
-    auto counter = 0;
-    auto index   = 0;
+    auto counter = std::size_t{0};
+    auto index   = std::size_t{0};
 
     fho::execute(fho::execution::seq, tasks, std::ref(executed), std::ref(index),
                  std::ref(counter));
@@ -128,8 +128,8 @@ SCENARIO("execute: execute range of tasks")
   {
     std::ranges::fill(executed, 0);
     auto tokens  = fho::token_group{};
-    auto counter = 0;
-    auto index   = 0;
+    auto counter = std::size_t{0};
+    auto index   = std::size_t{0};
 
     fho::execute(fho::execution::par, tasks, std::ref(executed), std::ref(index),
                  std::ref(counter));
