@@ -52,7 +52,7 @@ namespace fho
   /// @example
   /// ```cpp
   /// enum class Flags : std::uint8_t { None = 0, Bit0 = 1, Bit1 = 2 };
-  /// fho::atomic_bitfield<Flags> flag{Flags::None};
+  /// auto flag = fho::atomic_bitfield<Flags>{Flags::None};
   /// flag.set<Flags::Bit0, true>(); // Set Bit0
   /// if (flag.test<Flags::Bit0>()) { /* Bit0 is set */ }
   /// ```
@@ -190,7 +190,7 @@ namespace fho
     /// @param orders Memory orders for the load operation (e.g., `std::memory_order_seq_cst`).
     /// @example
     /// ```cpp
-    /// fho::atomic_bitfield<std::uint8_t> flag{0b111};
+    /// auto flag = fho::atomic_bitfield<std::uint8_t>{0b111};
     /// flag.wait<0b111, true>(); // Waits until all bits are unset (0b000)
     /// ```
     template<T Mask, bool Old>

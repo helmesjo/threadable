@@ -101,7 +101,7 @@ namespace fho
     done() const noexcept -> bool
     {
       auto state = state_.load(std::memory_order_acquire);
-      return !state || !state->test<slot_state::active>();
+      return !state || !state->test<slot_state::active>(std::memory_order_acquire);
     }
 
     /// @brief Cancels the associated `ring_slot`.
@@ -127,19 +127,29 @@ namespace fho
     void
     wait() const noexcept
     {
-      while (auto state = state_.load(std::memory_order_acquire)) [[likely]]
+      while (!done())
       {
+        auto state = state_.load(std::memory_order_acquire);
         state->wait<slot_state::active, true>(std::memory_order_acquire);
-        if (state_.load(std::memory_order_acquire) == state)
+        if (state = state_.load(std::memory_order_acquire); state)
         {
-          break;
+          // Re-fetch to handle rebinding
+          state = state_.load(std::memory_order_acquire);
         }
+      }
+      // @TODO: This is to work around a bug where above
+      //        sporadically returns even though the repeated
+      //        task isn't done yet. Trying to figure out why
+      //        this can happen.
+      if (!done())
+      {
+        wait();
       }
     }
 
   private:
-    std::atomic_bool                   cancelled_ = false;
-    std::atomic<atomic_state_t const*> state_     = nullptr;
+    std::atomic_bool                        cancelled_ = false;
+    std::atomic<fho::atomic_state_t const*> state_     = nullptr;
   };
 
   static_assert(std::move_constructible<slot_token>);
