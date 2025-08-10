@@ -4,7 +4,6 @@
 #include <threadable/pool.hxx>
 
 #include <concepts>
-#include <cstddef>
 
 #ifdef _MSC_VER
   #pragma warning(push)
@@ -57,6 +56,8 @@ namespace fho
   /// `slot_token`. The task is automatically re-submitted after each execution unless the token is
   /// cancelled (e.g., `token.cancelled() == true` once `token.cancel()` has been called by the
   /// user).
+  /// @note The token will be rebound before the active task (that indirectly requeues itself)
+  /// completes. This is important to make `slot_token::wait()` reliable.
   /// @tparam Policy The execution policy for the queue, defaults to `execution::par`.
   /// @tparam Args The types of the arguments.
   /// @param token Reference to a reusable `slot_token` for tracking and cancellation.

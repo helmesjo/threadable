@@ -51,6 +51,14 @@ namespace fho
     /// @brief Constructor from atomic state.
     /// @details Initializes the token with the given `ring_slot` state.
     /// @param `state` A reference to the atomic state of the `ring_slot`.
+    slot_token(bool cancelled, atomic_state_t const& state)
+      : cancelled_(cancelled)
+      , state_(&state)
+    {}
+
+    /// @brief Constructor from atomic state.
+    /// @details Initializes the token with the given `ring_slot` state.
+    /// @param `state` A reference to the atomic state of the `ring_slot`.
     slot_token(atomic_state_t& state)
       : state_(&state)
     {}
@@ -88,10 +96,9 @@ namespace fho
     void
     rebind(atomic_state_t const& state) noexcept
     {
-      // @NOTE: Important to clear previous token state.
-      //        Default-initializing is more performant.
-      *this = {};
-      state_.store(&state, std::memory_order_release);
+      // @NOTE: Important to clear previous token state,
+      //        eg. that it's no longer cancelled.
+      *this = {false, state};
     }
 
     /// @brief Checks if the associated `ring_slot` is done.
@@ -122,28 +129,25 @@ namespace fho
 
     /// @brief Waits for the associated `ring_slot` to be processed.
     /// @details Blocks until the `ring_slot` state changes from `active`.
-    /// @note: The associated state pointer might be rebound during waiting, for example, in
-    /// repeated/self-submitting tasks. This function will wait until it's fully processed.
+    /// @note: The associated state pointer might be rebound during waiting, for example,
+    /// in repeated/self-submitting tasks. This will wait until the chain is fully processed.
     void
     wait() const noexcept
     {
-      while (!done())
+      auto state = state_.load(std::memory_order_acquire);
+      while (true)
       {
-        auto state = state_.load(std::memory_order_acquire);
         state->wait<slot_state::active, true>(std::memory_order_acquire);
-        if (state = state_.load(std::memory_order_acquire); state)
+        // Re-fetch to handle rebinding. If it
+        // stayed same, then it wasn't rebound.
+        if (auto next = state_.load(std::memory_order_acquire); next == state) [[likely]]
         {
-          // Re-fetch to handle rebinding
-          state = state_.load(std::memory_order_acquire);
+          break;
         }
-      }
-      // @TODO: This is to work around a bug where above
-      //        sporadically returns even though the repeated
-      //        task isn't done yet. Trying to figure out why
-      //        this can happen.
-      if (!done())
-      {
-        wait();
+        else [[unlikely]]
+        {
+          state = next;
+        }
       }
     }
 
