@@ -1,6 +1,6 @@
 : 1
 name: libthreadable
-version: 0.2.1-a.0.z
+version: 0.2.1
 type: lib
 language: c++
 project: threadable
