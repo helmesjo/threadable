@@ -6,8 +6,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
-#include <latch>
 #include <mutex>
 #include <random>
 #include <thread>
@@ -83,11 +83,15 @@ namespace fho
       scheduler_ = std::thread(
         [this, threads]
         {
-          auto const mt      = threads > 0;
-          auto       rd      = std::random_device{};
-          auto       gen     = std::mt19937(rd());
-          auto       distr   = std::uniform_int_distribution<std::size_t>(0, mt ? threads - 1 : 0);
-          constexpr auto cap = std::size_t{4096};
+          using namespace std::chrono_literals;
+          using hpclock_t = std::chrono::high_resolution_clock;
+
+          auto const mt       = threads > 0;
+          auto       rd       = std::random_device{};
+          auto       gen      = std::mt19937(rd());
+          auto       distr    = std::uniform_int_distribution<std::size_t>(0, mt ? threads - 1 : 0);
+          constexpr auto cap  = std::size_t{4096};
+          auto           last = hpclock_t::time_point{};
 
           while (true)
           {
@@ -134,37 +138,41 @@ namespace fho
                     }
                   }
                   executed = true;
+                  last     = hpclock_t::now();
                 }
               }
             }
             while (executed);
 
-            // Make an educated guess if it's unlikely there
-            // will be tasks to process immediately.
-            if (!std::ranges::any_of(executors_,
-                                     [](auto const& e) -> bool
-                                     {
-                                       return e->busy();
-                                     }) &&
-                !std::ranges::any_of(queues,
-                                     [](auto const& q) -> bool
-                                     {
-                                       return q->buffer.size() > 0;
-                                     }))
+            // We want to save CPU time while still being reactive, but
+            // `sleep()` is not precise enough (eg. min ~1ms on Windows)
+            // and `yield()` is too aggressive.
+            // Make an educated guess if it's unlikely there will be
+            // tasks to process immediately, and only sleep if so.
+            // Prefer `yield()` during semi-high load.
+            if (hpclock_t::now() - last > 5ms) [[unlikely]]
             {
-              // We want to save CPU time while still being reactive, but
-              // `sleep()` is not precise enough (eg. min ~1ms on Windows)
-              // and `yield()` is too aggressive.
-              // Appoint random executor to wake us up.
-              // @TODO: Use proper load balancer.
-              auto  latch = std::latch{1};
-              auto& e     = *executors_[distr(gen)];
-              e.submit(
-                [&latch]
+              if (!std::ranges::any_of(executors_,
+                                       [](auto const& e) -> bool
+                                       {
+                                         return e->busy();
+                                       }) &&
+                  !std::ranges::any_of(queues,
+                                       [](auto const& q) -> bool
+                                       {
+                                         return q->buffer.size() > 0;
+                                       })) [[unlikely]]
+              {
+                if (hpclock_t::now() - last < 10ms) [[likely]]
                 {
-                  latch.count_down();
-                });
-              latch.wait();
+                  std::this_thread::yield();
+                }
+                else [[unlikely]]
+                {
+                  std::this_thread::sleep_for(1us);
+                  last = hpclock_t::now();
+                }
+              }
             }
           }
         });
