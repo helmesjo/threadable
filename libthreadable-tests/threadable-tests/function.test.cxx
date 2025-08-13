@@ -285,6 +285,99 @@ SCENARIO("function_buffer")
       }
     }
   }
+#if 0
+  WHEN("deep-copy constructed")
+  {
+    struct type
+    {
+      type(type&&) = delete;
+
+      type(int v)
+        : val(new int{})
+      {
+        *val = v;
+      }
+
+      type(type const& that)
+        : val(new int(*that.val))
+      {}
+
+      ~type()
+      {
+        // make sure we modify the memory address
+        // so the "right" values doesn't stick around.
+        *val = 8;
+        delete val;
+        val = nullptr;
+      }
+
+      auto operator=(type const&) -> type& = delete;
+      auto operator=(type&&) -> type&      = delete;
+
+      int* val = nullptr;
+    };
+
+    // Force dynamic allocation (to fit callable) by making
+    // the buffer too small for anything but a pointer.
+    using func_dyn_t = fho::function<sizeof(std::intptr_t)>;
+
+    // this order and combination of things is
+    // important to trigger the obscure case,
+    // so leave as-is.
+    auto func = fho::function();
+    func      = [obj = type{5}]
+    {
+      REQUIRE(*obj.val == 5);
+    };
+    auto funcDyn = func_dyn_t(func);
+    func         = [func = funcDyn]() mutable
+    {
+      func();
+    };
+    THEN("it's invocable after source object has been destroyed")
+    {
+      funcDyn.reset();
+      func();
+    }
+  }
+  WHEN("constructed with callable capturing function_dyn")
+  {
+    // Force dynamic allocation (to fit callable) by making
+    // the buffer too small for anything but a pointer.
+    using func_dyn_t = fho::function<sizeof(std::intptr_t)>;
+
+    int  called = 0;
+    auto func1  = func_dyn_t(
+      [&called]
+      {
+        ++called;
+      });
+    auto func2 = fho::function(
+      [func1]() mutable
+      {
+        func1();
+      });
+    THEN("it can be invoked")
+    {
+      func2();
+      REQUIRE(called == 1);
+    }
+    AND_WHEN("a copy is constructed")
+    {
+      auto func2Copy = func2;
+      THEN("it can be invoked")
+      {
+        func2Copy();
+        REQUIRE(called == 1);
+      }
+      THEN("both can be cleared")
+      {
+        func2     = {};
+        func2Copy = {};
+      }
+    }
+  }
+#endif
 }
 
 SCENARIO("function: assign/reset")
