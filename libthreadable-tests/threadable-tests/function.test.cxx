@@ -1,7 +1,6 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/function.hxx>
 
-#include <memory>
 #include <type_traits>
 
 namespace
@@ -25,9 +24,6 @@ SCENARIO("function: type traits")
 
   static_assert(is_function_v<function<>>);
   static_assert(is_function_v<function<> const&>);
-  static_assert(!is_function_v<function_dyn>);
-  static_assert(!is_function_dyn_v<function<> const&>);
-  static_assert(is_function_dyn_v<function_dyn>);
   static_assert(!is_function_v<decltype([] {})>);
   static_assert(required_buffer_size_v<function<56>> == 56);
   constexpr auto lambda = [] {};
@@ -291,176 +287,6 @@ SCENARIO("function_buffer")
   }
 }
 
-SCENARIO("function_dyn")
-{
-  WHEN("constructed with callable")
-  {
-    int  called = 0;
-    auto func   = fho::function_dyn(
-      [&called]
-      {
-        ++called;
-      });
-    REQUIRE(func);
-    THEN("it can be invoked")
-    {
-      func();
-      REQUIRE(called == 1);
-    }
-  }
-  WHEN("constructed with fho::function_buffer")
-  {
-    int  called = 0;
-    auto func   = fho::function_dyn(fho::function_buffer(
-      [&called]
-      {
-        ++called;
-      }));
-    REQUIRE(func);
-    THEN("it can be invoked")
-    {
-      func();
-      REQUIRE(called == 1);
-    }
-  }
-  WHEN("constructed with fho::function")
-  {
-    int  called = 0;
-    auto func   = fho::function_dyn(fho::function(
-      [&called]
-      {
-        ++called;
-      }));
-    REQUIRE(func);
-    THEN("it can be invoked")
-    {
-      func();
-      REQUIRE(called == 1);
-    }
-  }
-  WHEN("copy-constructed")
-  {
-    int  called = 0;
-    auto func1  = fho::function_dyn(
-      [&called]
-      {
-        ++called;
-      });
-    auto func2 = fho::function_dyn(func1);
-    REQUIRE(func1);
-    REQUIRE(func2);
-    THEN("copy can be invoked")
-    {
-      func2();
-      REQUIRE(called == 1);
-    }
-    THEN("original can be invoked")
-    {
-      func1();
-      REQUIRE(called == 1);
-    }
-  }
-  WHEN("move-constructed")
-  {
-    int  called = 0;
-    auto func1  = fho::function_dyn(
-      [&called]
-      {
-        ++called;
-      });
-    auto func2 = fho::function_dyn(std::move(func1));
-    REQUIRE(func2);
-    THEN("it can be invoked")
-    {
-      func2();
-      REQUIRE(called == 1);
-    }
-  }
-  WHEN("deep-copy constructed")
-  {
-    struct type
-    {
-      type(type&&) = delete;
-
-      type(int v)
-        : val(new int{})
-      {
-        *val = v;
-      }
-
-      type(type const& that)
-        : val(new int(*that.val))
-      {}
-
-      ~type()
-      {
-        // make sure we modify the memory address
-        // so the "right" values doesn't stick around.
-        *val = 8;
-        delete val;
-        val = nullptr;
-      }
-
-      auto operator=(type const&) -> type& = delete;
-      auto operator=(type&&) -> type&      = delete;
-
-      int* val = nullptr;
-    };
-
-    // this order and combination of things is
-    // important to trigger the obscure case,
-    // so leave as-is.
-    auto func = fho::function();
-    func      = [obj = type{5}]
-    {
-      REQUIRE(*obj.val == 5);
-    };
-    auto funcDyn = fho::function_dyn(func);
-    func         = [func = funcDyn]() mutable
-    {
-      func();
-    };
-    THEN("it's invocable after source object has been destroyed")
-    {
-      funcDyn.reset();
-      func();
-    }
-  }
-  WHEN("constructed with callable capturing function_dyn")
-  {
-    int  called = 0;
-    auto func1  = fho::function_dyn(
-      [&called]
-      {
-        ++called;
-      });
-    auto func2 = fho::function(
-      [func1]() mutable
-      {
-        func1();
-      });
-    THEN("it can be invoked")
-    {
-      func2();
-      REQUIRE(called == 1);
-    }
-    AND_WHEN("a copy is constructed")
-    {
-      auto func2Copy = func2;
-      THEN("it can be invoked")
-      {
-        func2Copy();
-        REQUIRE(called == 1);
-      }
-      THEN("both can be cleared")
-      {
-        func2     = {};
-        func2Copy = {};
-      }
-    }
-  }
-}
-
 SCENARIO("function: assign/reset")
 {
   auto func = fho::function{};
@@ -560,7 +386,6 @@ SCENARIO("function: assign/reset")
 
       // add test to verify func = std::move(func) doesn't first reset "self"
       // dito for func = func which should be no-op.A
-      // dito for function_dyn
 
       static_assert(!std::is_trivially_copyable_v<type>);
       static_assert(std::copy_constructible<type>);
@@ -761,76 +586,5 @@ SCENARIO("function: Conversion")
         }
       }
     }
-    WHEN("function is converted to function_dyn")
-    {
-      fho::function_dyn funcDyn = func;
-
-      static_assert(sizeof(funcDyn) == sizeof(std::unique_ptr<std::byte*>));
-      REQUIRE(funcDyn);
-      REQUIRE(funcDyn.size() == func.size());
-
-      WHEN("it is invoked")
-      {
-        called = 0;
-        funcDyn();
-        THEN("callable is invoked")
-        {
-          REQUIRE(called == 1);
-        }
-      }
-    }
-  }
-}
-
-SCENARIO("function_dyn")
-{
-  GIVEN("callable is assigned")
-  {
-    thread_local int called    = 0;
-    thread_local int destroyed = 0;
-
-    struct type
-    {
-      type()            = default;
-      type(type const&) = default;
-      type(type&&)      = default;
-
-      ~type()
-      {
-        ++destroyed;
-      }
-
-      auto operator=(type const&) -> type& = delete;
-      auto operator=(type&&) -> type&      = delete;
-
-      void
-      operator()()
-      {
-        ++called;
-      }
-    };
-
-    auto funcDyn = fho::function_dyn(type{});
-
-    WHEN("it is invoked")
-    {
-      funcDyn();
-      THEN("callable is invoked")
-      {
-        REQUIRE(called == 1);
-      }
-    }
-    WHEN("function is reset")
-    {
-      destroyed = 0;
-      funcDyn.reset();
-
-      THEN("destructor is invoked")
-      {
-        REQUIRE(destroyed == 1);
-      }
-    }
-    called    = 0;
-    destroyed = 0;
   }
 }

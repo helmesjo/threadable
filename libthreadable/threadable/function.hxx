@@ -13,7 +13,6 @@
 #include <limits>
 #include <memory>
 #include <new>
-#include <span>
 #include <type_traits>
 #include <utility>
 #include <version>
@@ -24,8 +23,6 @@ namespace fho
 {
   template<std::size_t>
   class function;
-
-  class function_dyn;
 
   namespace details
   {
@@ -231,8 +228,8 @@ namespace fho
     };
 
     template<typename Func, typename... Args>
-    deferred_callable(Func&& callable, Args&&... args)
-      -> deferred_callable<decltype(callable), decltype(args)...>;
+    deferred_callable(Func&& callable,
+                      Args&&... args) -> deferred_callable<decltype(callable), decltype(args)...>;
 
     template<typename T>
     struct is_function : std::false_type
@@ -240,14 +237,6 @@ namespace fho
 
     template<std::size_t Size>
     struct is_function<function<Size>> : std::true_type
-    {};
-
-    template<typename T>
-    struct is_function_dyn : std::false_type
-    {};
-
-    template<>
-    struct is_function_dyn<function_dyn> : std::true_type
     {};
 
     template<typename Func, typename... Args>
@@ -268,12 +257,6 @@ namespace fho
   template<typename Func>
   constexpr bool is_function_v = details::is_function<std::remove_cvref_t<Func>>::value;
 
-  /// @brief Checks if a type is `fho::function_dyn`.
-  /// @details Evaluates to `true` if the type is `fho::function_dyn`, `false` otherwise.
-  /// @tparam `Func` The type to check.
-  template<typename Func>
-  constexpr bool is_function_dyn_v = details::is_function_dyn<std::remove_cvref_t<Func>>::value;
-
   /// @brief Computes an estimated buffer size required to store a callable and its arguments.
   /// @details For a callable `Func` with arguments `Args...`, estimates the size as the sum of
   /// metadata size, `sizeof(Func)`, and the sizes of all arguments. For `fho::function<Size>`,
@@ -287,8 +270,8 @@ namespace fho
   /// @brief A fixed-size buffer for storing callable objects.
   /// @details The `function_buffer` class provides a way to store callable objects (such as
   /// functions, lambdas, or functors) within a fixed-size buffer. It is designed to be used as a
-  /// building block for higher-level function objects like `fho::function` and
-  /// `fho::function_dyn`. The buffer size is specified at compile time, and the class handles
+  /// building block for higher-level function objects like `fho::function`. The buffer size is
+  /// specified at compile time, and the class handles
   /// the storage, copying, moving, and destruction of the callable objects. If the callable and
   /// its bound arguments fit within the buffer size, they are stored directly in the buffer.
   /// Otherwise, a small lambda that captures a `std::shared_ptr` to the callable is stored in
@@ -298,7 +281,7 @@ namespace fho
   /// auto buffer = fho::function_buffer<128>{};
   /// auto value = 10;
   /// buffer.emplace([](int val) { cout << format("val: {}\n", val); }, value);
-  /// // Typically used through `fho::function` or `fho::function_dyn`
+  /// // Typically used through `fho::function`
   /// details::invoke(buffer.data());
   /// ```
   template<std::size_t Size>
@@ -585,213 +568,6 @@ namespace fho
 
   static_assert(sizeof(function_buffer<details::cache_line_size>) == details::cache_line_size);
 
-  /// @brief A dynamic function wrapper that can store callables of any size.
-  /// @details The `function_dyn` class is designed to store and invoke callable objects of
-  /// arbitrary size by dynamically allocating memory on the heap. It is suitable for scenarios
-  /// where the size of the callable is unknown or exceeds the fixed buffer size of
-  /// `fho::function`. It provides similar functionality to `std::function` but with custom
-  /// optimizations and constraints.
-  /// @example
-  /// ```cpp
-  /// auto lambda = []() { cout << "Hello, World!\n"; };
-  /// auto func = fho::function_dyn(lambda);
-  /// func(); // Invokes the lambda
-  /// ```
-  class function_dyn
-  {
-  public:
-    explicit function_dyn() noexcept = default;
-
-    /// @brief Copy constructor.
-    /// @details Creates a new `function_dyn` by copying the contents of another `function_dyn`.
-    /// This involves dynamically allocating new memory and copying the stored callable.
-    /// @param `that` The `function_dyn` to copy from.
-    function_dyn(function_dyn const& that)
-    {
-      copy_buffer({that.buffer_, that.size()});
-    }
-
-    /// @brief Move constructor.
-    /// @details Creates a new `function_dyn` by moving the contents from another
-    /// `function_dyn`. This transfers ownership of the dynamically allocated buffer.
-    /// @param `that` The `function_dyn` to move from.
-    explicit function_dyn(function_dyn&& that) noexcept
-      : buffer_(std::move(that.buffer_))
-    {
-      that.buffer_ = nullptr;
-    }
-
-    /// @brief Constructor that takes a `function_buffer`.
-    /// @details Initializes the `function_dyn` with the contents of a `function_buffer`,
-    /// copying the stored callable.
-    /// @tparam `Size` The size of the `function_buffer`.
-    /// @param `buffer` The `function_buffer` to copy from.
-    template<std::size_t Size>
-    function_dyn(function_buffer<Size> const& buffer)
-    {
-      copy_buffer({buffer.data(), buffer.size()});
-    }
-
-    /// @brief Constructor that takes a `function<Size>`.
-    /// @details Initializes the `function_dyn` with the contents of a `function<Size>`,
-    /// copying the stored callable.
-    /// @tparam `Size` The size of the `function`.
-    /// @param `func` The `function<Size>` to copy from.
-    template<std::size_t Size>
-    function_dyn(function<Size> const& func) noexcept
-      : function_dyn(func.buffer())
-    {}
-
-    /// @brief Constructor that takes a callable.
-    /// @details Initializes the `function_dyn` with the provided callable, storing it
-    /// dynamically.
-    /// @tparam `Func` The type of the callable.
-    /// @param `callable` The callable to store.
-    /// @requires `std::invocable<Func&&>` and not `fho::is_function<Func>` and not
-    /// `fho::is_function_dyn<Func>`
-    template<std::invocable Func>
-      requires (!is_function_v<Func> && !is_function_dyn_v<Func>)
-    explicit function_dyn(Func&& callable) noexcept
-      : function_dyn(function_buffer(FWD(callable)))
-    {}
-
-    /// @brief Destructor.
-    /// @details Frees the dynamically allocated memory and destroys the stored callable if one
-    /// exists.
-    ~function_dyn()
-    {
-      reset();
-    }
-
-    /// @brief Copy assignment.
-    /// @details Assigns the contents of another `function_dyn` to this one, copying the stored
-    /// callable.
-    /// @param `that` The `function_dyn` to copy from.
-    auto
-    operator=(function_dyn const& that) -> function_dyn&
-    {
-      if (this != &that) [[likely]]
-      {
-        copy_buffer({that.buffer_, that.size()});
-      }
-      return *this;
-    }
-
-    /// @brief Move assignment.
-    /// @details Moves the contents from another `function_dyn` to this one, transferring
-    /// ownership.
-    /// @param `that` The `function_dyn` to move from.
-    auto
-    operator=(function_dyn&& that) noexcept -> function_dyn&
-    {
-      if (this != &that) [[likely]]
-      {
-        buffer_      = std::move(that.buffer_);
-        that.buffer_ = nullptr;
-      }
-      return *this;
-    }
-
-    /// @brief Assigns a `function_buffer` to this `function_dyn`.
-    /// @details Copies the contents of the `function_buffer` into this `function_dyn`.
-    /// @tparam `Size` The size of the `function_buffer`
-    /// @param `buffer` The `function_buffer` to copy from.
-    template<std::size_t Size>
-    auto
-    operator=(function_buffer<Size> const& buffer) -> function_dyn&
-    {
-      copy_buffer({buffer.data(), buffer.size()});
-      return *this;
-    }
-
-    /// @brief Assigns a `function<Size>` to this `function_dyn`.
-    /// @details Copies the contents of the `function<Size>` into this `function_dyn`.
-    /// @tparam `Size` The size of the `function`
-    /// @param `func` The `function<Size>` to copy from.
-    template<std::size_t Size>
-    auto
-    operator=(function<Size> const& func) noexcept -> function_dyn&
-    {
-      *this = func.buffer();
-      return *this;
-    }
-
-    /// @brief Assigns a callable to this `function_dyn`.
-    /// @details Stores the callable dynamically.
-    /// @tparam `Func` The type of the callable.
-    /// @param `callable` The callable to store.
-    /// @requires `std::invocable<Func&&>` and not `fho::is_function<Func>` and not
-    /// `fho::is_function_dyn<Func>`
-    template<std::invocable Func>
-      requires (!is_function_v<Func> && !is_function_dyn_v<Func>)
-    auto
-    operator=(Func&& callable) noexcept -> function_dyn&
-    {
-      *this = function_buffer(FWD(callable));
-      return *this;
-    }
-
-    /// @brief Resets this `function_dyn` to an empty state.
-    /// @details Destroys the stored callable and frees the allocated memory.
-    auto
-    operator=(std::nullptr_t) -> function_dyn&
-    {
-      reset();
-      return *this;
-    }
-
-    /// @brief Invokes the stored callable.
-    /// @details Calls the stored callable with no arguments.
-    inline void
-    operator()()
-    {
-      details::invoke(buffer_);
-    }
-
-    /// @brief Conversion to bool.
-    /// @details Returns `true` if a callable is stored, `false` otherwise.
-    inline
-    operator bool() const noexcept
-    {
-      return size() != 0;
-    }
-
-    /// @brief Gets the size of the stored callable.
-    /// @details Returns the number of bytes used by the stored callable, or `0` if none.
-    [[nodiscard]] inline auto
-    size() const noexcept -> std::uint8_t
-    {
-      return buffer_ ? details::size(buffer_) : 0;
-    }
-
-    /// @brief Resets this `function_dyn`.
-    /// @details Destroys the stored callable and frees the allocated memory.
-    inline void
-    reset() noexcept
-    {
-      if (buffer_)
-      {
-        details::invoke_special_func(buffer_, details::method::dtor);
-        delete[] buffer_;
-        buffer_ = nullptr;
-      }
-    }
-
-  private:
-    void
-    copy_buffer(std::span<std::byte const> src)
-    {
-      assert(src.size() > details::function_buffer_meta_size);
-      reset();
-      buffer_ = new std::byte[src.size()];                              // NOLINT
-      std::memcpy(buffer_, src.data(), details::function_buffer_meta_size);
-      details::invoke_special_func(buffer_, details::method::copy_ctor,
-                                   const_cast<std::byte*>(src.data())); // NOLINT
-    }
-
-    std::byte* buffer_ = nullptr;
-  };
-
   /// @brief Concept to check if `Args...` can be constructed in the buffer.
   /// @details Checks if there exists a function `Buffer::emplace(Args...)`.
   template<typename Buffer, typename... Args>
@@ -878,7 +654,7 @@ namespace fho
     /// @param `func` The callable to assign.
     /// @return A reference to this `function`
     template<std::invocable Func>
-      requires (!is_function_v<Func> && !is_function_dyn_v<Func>)
+      requires (!is_function_v<Func>)
     auto
     operator=(Func&& func) noexcept -> function&
     {
