@@ -229,8 +229,8 @@ namespace fho
     };
 
     template<typename Func, typename... Args>
-    deferred_callable(Func&& callable,
-                      Args&&... args) -> deferred_callable<decltype(callable), decltype(args)...>;
+    deferred_callable(Func&& callable, Args&&... args)
+      -> deferred_callable<decltype(callable), decltype(args)...>;
 
     template<typename T>
     struct is_function : std::false_type

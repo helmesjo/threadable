@@ -508,6 +508,52 @@ SCENARIO("ring_buffer: stress-test")
       REQUIRE(tasksExecuted.load() == ring.max_size() * nr_producers);
     }
   }
+  GIVEN("1 producer & 5 consumers")
+  {
+    static constexpr auto capacity      = std::size_t{1 << 12};
+    static constexpr auto nr_consumers  = std::size_t{1};
+    static constexpr auto nr_to_consume = std::size_t{capacity / nr_consumers} - 1;
+
+    auto ring    = fho::ring_buffer<func_t, capacity>();
+    auto barrier = std::barrier{nr_consumers};
+
+    static_assert(nr_to_consume * nr_consumers == ring.max_size());
+
+    THEN("there are no race conditions")
+    {
+      std::atomic_size_t tasksConsumed{0};
+
+      // producer
+      for (std::size_t i = 0; i < ring.max_size(); ++i)
+      {
+        ring.emplace_back();
+      }
+      // start consumers
+      std::vector<std::thread> consumers;
+      for (std::size_t i = 0; i < nr_consumers; ++i)
+      {
+        consumers.emplace_back(
+          [&barrier, &ring, &tasksConsumed]
+          {
+            auto tokens = fho::token_group{};
+            barrier.arrive_and_wait();
+            for (std::size_t i = 0; i < nr_to_consume; ++i)
+            {
+              ring.pop();
+              tasksConsumed++;
+            }
+          });
+      }
+
+      for (auto& consumer : consumers)
+      {
+        consumer.join();
+      }
+
+      REQUIRE(tasksConsumed.load() == nr_to_consume * nr_consumers);
+      REQUIRE(ring.size() == 0);
+    }
+  }
 }
 
 SCENARIO("ring_buffer: standard algorithms")

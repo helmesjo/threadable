@@ -103,17 +103,38 @@ namespace fho
     }
 
     /// @brief Acquires the slot by claiming it.
-    /// @details Atomically attempts to change the state from `empty` to `claimed`. Spins until
+    /// @details Atomically attempts to change the state from `exp` to `claimed`. Spins until
     /// successful, making it suitable for low-contention scenarios.
+    /// @param `exp` Expected state.
     inline void
-    acquire() noexcept
+    acquire(slot_state const exp = slot_state::empty) noexcept
     {
-      auto exp = slot_state::empty;
-      while (!state_.compare_exchange_weak(exp, slot_state::claimed, std::memory_order_release,
+      auto expected = exp;
+      while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_release,
                                            std::memory_order_relaxed)) [[likely]]
       {
-        exp = slot_state::empty;
+        expected = exp;
       }
+    }
+
+    /// @brief Try to acquire the slot by claiming it.
+    /// @details Atomically attempts to change the state from `exp` to `claimed`. Spins until
+    /// successful unless `exp` doesn't match current value.
+    /// @param `exp` Expected state.
+    /// @return `true` if exchanged `exp` -> `claimed`, else `false`.
+    inline auto
+    try_acquire(slot_state const exp) noexcept -> bool // NOLINT
+    {
+      auto expected = exp;
+      while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_release,
+                                           std::memory_order_relaxed)) [[likely]]
+      {
+        if (expected != exp) [[unlikely]]
+        {
+          return false;
+        }
+      }
+      return true;
     }
 
     /// @brief Assigns a value to the slot.
@@ -147,24 +168,30 @@ namespace fho
       //        it is designed to be waited on by checking state active -> inactive.
     }
 
-    /// @brief Waits for the slot to become inactive.
-    /// @details Blocks until the slot's state is no longer `active`, typically indicating that the
-    /// stored value (e.g., a task) has been processed and released.
+    /// @brief Waits for the slot to leave a state.
+    /// @details Blocks until the slot's state changes to/from `State`, typically indicating that
+    /// the stored value (e.g., a task) has been processed and released.
+    /// @tparam `State` State to transition.
+    ///                 Defaults to `active`.
+    /// @tparam `Old` Value to transition from.
+    ///               Defaults to `true`.
+    template<slot_state State = slot_state::active, bool Old = true>
     inline void
     wait() const noexcept
     {
-      state_.template wait<slot_state::active, true>(std::memory_order_acquire);
+      state_.template wait<State, Old>(std::memory_order_acquire);
     }
 
     /// @brief Releases the slot.
     /// @details Requires the slot to be in the `active` state. Destroys the stored value if it is
     /// not trivially destructible, sets the state to `empty`, and notifies any waiters. In debug
     /// mode, resets the value to zero to aid in detecting use-after-free errors.
+    /// @param `exp` Expected state.
     inline void
-    release() noexcept
+    release(slot_state const exp = slot_state::active) noexcept
     {
       // Must be active
-      assert(state_.test<slot_state::active>());
+      assert(state_.load(std::memory_order_acquire) == exp and "ring_slot::release()");
       // Free up slot for re-use.
       if constexpr (!std::is_trivially_destructible_v<T>)
       {
@@ -173,7 +200,12 @@ namespace fho
 #ifndef NDEBUG
       value_ = {};
 #endif
-      state_.store(slot_state::empty, std::memory_order_release);
+      auto expected = exp;
+      while (!state_.compare_exchange_weak(expected, slot_state::empty, std::memory_order_release,
+                                           std::memory_order_relaxed)) [[likely]]
+      {
+        expected = exp;
+      }
       state_.notify_all();
     }
 

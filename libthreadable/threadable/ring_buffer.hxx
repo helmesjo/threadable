@@ -88,7 +88,7 @@ namespace fho
                                   for (auto i = b; i < e; ++i)
                                   {
                                     Slot& elem = d[Iterator::mask(i)];
-                                    elem.release();
+                                    elem.release(slot_state::active);
                                   }
                                 }
                               }
@@ -235,7 +235,7 @@ namespace fho
       // 1. Claim a slot.
       auto const slot = next_.fetch_add(1, std::memory_order_acquire);
       slot_type& elem = elems_[ring_iterator_t::mask(slot)];
-      elem.acquire();
+      elem.acquire(slot_state::empty);
 
       // 2. Assign `value_type`.
       elem.emplace(FWD(args)...);
@@ -314,11 +314,28 @@ namespace fho
     void
     pop() noexcept
     {
-      assert(size() > 0);
-      auto const tail = tail_.load(std::memory_order_acquire);
-      slot_type& elem = elems_[ring_iterator_t::mask(tail)];
-      elem.release();
-      tail_.store(tail + 1, std::memory_order_release);
+      assert(size() > 0 and "ring_buffer::pop()");
+      index_t tail; // NOLINT
+      while (true)
+      {
+        // 1. Read tail slot.
+        tail = tail_.load(std::memory_order_acquire);
+        // 2. Acquire tail slot.
+        slot_type& elem = elems_[ring_iterator_t::mask(tail)];
+        if (elem.try_acquire(slot_state::active)) [[likely]]
+        {
+          // 3. Release tail slot.
+          elem.release(slot_state::claimed);
+          auto expected = tail;
+          while (!tail_.compare_exchange_weak(expected, tail + 1, std::memory_order_release,
+                                              std::memory_order_relaxed))
+          {
+            expected = tail;
+          }
+          break;
+        }
+        // 4. Somebody already released tail - Retry.
+      }
     }
 
     /// @brief Waits until the buffer has items available.
