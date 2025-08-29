@@ -133,7 +133,7 @@ namespace fho
                   {
                     for (auto& j : range)
                     {
-                      assert(j);
+                      assert(j and "pool::schedule()");
                       j();
                     }
                   }

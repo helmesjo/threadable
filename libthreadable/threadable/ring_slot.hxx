@@ -133,11 +133,13 @@ namespace fho
                                    [](auto b)
                                    {
                                      return b == std::byte{0};
-                                   }));
+                                   }) and
+               "ring_slot::emplace()");
       }
 #endif
       // Must be claimed
-      assert(state_.load(std::memory_order_acquire) == slot_state::claimed);
+      assert(state_.load(std::memory_order_acquire) == slot_state::claimed and
+             "ring_slot::emplace()");
 
       std::construct_at<T>(data(), FWD(args)...);
       state_.store(slot_state::active, std::memory_order_release);

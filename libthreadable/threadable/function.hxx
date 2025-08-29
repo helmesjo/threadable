@@ -87,7 +87,7 @@ namespace fho
           }
           else
           {
-            assert("Type is not copy-constructible" == nullptr);
+            assert("Type is not copy-constructible" == nullptr and "invoke_special_func()");
             std::terminate();
           }
         }
@@ -104,7 +104,8 @@ namespace fho
           }
           else
           {
-            assert("Type is not move- nor copy-constructible" == nullptr);
+            assert("Type is not move- nor copy-constructible" == nullptr and
+                   "invoke_special_func()");
             std::terminate();
           }
         }

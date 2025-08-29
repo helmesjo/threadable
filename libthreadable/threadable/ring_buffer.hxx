@@ -287,7 +287,7 @@ namespace fho
     [[nodiscard]] inline auto
     front() const noexcept -> const_reference
     {
-      assert(size() > 0);
+      assert(size() > 0 and "ring_buffer::front()");
       auto const tail = tail_.load(std::memory_order_acquire);
       return elems_[ring_iterator_t::mask(tail)];
     }
@@ -300,7 +300,7 @@ namespace fho
     [[nodiscard]] inline auto
     back() const noexcept -> const_reference
     {
-      assert(size() > 0);
+      assert(size() > 0 and "ring_buffer::back()");
       auto const head = head_.load(std::memory_order_acquire);
       return elems_[ring_iterator_t::mask(head - 1)];
     }
