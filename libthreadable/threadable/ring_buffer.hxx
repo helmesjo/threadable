@@ -332,6 +332,7 @@ namespace fho
           {
             expected = tail;
           }
+          tail_.notify_all();
           break;
         }
         // 4. Somebody already released tail - Retry.
