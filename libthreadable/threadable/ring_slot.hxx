@@ -110,8 +110,8 @@ namespace fho
     acquire(slot_state const exp = slot_state::empty) noexcept
     {
       auto expected = exp;
-      while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_release,
-                                           std::memory_order_relaxed)) [[likely]]
+      while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) [[likely]]
       {
         expected = exp;
       }
@@ -126,8 +126,8 @@ namespace fho
     try_acquire(slot_state const exp) noexcept -> bool // NOLINT
     {
       auto expected = exp;
-      while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_release,
-                                           std::memory_order_relaxed)) [[likely]]
+      while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) [[likely]]
       {
         if (expected != exp) [[unlikely]]
         {
@@ -201,8 +201,8 @@ namespace fho
       value_ = {};
 #endif
       auto expected = exp;
-      while (!state_.compare_exchange_weak(expected, slot_state::empty, std::memory_order_release,
-                                           std::memory_order_relaxed)) [[likely]]
+      while (!state_.compare_exchange_weak(expected, slot_state::empty, std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) [[likely]]
       {
         expected = exp;
       }

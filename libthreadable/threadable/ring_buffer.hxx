@@ -253,8 +253,8 @@ namespace fho
         }
         expected = slot;
       }
-      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release,
-                                          std::memory_order_relaxed));
+      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_acq_rel,
+                                          std::memory_order_acquire));
       head_.notify_one();
       return token;
     }
@@ -327,8 +327,8 @@ namespace fho
           // 3. Release tail slot.
           elem.release(slot_state::claimed);
           auto expected = tail;
-          while (!tail_.compare_exchange_weak(expected, tail + 1, std::memory_order_release,
-                                              std::memory_order_relaxed))
+          while (!tail_.compare_exchange_weak(expected, tail + 1, std::memory_order_acq_rel,
+                                              std::memory_order_acquire))
           {
             expected = tail;
           }
