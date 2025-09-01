@@ -27,13 +27,14 @@ SCENARIO("ring_buffer: emplace & consume")
 {
   GIVEN("ring with capacity 2 (max size 1)")
   {
-    static_assert(fho::ring_buffer<func_t, 2>::max_size() == 1);
+    static_assert(fho::ring_buffer<func_t, 2>::max_size() == 2);
 
     auto ring = fho::ring_buffer<func_t, 2>{};
     REQUIRE(ring.size() == 0);
 
     WHEN("empty")
     {
+      REQUIRE(ring.begin() == ring.end());
       THEN("begin() and end() does not throw/crash")
       {
         REQUIRE_NOTHROW(ring.begin());
@@ -512,7 +513,7 @@ SCENARIO("ring_buffer: stress-test")
   {
     static constexpr auto capacity      = std::size_t{1 << 12};
     static constexpr auto nr_consumers  = std::size_t{1};
-    static constexpr auto nr_to_consume = std::size_t{capacity / nr_consumers} - 1;
+    static constexpr auto nr_to_consume = std::size_t{capacity / nr_consumers};
 
     auto ring    = fho::ring_buffer<func_t, capacity>();
     auto barrier = std::barrier{nr_consumers};

@@ -140,15 +140,13 @@ SCENARIO("pool: execution order")
 
 SCENARIO("pool: stress-test")
 {
-  constexpr auto capacity     = std::size_t{1 << 16};
-  constexpr auto nr_producers = std::size_t{4};
-
-  auto pool = fho::pool<capacity>(nr_producers);
+  constexpr auto capacity = std::size_t{1 << 16};
 
   GIVEN("multiple producers submit a large amount of tasks")
   {
-    constexpr auto nr_producers = 5;
+    constexpr auto nr_producers = 4;
 
+    auto  pool      = fho::pool<capacity>(nr_producers);
     auto& queue     = pool.create(fho::execution::par);
     auto  counter   = std::atomic_size_t{0};
     auto  producers = std::vector<std::thread>{};
@@ -185,8 +183,9 @@ SCENARIO("pool: stress-test")
   }
   GIVEN("multiple producers submit a large amount of tasks to their own queue and then remove it")
   {
-    static constexpr auto nr_producers = 3;
+    static constexpr auto nr_producers = 4;
 
+    auto pool      = fho::pool<capacity>(nr_producers);
     auto counter   = std::atomic_size_t{0};
     auto producers = std::vector<std::thread>{};
     auto barrier   = std::barrier{nr_producers};

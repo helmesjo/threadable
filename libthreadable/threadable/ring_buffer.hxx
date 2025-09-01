@@ -105,8 +105,8 @@ namespace fho
   /// @details This class provides a lock-free ring buffer that allows multiple producers to add
   /// objects concurrently and a single consumer to remove them. It uses atomic operations to
   /// manage the buffer's state, ensuring thread safety. The buffer has a fixed capacity, which
-  /// must be a power of 2 greater than 1, and uses a mask to handle index wrapping. Slots are
-  /// aligned to cache lines to reduce false sharing and improve performance in concurrent
+  /// must be a power of 2 greater than 1 for mask-based indexing; full `Capacity` slots usable.
+  /// Slots are aligned to cache lines to reduce false sharing and improve performance in concurrent
   /// scenarios.
   /// @tparam `T` The type of elements stored in the buffer. Must be movable and destructible.
   ///             Defaults to `fast_func_t`, a callable optimized for cache line size.
@@ -119,7 +119,22 @@ namespace fho
   /// @warning Only one consumer should call `consume()` at a time to ensure thread safety.
   ///          Multiple producers can safely call `emplace_back()` concurrently.
   /// @example
+  // Logical view; actual indices unbounded, masked for array access.
+  // When tail or head reaches the end they will wrap around.
   /// ```cpp
+  /// // Logical view; actual indices unbounded, masked for array access.
+  /// // When tail or head reaches the end they will wrap around.
+  /// //  _
+  /// // |_|
+  /// // |_|
+  /// // |_| ┐→ tail  (next claim) - consumer
+  /// // |_| │
+  /// // |_| │
+  /// // |_| │
+  /// // |_| │
+  /// // |_| ┘→ head-1 (last elem) - consumer
+  /// // |_|  ← head   (next slot) - producer
+  /// // |_|
   /// auto buffer = fho::ring_buffer<>{}; // Uses fast_func_t by default
   /// auto token = buffer.emplace_back([]() { std::cout << "Hello, World!\n"; });
   /// auto range = buffer.consume();
@@ -158,15 +173,18 @@ namespace fho
     using iterator       = std::ranges::iterator_t<transform_type>;       // NOLINT
     using const_iterator = std::ranges::iterator_t<const_transform_type>; // NOLINT
 
+    static_assert(std::is_unsigned_v<index_t>);
+    static_assert(Capacity > 1, "capacity must be greater than 1");
+    static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
+    static_assert(sizeof(slot_type) % details::cache_line_size == 0,
+                  "buffer slot size must be a multiple of the cache line size");
+
     static_assert(
       std::is_same_v<value_type, std::remove_reference_t<decltype(*std::declval<iterator>())>>,
       "Incorrect dereferenced type of non-const iterator");
     static_assert(
       std::is_const_v<std::remove_reference_t<decltype(*std::declval<const_iterator>())>>,
       "Incorrect dereferenced type of const iterator");
-
-    static_assert(sizeof(slot_type) % details::cache_line_size == 0,
-                  "Buffer slot size must be a multiple of the cache line size");
 
     /// @brief Default constructor.
     /// @details Initializes the ring buffer with pre-allocated slots of size `Capacity`.
@@ -247,7 +265,7 @@ namespace fho
       {
         // Check if full before committing.
         if (auto tail = tail_.load(std::memory_order_acquire);
-            ring_iterator_t::mask(slot + 1 - tail) == 0) [[unlikely]]
+            ring_iterator_t::mask(slot - tail) >= Capacity) [[unlikely]]
         {
           tail_.wait(tail, std::memory_order_acquire);
         }
@@ -407,28 +425,30 @@ namespace fho
     }
 
     /// @brief Returns the maximum capacity of the buffer.
-    /// @details Returns `Capacity - 1`, as one slot is reserved to distinguish full from empty.
+    /// @details Returns `Capacity`.
     /// @return Maximum number of items the buffer can hold.
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
-      return Capacity - 1;
+      return Capacity;
     }
 
     /// @brief Returns the current number of items in the buffer.
-    /// @details Computes the masked difference between `head_` and `tail_`.
+    /// @details Computes the direct (unbounded) difference between `head_` and `tail_`.
     /// @return Current number of items.
     auto
     size() const noexcept -> std::size_t
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
-      return ring_iterator_t::mask(head - tail); // circular distance
+      return head - tail; // circular distance
     }
 
     /// @brief Checks if the buffer is empty.
     /// @details Returns true if `size() == 0`.
     /// @return True if empty, false otherwise.
+    /// @note Uses `size() == 0` to distinguish empty (`head==tail`) from full
+    ///       (`head-tail == Capacity`).
     auto
     empty() const noexcept -> bool
     {
@@ -446,22 +466,6 @@ namespace fho
     }
 
   private:
-    /*
-      Circular `value_type` buffer. When tail or head
-      reaches the end they will wrap around:
-       _
-      |_|
-      |_|
-      |_| ┐→ tail  (next claim) - consumer
-      |_| │
-      |_| │
-      |_| │
-      |_| │
-      |_| ┘→ head-1 (last elem) - consumer
-      |_|  ← head   (next slot) - producer
-      |_|
-    */
-
     alignas(details::cache_line_size) atomic_index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
     alignas(details::cache_line_size) atomic_index_t next_{0};
@@ -471,9 +475,9 @@ namespace fho
     /// @brief Pre-created to ensure iterator compatibility.
     /// @note MSVC in debug specifically does not like iterators from temporarily created &
     /// differing ranges
-    const_ring_iterator_t const begin_ = const_ring_iterator_t(elems_.data(), 0);          // NOLINT
-    const_ring_iterator_t const end_   = const_ring_iterator_t(elems_.data(), max_size()); // NOLINT
-    const_transform_type const  constRange_ =                                              // NOLINT
+    const_ring_iterator_t const begin_ = const_ring_iterator_t(elems_.data(), 0);        // NOLINT
+    const_ring_iterator_t const end_   = const_ring_iterator_t(elems_.data(), Capacity); // NOLINT
+    const_transform_type const  constRange_ =                                            // NOLINT
       const_transform_type(std::ranges::subrange(begin_, end_),
                            slot_value_accessor<value_type const>);
   };
@@ -488,9 +492,6 @@ namespace fho
   class fixed_ring_buffer : public ring_buffer<T, Capacity, Allocator>
   {
     static constexpr auto index_mask = Capacity - 1u;
-
-    static_assert(Capacity > 1, "capacity must be greater than 1");
-    static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
 
 #if __cpp_static_assert >= 202306L && __cpp_lib_constexpr_format
     static_assert(sizeof(T) <= details::slot_size,
