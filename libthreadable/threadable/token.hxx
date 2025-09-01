@@ -145,6 +145,7 @@ namespace fho
       auto state = state_.load(std::memory_order_acquire);
       while (state)
       {
+        assert(state != nullptr and "state must never be assigned null while owned");
         state->wait<slot_state::active, true>(std::memory_order_acquire);
         // Re-fetch to handle rebinding. If it
         // stayed same, then it wasn't rebound.
