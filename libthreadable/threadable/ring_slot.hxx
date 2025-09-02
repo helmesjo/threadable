@@ -107,7 +107,7 @@ namespace fho
     /// successful, making it suitable for low-contention scenarios.
     /// @param `exp` Expected state.
     inline void
-    acquire(slot_state const exp) noexcept
+    claim(slot_state const exp) noexcept
     {
       auto expected = exp;
       while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_acq_rel,
@@ -154,7 +154,7 @@ namespace fho
     /// @param `exp` Expected state.
     /// @return `true` if exchanged `active` -> `lent` (`claimed`), else `false`.
     inline auto
-    try_lend() noexcept -> bool
+    try_claim() noexcept -> bool
     {
       auto expected = slot_state::active;
       return state_.compare_exchange_strong(expected, slot_state::claimed,
@@ -162,10 +162,10 @@ namespace fho
     }
 
     inline void
-    undo_lend() noexcept
+    undo_claim() noexcept
     {
       assert(state_.template test<slot_state::claimed>(std::memory_order_acquire) and
-             "ring_slot::undo_lend()");
+             "ring_slot::undo_claim()");
       state_.store(slot_state::active, std::memory_order_release);
     }
 
@@ -296,20 +296,20 @@ namespace fho
   /// }  // Auto-releases
   /// ```
   template<typename T>
-  class alignas(details::cache_line_size) lent_slot
+  class alignas(details::cache_line_size) claimed_slot
   {
     using Slot  = ring_slot<T>;
     Slot* slot_ = nullptr;
 
   public:
-    lent_slot(Slot* slot)
+    claimed_slot(Slot* slot)
       : slot_(slot)
     {
       assert((!slot_ || slot_->template test<slot_state::claimed>(std::memory_order_acquire)) and
              "lent_slot::lent_slot()");
     }
 
-    lent_slot(lent_slot&& other) noexcept
+    claimed_slot(claimed_slot&& other) noexcept
       : slot_(std::exchange(other.slot_, nullptr))
     {
       assert((!slot_ || slot_->template test<slot_state::claimed>(std::memory_order_acquire)) and
@@ -317,7 +317,7 @@ namespace fho
     }
 
     auto
-    operator=(lent_slot&& other) noexcept -> lent_slot&
+    operator=(claimed_slot&& other) noexcept -> claimed_slot&
     {
       if (this != &other) [[likely]]
       {
@@ -330,10 +330,10 @@ namespace fho
       return *this;
     }
 
-    lent_slot(lent_slot const&)                    = delete;
-    auto operator=(lent_slot const&) -> lent_slot& = delete;
+    claimed_slot(claimed_slot const&)                    = delete;
+    auto operator=(claimed_slot const&) -> claimed_slot& = delete;
 
-    ~lent_slot()
+    ~claimed_slot()
     {
       if (slot_)
       {

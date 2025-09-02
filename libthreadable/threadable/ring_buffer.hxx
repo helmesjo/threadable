@@ -158,8 +158,8 @@ namespace fho
   private:
     static constexpr auto index_mask = Capacity - 1u;
 
-    using slot_type = ring_slot<value_type>;
-    using lent_type = lent_slot<value_type>;
+    using slot_type    = ring_slot<value_type>;
+    using claimed_type = claimed_slot<value_type>;
 
     using atomic_index_t        = std::atomic_uint_fast64_t;
     using index_t               = typename atomic_index_t::value_type;
@@ -262,7 +262,7 @@ namespace fho
       elem.template wait<slot_state::active | slot_state::claimed>(std::memory_order_acquire);
 
       assert(elem.template test<slot_state::free>() and "ring_buffer::emplace_back()");
-      elem.acquire(slot_state::free);
+      elem.claim(slot_state::free);
 
       // 2. Assign/Commit `value_type`.
       elem.emplace(FWD(args)...);
@@ -323,7 +323,7 @@ namespace fho
     /// @brief Removes the first element from the ring buffer.
     /// @details Releases the slot at the front (at `tail_`) and advances `tail_`. The buffer must
     ///          not be empty.
-    ///          Thread-safe for a single consumer. Does not notify waiters; use a separate
+    ///          Thread-safe for multiple consumers. Does not notify waiters; use a separate
     ///          mechanism if notification is needed.
     /// @pre `size() > 0`
     /// @note Popping beyond emplaced items results in undefined behavior.
@@ -338,7 +338,7 @@ namespace fho
         tail = tail_.load(std::memory_order_acquire);
         // 2. Acquire tail slot.
         slot_type& elem = elems_[ring_iterator_t::mask(tail)];
-        if (elem.try_lend()) [[likely]]
+        if (elem.try_claim()) [[likely]]
         {
           // 3. Release tail slot.
           elem.template release<slot_state::claimed>();
@@ -355,28 +355,28 @@ namespace fho
       }
     }
 
-    /// @brief Lends the first element from the ring buffer.
-    /// @details Lends the item at `front()` and advances `tail_`.
-    /// The "lent" slot is released when it goes out of scope.
+    /// @brief Claims the first element from the ring buffer.
+    /// @details Claims the item at `front()` and advances `tail_`.
+    /// The claimed slot is released when it goes out of scope.
     /// Thread-safe for multiple consumers.
-    /// @note: Makes only a single attempt to "lend" item next in line.
+    /// @note: Makes only a single attempt to claim next item in line.
     auto
-    try_pop() noexcept -> lent_type
+    try_pop() noexcept -> claimed_type
     {
       auto  tail = tail_.load(std::memory_order_acquire);
       auto& elem = elems_[ring_iterator_t::mask(tail)];
       // 1. If element exists, try to claim it & advance tail.
-      if (elem.try_lend()) [[likely]]
+      if (elem.try_claim()) [[likely]]
       {
         if (tail_.compare_exchange_strong(tail, tail + 1, std::memory_order_acq_rel)) [[likely]]
         {
           // Success: own the slot, safe to lend (read value)
-          return lent_type{&elem};
+          return claimed_type{&elem};
         }
         else [[unlikely]]
         {
           // Fail: contention lost, return slot
-          elem.undo_lend();
+          elem.undo_claim();
         }
       }
       return nullptr;
@@ -385,22 +385,22 @@ namespace fho
     /// @brief
     /// @details
     auto
-    try_steal() noexcept -> lent_type
+    try_steal() noexcept -> claimed_type
     {
       auto  head = head_.load(std::memory_order_acquire);
       auto& elem = elems_[ring_iterator_t::mask(head - 1)];
       // 1. If element exists, try to claim it & recede head.
-      if (elem.try_lend()) [[likely]]
+      if (elem.try_claim()) [[likely]]
       {
         if (head_.compare_exchange_strong(head, head - 1, std::memory_order_acq_rel)) [[likely]]
         {
-          // Success: own the slot, safe to lend (read value)
-          return lent_type{&elem};
+          // Success: own the slot, safe to access (read value)
+          return claimed_type{&elem};
         }
         else [[unlikely]]
         {
           // Fail: contention lost, return slot
-          elem.undo_lend();
+          elem.undo_claim();
         }
       }
       return nullptr;
