@@ -82,7 +82,7 @@ namespace fho
               auto const prev = b - 1;
               if (b != e && prev != e && prev < b) [[unlikely]]
               {
-                prev->wait();
+                prev->template wait<slot_state::active>(std::memory_order_acquire);
               }
             }
           }

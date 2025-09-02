@@ -117,26 +117,6 @@ namespace fho
       }
     }
 
-    /// @brief Try to acquire the slot by claiming it.
-    /// @details Atomically attempts to change the state from `exp` to `claimed`. Spins until
-    /// successful unless `exp` doesn't match current value.
-    /// @param `exp` Expected state.
-    /// @return `true` if exchanged `exp` -> `claimed`, else `false`.
-    inline auto
-    try_acquire(slot_state const exp) noexcept -> bool // NOLINT
-    {
-      auto expected = exp;
-      while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_acq_rel,
-                                           std::memory_order_acquire)) [[unlikely]]
-      {
-        if (expected != exp) [[unlikely]]
-        {
-          return false;
-        }
-      }
-      return true;
-    }
-
     /// @brief Assigns a value to the slot.
     /// @details Requires the slot to be in the `claimed` state. Constructs a new value of type `T`
     /// in place using the provided arguments and sets the state to `active`. In debug mode, asserts
@@ -168,14 +148,34 @@ namespace fho
       //        it is designed to be waited on by checking state active -> inactive.
     }
 
+    /// @brief Try to acquire the slot by claiming it.
+    /// @details Atomically attempts to change the state from `active` to `claimed`. Spins until
+    /// successful unless `exp` doesn't match current value.
+    /// @param `exp` Expected state.
+    /// @return `true` if exchanged `active` -> `lent` (`claimed`), else `false`.
+    inline auto
+    try_lend() noexcept -> bool
+    {
+      auto expected = slot_state::active;
+      return state_.compare_exchange_strong(expected, slot_state::claimed,
+                                            std::memory_order_acq_rel, std::memory_order_acquire);
+    }
+
+    inline void
+    undo_lend() noexcept
+    {
+      assert(state_.template test<slot_state::claimed>(std::memory_order_acquire) and
+             "ring_slot::undo_lend()");
+      state_.store(slot_state::active, std::memory_order_release);
+    }
+
     /// @brief Waits for the slot to leave a state.
     /// @details Blocks until the slot's state changes to/from `State`, typically indicating that
     /// the stored value (e.g., a task) has been processed and released.
     /// @tparam `State` State to transition.
-    ///                 Defaults to `active`.
     /// @tparam `Old` Value to transition from.
     ///               Defaults to `true`.
-    template<slot_state State = slot_state::active, bool Old = true>
+    template<slot_state State, bool Old = true>
     inline void
     wait(std::same_as<std::memory_order> auto order) const noexcept
     {
@@ -184,26 +184,27 @@ namespace fho
 
     /// @brief Tests if any states specified by the mask are set.
     /// @details Atomically loads the current value and checks if any bits in `Mask` are set.
-    /// @tparam Mask A constant expression representing the bitmask to test.
-    /// @param orders Memory orders for the load operation (e.g., `std::memory_order_seq_cst`).
+    /// @tparam `State` A constant expression representing the bitmask to test.
+    /// @param `orders` Memory orders for the load operation (e.g., `std::memory_order_seq_cst`).
     /// @return True if any bits in `Mask` are set, false otherwise.
-    template<slot_state Mask>
+    template<slot_state State>
     [[nodiscard]] inline auto
     test(std::same_as<std::memory_order> auto... orders) const noexcept -> bool
     {
-      return state_.test<Mask>(orders...);
+      return state_.test<State>(orders...);
     }
 
     /// @brief Releases the slot.
     /// @details Requires the slot to be in the `active` state. Destroys the stored value if it is
     /// not trivially destructible, sets the state to `empty`, and notifies any waiters. In debug
     /// mode, resets the value to zero to aid in detecting use-after-free errors.
-    /// @param `exp` Expected state.
+    /// @tparam `State` State to transition.
+    template<slot_state State>
     inline void
-    release(slot_state const exp = slot_state::active) noexcept
+    release() noexcept
     {
       // Must be active
-      assert(state_.load(std::memory_order_acquire) == exp and "ring_slot::release()");
+      assert(state_.template test<State>(std::memory_order_acquire) and "ring_slot::release()");
       // Free up slot for re-use.
       if constexpr (!std::is_trivially_destructible_v<T>)
       {
@@ -212,11 +213,11 @@ namespace fho
 #ifndef NDEBUG
       value_ = {};
 #endif
-      auto expected = exp;
+      auto expected = State;
       while (!state_.compare_exchange_weak(expected, slot_state::free, std::memory_order_acq_rel,
                                            std::memory_order_acquire)) [[likely]]
       {
-        expected = exp;
+        expected = State;
       }
       state_.notify_all();
     }
@@ -294,23 +295,24 @@ namespace fho
   ///   slot();  // If callable
   /// }  // Auto-releases
   /// ```
-  template<typename Slot>
+  template<typename T>
   class alignas(details::cache_line_size) lent_slot
   {
-    Slot* slot_ = nullptr; // NOLINT
+    using Slot  = ring_slot<T>;
+    Slot* slot_ = nullptr;
 
   public:
     lent_slot(Slot* slot)
       : slot_(slot)
     {
-      assert((!slot_ || slot_->template test<slot_state::active>(std::memory_order_acquire)) and
+      assert((!slot_ || slot_->template test<slot_state::claimed>(std::memory_order_acquire)) and
              "lent_slot::lent_slot()");
     }
 
     lent_slot(lent_slot&& other) noexcept
       : slot_(std::exchange(other.slot_, nullptr))
     {
-      assert((!slot_ || slot_->template test<slot_state::active>(std::memory_order_acquire)) and
+      assert((!slot_ || slot_->template test<slot_state::claimed>(std::memory_order_acquire)) and
              "lent_slot::lent_slot()");
     }
 
@@ -321,7 +323,7 @@ namespace fho
       {
         if (slot_) [[unlikely]]
         {
-          slot_->release(slot_state::active);
+          slot_->template release<slot_state::claimed>();
         }
         slot_ = std::exchange(other.slot_, nullptr);
       }
@@ -335,11 +337,11 @@ namespace fho
     {
       if (slot_)
       {
-        slot_->release(slot_state::active);
+        slot_->template release<slot_state::claimed>();
       }
     }
 
-    explicit
+    [[nodiscard]] inline constexpr explicit
     operator bool() const noexcept
     {
       return slot_ != nullptr;

@@ -19,9 +19,14 @@ namespace fho
     claimed = 1 << 1,
     /// @brief Ready to, or being, processed.
     active = 1 << 2,
-    /// @brief Being released.
-    release = 1 << 3
   };
+
+  inline constexpr auto
+  operator|(slot_state lhs, slot_state rhs) noexcept -> slot_state
+  {
+    using ut_t = std::underlying_type_t<slot_state>;
+    return static_cast<slot_state>(static_cast<ut_t>(lhs) | static_cast<ut_t>(rhs));
+  }
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;
 
@@ -150,7 +155,7 @@ namespace fho
       while (state)
       {
         assert(state != nullptr and "state must never be assigned null while owned");
-        state->wait<slot_state::active, true>(std::memory_order_acquire);
+        state->wait<slot_state::active | slot_state::claimed, true>(std::memory_order_acquire);
         // Re-fetch to handle rebinding. If it
         // stayed same, then it wasn't rebound.
         if (auto next = state_.load(std::memory_order_acquire); next == state) [[likely]]

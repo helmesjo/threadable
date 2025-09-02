@@ -88,7 +88,7 @@ namespace fho
                                   for (auto i = b; i < e; ++i)
                                   {
                                     Slot& elem = d[Iterator::mask(i)];
-                                    elem.release(slot_state::active);
+                                    elem.template release<slot_state::active>();
                                   }
                                 }
                               }
@@ -159,7 +159,7 @@ namespace fho
     static constexpr auto index_mask = Capacity - 1u;
 
     using slot_type = ring_slot<value_type>;
-    using lent_type = lent_slot<slot_type>;
+    using lent_type = lent_slot<value_type>;
 
     using atomic_index_t        = std::atomic_uint_fast64_t;
     using index_t               = typename atomic_index_t::value_type;
@@ -259,7 +259,7 @@ namespace fho
       //        it's followed by slot acquire.
       auto const slot = head_.fetch_add(1, std::memory_order_relaxed);
       slot_type& elem = elems_[ring_iterator_t::mask(slot)];
-      elem.template wait<slot_state::active>(std::memory_order_acquire);
+      elem.template wait<slot_state::active | slot_state::claimed>(std::memory_order_acquire);
 
       assert(elem.template test<slot_state::free>() and "ring_buffer::emplace_back()");
       elem.acquire(slot_state::free);
@@ -338,10 +338,10 @@ namespace fho
         tail = tail_.load(std::memory_order_acquire);
         // 2. Acquire tail slot.
         slot_type& elem = elems_[ring_iterator_t::mask(tail)];
-        if (elem.try_acquire(slot_state::active)) [[likely]]
+        if (elem.try_lend()) [[likely]]
         {
           // 3. Release tail slot.
-          elem.release(slot_state::claimed);
+          elem.template release<slot_state::claimed>();
           auto expected = tail;
           while (!tail_.compare_exchange_weak(expected, tail + 1, std::memory_order_acq_rel,
                                               std::memory_order_acquire))
@@ -363,19 +363,47 @@ namespace fho
     auto
     try_pop() noexcept -> lent_type
     {
-      auto tail = tail_.load(std::memory_order_acquire);
-      // 1. If element exists, try to claim it (advance tail).
-      if (auto& elem = elems_[ring_iterator_t::mask(tail)];
-          elem.template test<slot_state::active>(std::memory_order_acquire) &&
-          tail_.compare_exchange_strong(tail, tail + 1, std::memory_order_acq_rel)) [[likely]]
+      auto  tail = tail_.load(std::memory_order_acquire);
+      auto& elem = elems_[ring_iterator_t::mask(tail)];
+      // 1. If element exists, try to claim it & advance tail.
+      if (elem.try_lend()) [[likely]]
       {
-        // Success: own the slot, safe to lend (read value)
-        return lent_type{&elem};
+        if (tail_.compare_exchange_strong(tail, tail + 1, std::memory_order_acq_rel)) [[likely]]
+        {
+          // Success: own the slot, safe to lend (read value)
+          return lent_type{&elem};
+        }
+        else [[unlikely]]
+        {
+          // Fail: contention lost, return slot
+          elem.undo_lend();
+        }
       }
-      else [[unlikely]]
+      return nullptr;
+    }
+
+    /// @brief
+    /// @details
+    auto
+    try_steal() noexcept -> lent_type
+    {
+      auto  head = head_.load(std::memory_order_acquire);
+      auto& elem = elems_[ring_iterator_t::mask(head - 1)];
+      // 1. If element exists, try to claim it & recede head.
+      if (elem.try_lend()) [[likely]]
       {
-        return nullptr;
+        if (head_.compare_exchange_strong(head, head - 1, std::memory_order_acq_rel)) [[likely]]
+        {
+          // Success: own the slot, safe to lend (read value)
+          return lent_type{&elem};
+        }
+        else [[unlikely]]
+        {
+          // Fail: contention lost, return slot
+          elem.undo_lend();
+        }
       }
+      return nullptr;
     }
 
     /// @brief Waits until the buffer has items available.

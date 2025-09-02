@@ -233,6 +233,43 @@ SCENARIO("ring_buffer: emplace & consume")
   }
 }
 
+SCENARIO("ring_buffer: stealing")
+{
+  auto ring = fho::ring_buffer<int, 8>{};
+  GIVEN("an empty ring")
+  {
+    auto e = ring.try_steal();
+    REQUIRE_FALSE(e);
+  }
+  GIVEN("a ring with 2 emplaced items")
+  {
+    ring.emplace_back(1);
+    ring.emplace_back(2);
+    WHEN("stealing items")
+    {
+      THEN("it steals from head")
+      {
+        {
+          auto e = ring.try_steal();
+          REQUIRE(e);
+          REQUIRE(*e == 2);
+          REQUIRE(ring.size() == 1);
+        }
+        {
+          auto e = ring.try_steal();
+          REQUIRE(e);
+          REQUIRE(*e == 1);
+          REQUIRE(ring.size() == 0);
+        }
+        {
+          auto e = ring.try_steal();
+          REQUIRE_FALSE(e);
+        }
+      }
+    }
+  }
+}
+
 SCENARIO("ring_buffer: custom type")
 {
   GIVEN("a type that fits within one default slot buffer size")
@@ -380,170 +417,107 @@ SCENARIO("ring_buffer: completion token")
 
 SCENARIO("ring_buffer: stress-test")
 {
+#ifdef NDEBUG
+  static constexpr auto capacity = std::size_t{1 << 14};
+#else
+  static constexpr auto capacity = std::size_t{1 << 12};
+#endif
+
+  static constexpr auto keep_consuming = [](auto& ring, auto& producers)
+  {
+    if constexpr (std::ranges::range<decltype(producers)>)
+    {
+      return std::ranges::any_of(producers,
+                                 [](auto const& p)
+                                 {
+                                   return p.joinable();
+                                 }) ||
+             !ring.empty();
+    }
+    else
+    {
+      return producers.joinable() || !ring.empty();
+    }
+  };
   GIVEN("produce & consume enough for wrap-around")
   {
-    static constexpr auto capacity = std::size_t{1 << 8};
-
     auto ring = fho::ring_buffer<func_t, capacity>();
 
-    static constexpr auto nr_of_tasks   = ring.max_size() * 2;
-    std::size_t           tasksExecuted = 0;
+    static constexpr auto nr_of_tasks = ring.max_size() * 2;
+
+    auto executed = std::atomic_size_t{0};
 
     for (std::size_t i = 0; i < nr_of_tasks; ++i)
     {
       auto token = ring.emplace_back(
-        [&tasksExecuted]
+        [&executed]
         {
-          ++tasksExecuted;
+          ++executed;
         });
-      for (auto& task : ring.consume())
+      if (auto e = ring.try_pop(); e)
       {
-        task();
+        e();
       }
       REQUIRE(token.done());
     }
 
     THEN("all tasks are executed")
     {
-      REQUIRE(tasksExecuted == nr_of_tasks);
+      REQUIRE(executed.load() == nr_of_tasks);
     }
   }
   GIVEN("1 producer & 1 consumer")
   {
-    static constexpr auto capacity = std::size_t{1 << 8};
-
-    auto ring = fho::ring_buffer<func_t, capacity>();
-
-    THEN("there are no race conditions")
-    {
-      auto tasksExecuted = std::atomic_size_t{0};
-      {
-        // start producer
-        auto producer = std::thread(
-          [&ring, &tasksExecuted]
-          {
-            for (std::size_t i = 0; i < ring.max_size(); ++i)
-            {
-              ring.emplace_back(
-                [&tasksExecuted]
-                {
-                  ++tasksExecuted;
-                });
-            }
-          });
-        // start consumer
-        auto consumer = std::thread(
-          [&ring, &producer]
-          {
-            while (producer.joinable() || !ring.empty())
-            {
-              for (auto& task : ring.consume())
-              {
-                task();
-              }
-            }
-          });
-
-        producer.join();
-        consumer.join();
-      }
-      REQUIRE(tasksExecuted.load() == ring.max_size());
-    }
-  }
-  GIVEN("5 producers & 1 consumer")
-  {
-    static constexpr auto capacity     = std::size_t{1 << 16};
-    static constexpr auto nr_producers = std::size_t{5};
+    static constexpr auto nr_producers  = std::size_t{1};
+    static constexpr auto nr_consumers  = std::size_t{1};
+    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
 
     auto ring    = fho::ring_buffer<func_t, capacity>();
-    auto barrier = std::barrier{nr_producers};
+    auto barrier = std::barrier{nr_consumers + nr_producers};
 
     THEN("there are no race conditions")
     {
-      std::atomic_size_t tasksExecuted{0};
+      auto executed = std::atomic_size_t{0};
 
       // start producers
       std::vector<std::thread> producers;
       for (std::size_t i = 0; i < nr_producers; ++i)
       {
         producers.emplace_back(
-          [&barrier, &ring, &tasksExecuted]
+          [&barrier, &ring, &executed]
           {
-            auto tokens = fho::token_group{};
             barrier.arrive_and_wait();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              tokens += ring.emplace_back(
-                [&tasksExecuted]
+              ring.emplace_back(
+                [&executed]
                 {
-                  ++tasksExecuted;
+                  ++executed;
                 });
             }
-            tokens.wait();
           });
-      }
-      // start consumer
-      std::thread consumer(
-        [&ring, &producers]
-        {
-          while (std::ranges::any_of(producers,
-                                     [](auto const& p)
-                                     {
-                                       return p.joinable();
-                                     }) ||
-                 !ring.empty())
-          {
-            for (auto& task : ring.consume())
-            {
-              task();
-            }
-          }
-        });
-
-      for (auto& producer : producers)
-      {
-        producer.join();
-      }
-      consumer.join();
-
-      REQUIRE(tasksExecuted.load() == ring.max_size() * nr_producers);
-    }
-  }
-  GIVEN("1 producer & 5 consumers")
-  {
-    static constexpr auto capacity      = std::size_t{1 << 12};
-    static constexpr auto nr_consumers  = std::size_t{1};
-    static constexpr auto nr_to_consume = std::size_t{capacity / nr_consumers};
-
-    auto ring    = fho::ring_buffer<func_t, capacity>();
-    auto barrier = std::barrier{nr_consumers};
-
-    static_assert(nr_to_consume * nr_consumers == ring.max_size());
-
-    THEN("there are no race conditions")
-    {
-      std::atomic_size_t tasksConsumed{0};
-
-      // producer
-      for (std::size_t i = 0; i < ring.max_size(); ++i)
-      {
-        ring.emplace_back();
       }
       // start consumers
       std::vector<std::thread> consumers;
       for (std::size_t i = 0; i < nr_consumers; ++i)
       {
         consumers.emplace_back(
-          [&barrier, &ring, &tasksConsumed]
+          [&barrier, &ring, &producers]
           {
-            auto tokens = fho::token_group{};
             barrier.arrive_and_wait();
-            for (std::size_t i = 0; i < nr_to_consume; ++i)
+            while (keep_consuming(ring, producers))
             {
-              ring.pop();
-              tasksConsumed++;
+              if (auto e = ring.try_pop(); e)
+              {
+                e();
+              }
             }
           });
+      }
+
+      for (auto& producer : producers)
+      {
+        producer.join();
       }
 
       for (auto& consumer : consumers)
@@ -551,13 +525,138 @@ SCENARIO("ring_buffer: stress-test")
         consumer.join();
       }
 
-      REQUIRE(tasksConsumed.load() == nr_to_consume * nr_consumers);
+      REQUIRE(executed.load() == nr_to_process);
+      REQUIRE(ring.size() == 0);
+    }
+  }
+  GIVEN("5 producer & 1 consumers")
+  {
+    static constexpr auto nr_producers  = std::size_t{5};
+    static constexpr auto nr_consumers  = std::size_t{1};
+    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+
+    auto ring    = fho::ring_buffer<func_t, capacity>();
+    auto barrier = std::barrier{nr_consumers + nr_producers};
+
+    THEN("there are no race conditions")
+    {
+      auto executed = std::atomic_size_t{0};
+
+      // start producers
+      std::vector<std::thread> producers;
+      for (std::size_t i = 0; i < nr_producers; ++i)
+      {
+        producers.emplace_back(
+          [&barrier, &ring, &executed]
+          {
+            barrier.arrive_and_wait();
+            for (std::size_t i = 0; i < ring.max_size(); ++i)
+            {
+              ring.emplace_back(
+                [&executed]
+                {
+                  ++executed;
+                });
+            }
+          });
+      }
+      // start consumers
+      std::vector<std::thread> consumers;
+      for (std::size_t i = 0; i < nr_consumers; ++i)
+      {
+        consumers.emplace_back(
+          [&barrier, &ring, &producers]
+          {
+            barrier.arrive_and_wait();
+            while (keep_consuming(ring, producers))
+            {
+              if (auto e = ring.try_pop(); e)
+              {
+                e();
+              }
+            }
+          });
+      }
+
+      for (auto& producer : producers)
+      {
+        producer.join();
+      }
+
+      for (auto& consumer : consumers)
+      {
+        consumer.join();
+      }
+
+      REQUIRE(executed.load() == nr_to_process);
+      REQUIRE(ring.size() == 0);
+    }
+  }
+  GIVEN("1 producer & 5 consumers")
+  {
+    static constexpr auto nr_producers  = std::size_t{1};
+    static constexpr auto nr_consumers  = std::size_t{5};
+    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+
+    auto ring    = fho::ring_buffer<func_t, capacity>();
+    auto barrier = std::barrier{nr_consumers + nr_producers};
+
+    THEN("there are no race conditions")
+    {
+      auto executed = std::atomic_size_t{0};
+
+      // start producers
+      std::vector<std::thread> producers;
+      for (std::size_t i = 0; i < nr_producers; ++i)
+      {
+        producers.emplace_back(
+          [&barrier, &ring, &executed]
+          {
+            barrier.arrive_and_wait();
+            for (std::size_t i = 0; i < ring.max_size(); ++i)
+            {
+              ring.emplace_back(
+                [&executed]
+                {
+                  ++executed;
+                });
+            }
+          });
+      }
+      // start consumers
+      std::vector<std::thread> consumers;
+      for (std::size_t i = 0; i < nr_consumers; ++i)
+      {
+        consumers.emplace_back(
+          [&barrier, &ring, &producers]
+          {
+            barrier.arrive_and_wait();
+            while (keep_consuming(ring, producers))
+            {
+              if (auto e = ring.try_pop(); e)
+              {
+                e();
+              }
+            }
+          });
+      }
+
+      for (auto& producer : producers)
+      {
+        producer.join();
+      }
+
+      for (auto& consumer : consumers)
+      {
+        consumer.join();
+      }
+
+      REQUIRE(executed.load() == nr_to_process);
       REQUIRE(ring.size() == 0);
     }
   }
   GIVEN("4 producers & 4 consumers")
   {
-    static constexpr auto capacity      = std::size_t{1 << 14};
     static constexpr auto nr_producers  = std::size_t{4};
     static constexpr auto nr_consumers  = std::size_t{4};
     static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
@@ -567,27 +666,24 @@ SCENARIO("ring_buffer: stress-test")
 
     THEN("there are no race conditions")
     {
-      std::atomic_size_t tasksExecuted{0};
-      std::atomic_size_t tasksConsumed{0};
+      auto executed = std::atomic_size_t{0};
 
       // start producers
       std::vector<std::thread> producers;
       for (std::size_t i = 0; i < nr_producers; ++i)
       {
         producers.emplace_back(
-          [&barrier, &ring, &tasksExecuted]
+          [&barrier, &ring, &executed]
           {
-            auto tokens = fho::token_group{};
             barrier.arrive_and_wait();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              tokens += ring.emplace_back(
-                [&tasksExecuted]
+              ring.emplace_back(
+                [&executed]
                 {
-                  ++tasksExecuted;
+                  ++executed;
                 });
             }
-            tokens.wait();
           });
       }
       // start consumers
@@ -595,20 +691,14 @@ SCENARIO("ring_buffer: stress-test")
       for (std::size_t i = 0; i < nr_consumers; ++i)
       {
         consumers.emplace_back(
-          [&barrier, &ring, &tasksConsumed, &producers]
+          [&barrier, &ring, &producers]
           {
             barrier.arrive_and_wait();
-            while (std::ranges::any_of(producers,
-                                       [](auto const& p)
-                                       {
-                                         return p.joinable();
-                                       }) ||
-                   !ring.empty())
+            while (keep_consuming(ring, producers))
             {
               if (auto e = ring.try_pop(); e)
               {
                 e();
-                tasksConsumed++;
               }
             }
           });
@@ -624,8 +714,93 @@ SCENARIO("ring_buffer: stress-test")
         consumer.join();
       }
 
-      REQUIRE(tasksConsumed == tasksExecuted);
+      REQUIRE(executed.load() == nr_to_process);
       REQUIRE(ring.size() == 0);
+    }
+  }
+  GIVEN("3 producers & 3 consumers & 3 stealers")
+  {
+    static constexpr auto nr_producers  = std::size_t{3};
+    static constexpr auto nr_consumers  = std::size_t{3};
+    static constexpr auto nr_stealers   = std::size_t{3};
+    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+
+    auto ring    = fho::ring_buffer<func_t, capacity>();
+    auto barrier = std::barrier{nr_consumers + nr_producers + nr_stealers};
+
+    THEN("there are no race conditions")
+    {
+      auto executed = std::atomic_size_t{0};
+
+      // start producers
+      std::vector<std::thread> producers;
+      for (std::size_t i = 0; i < nr_producers; ++i)
+      {
+        producers.emplace_back(
+          [&barrier, &ring, &executed]
+          {
+            barrier.arrive_and_wait();
+            for (std::size_t i = 0; i < ring.max_size(); ++i)
+            {
+              ring.emplace_back(
+                [&executed]
+                {
+                  ++executed;
+                });
+            }
+          });
+      }
+      // start consumers
+      std::vector<std::thread> consumers;
+      for (std::size_t i = 0; i < nr_consumers; ++i)
+      {
+        consumers.emplace_back(
+          [&barrier, &ring, &producers]
+          {
+            barrier.arrive_and_wait();
+            while (keep_consuming(ring, producers))
+            {
+              if (auto e = ring.try_pop(); e)
+              {
+                e();
+              }
+            }
+          });
+      }
+      // start stealers
+      std::vector<std::thread> stealers;
+      for (std::size_t i = 0; i < nr_stealers; ++i)
+      {
+        stealers.emplace_back(
+          [&barrier, &ring, &producers]
+          {
+            barrier.arrive_and_wait();
+            while (keep_consuming(ring, producers))
+            {
+              if (auto e = ring.try_steal(); e)
+              {
+                e();
+              }
+            }
+          });
+      }
+
+      for (auto& producer : producers)
+      {
+        producer.join();
+      }
+
+      for (auto& consumer : consumers)
+      {
+        consumer.join();
+      }
+
+      for (auto& stealer : stealers)
+      {
+        stealer.join();
+      }
+      REQUIRE(executed.load() == nr_to_process);
+      REQUIRE(ring.empty());
     }
   }
 }
@@ -638,15 +813,16 @@ SCENARIO("ring_buffer: standard algorithms")
     auto                  ring     = fho::ring_buffer<func_t, capacity>{};
     REQUIRE(ring.size() == 0);
 
-    auto tasksExecuted = std::atomic_size_t{0};
+    auto executed = std::atomic_size_t{0};
+
     WHEN("emplace all")
     {
       while (ring.size() < ring.max_size())
       {
         ring.emplace_back(
-          [&tasksExecuted]
+          [&executed]
           {
-            ++tasksExecuted;
+            ++executed;
           });
       }
       auto r = ring.consume();
@@ -659,7 +835,7 @@ SCENARIO("ring_buffer: standard algorithms")
                               });
         THEN("all tasks executed")
         {
-          REQUIRE(tasksExecuted.load() == ring.max_size());
+          REQUIRE(executed.load() == ring.max_size());
           REQUIRE(ring.size() == 0);
         }
       }
