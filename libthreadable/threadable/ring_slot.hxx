@@ -177,9 +177,9 @@ namespace fho
     ///               Defaults to `true`.
     template<slot_state State = slot_state::active, bool Old = true>
     inline void
-    wait() const noexcept
+    wait(std::same_as<std::memory_order> auto order) const noexcept
     {
-      state_.template wait<State, Old>(std::memory_order_acquire);
+      state_.template wait<State, Old>(order);
     }
 
     /// @brief Tests if any states specified by the mask are set.

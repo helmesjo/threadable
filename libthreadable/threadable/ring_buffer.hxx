@@ -254,16 +254,11 @@ namespace fho
     {
       // 1. Claim a slot
 
-      // @NOTE: Relaxed `head_.fetch_add()` mem order
-      //        ok, it's followed by slot acquire.
+      // @NOTE: Relaxed fetch-add mem order ok,
+      //        it's followed by slot acquire.
       auto const slot = head_.fetch_add(1, std::memory_order_relaxed);
       slot_type& elem = elems_[ring_iterator_t::mask(slot)];
-
-      // @NOTE: Check if full before assigning.
-      if (auto tail = tail_.load(std::memory_order_acquire); slot - tail >= Capacity) [[unlikely]]
-      {
-        tail_.wait(tail, std::memory_order_acquire);
-      }
+      elem.template wait<slot_state::active>(std::memory_order_acquire);
 
       assert(elem.template test<slot_state::free>() and "ring_buffer::emplace_back()");
       elem.acquire(slot_state::free);
