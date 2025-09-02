@@ -7,6 +7,10 @@ SCENARIO("atomic_bitfield")
   GIVEN("a bitfield set to 0")
   {
     auto field = bitfield_t{0};
+    THEN("test<0x00> is false")
+    {
+      REQUIRE_FALSE(field.test<0x00>());
+    }
     WHEN("test_and_set bit 6 to true")
     {
       THEN("new value is assigned and old is returned")
@@ -21,6 +25,10 @@ SCENARIO("atomic_bitfield")
   GIVEN("a bitfield set to all 1")
   {
     auto field = bitfield_t{static_cast<std::uint8_t>(-1)};
+    THEN("test<0x00> is false")
+    {
+      REQUIRE_FALSE(field.test<0x00>());
+    }
     WHEN("test_and_set bit 3 to false")
     {
       THEN("new value is assigned and old is returned")
