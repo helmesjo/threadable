@@ -11,15 +11,15 @@ namespace fho
 {
   enum slot_state : std::uint_fast8_t
   {
-    /// @brief Empty - no value assigned.
+    /// @brief No state.
     empty = 0,
-    /// @brief Empty - no value assigned.
+    /// @brief No value assigned.
     free = 1 << 0,
-    /// @brief Claimed - reserved or being processed.
+    /// @brief Reserved.
     claimed = 1 << 1,
-    /// @brief Active - ready or being processed.
+    /// @brief Ready to, or being, processed.
     active = 1 << 2,
-    /// @brief Release - being released.
+    /// @brief Being released.
     release = 1 << 3
   };
 

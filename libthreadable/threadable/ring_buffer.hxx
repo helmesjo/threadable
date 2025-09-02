@@ -158,8 +158,7 @@ namespace fho
   private:
     static constexpr auto index_mask = Capacity - 1u;
 
-    using slot_type   = ring_slot<value_type>;
-    using stolen_type = lent_slot<slot_type>;
+    using slot_type = ring_slot<value_type>;
 
     using atomic_index_t        = std::atomic_uint_fast64_t;
     using index_t               = typename atomic_index_t::value_type;
