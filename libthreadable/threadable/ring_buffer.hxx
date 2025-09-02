@@ -159,6 +159,7 @@ namespace fho
     static constexpr auto index_mask = Capacity - 1u;
 
     using slot_type = ring_slot<value_type>;
+    using lent_type = lent_slot<slot_type>;
 
     using atomic_index_t        = std::atomic_uint_fast64_t;
     using index_t               = typename atomic_index_t::value_type;
@@ -351,6 +352,29 @@ namespace fho
           break;
         }
         // 4. Somebody already released tail - Retry.
+      }
+    }
+
+    /// @brief Lends the first element from the ring buffer.
+    /// @details Lends the item at `front()` and advances `tail_`.
+    /// The "lent" slot is released when it goes out of scope.
+    /// Thread-safe for multiple consumers.
+    /// @note: Makes only a single attempt to "lend" item next in line.
+    auto
+    try_pop() noexcept -> lent_type
+    {
+      auto tail = tail_.load(std::memory_order_acquire);
+      // 1. If element exists, try to claim it (advance tail).
+      if (auto& elem = elems_[ring_iterator_t::mask(tail)];
+          elem.template test<slot_state::active>(std::memory_order_acquire) &&
+          tail_.compare_exchange_strong(tail, tail + 1, std::memory_order_acq_rel)) [[likely]]
+      {
+        // Success: own the slot, safe to lend (read value)
+        return lent_type{&elem};
+      }
+      else [[unlikely]]
+      {
+        return nullptr;
       }
     }
 

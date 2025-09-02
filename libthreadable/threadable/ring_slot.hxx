@@ -279,6 +279,112 @@ namespace fho
   {
     return FWD(a).value();
   };
+
+  /// @brief A scoped RAII wrapper for a borrowed `ring_slot` pointer, ensuring release on
+  /// destruction.
+  /// @details The `lent_slot` class provides temporary access to a `ring_slot`'s value,
+  /// automatically releasing the slot when it goes out of scope. It supports dereferencing, arrow
+  /// access, and invocation if the value is callable. Move-only to transfer ownership safely.
+  /// @tparam `Slot` The slot type, typically `ring_slot<T>`.
+  /// @note Assumes the slot is in `active` state when lent; undefined otherwise.
+  /// @example
+  /// ```cpp
+  /// auto slot = queue.try_pop();
+  /// if (slot) {
+  ///   slot();  // If callable
+  /// }  // Auto-releases
+  /// ```
+  template<typename Slot>
+  class alignas(details::cache_line_size) lent_slot
+  {
+    Slot* slot_ = nullptr; // NOLINT
+
+  public:
+    lent_slot(Slot* slot)
+      : slot_(slot)
+    {
+      assert((!slot_ || slot_->template test<slot_state::active>(std::memory_order_acquire)) and
+             "lent_slot::lent_slot()");
+    }
+
+    lent_slot(lent_slot&& other) noexcept
+      : slot_(std::exchange(other.slot_, nullptr))
+    {
+      assert((!slot_ || slot_->template test<slot_state::active>(std::memory_order_acquire)) and
+             "lent_slot::lent_slot()");
+    }
+
+    auto
+    operator=(lent_slot&& other) noexcept -> lent_slot&
+    {
+      if (this != &other) [[likely]]
+      {
+        if (slot_) [[unlikely]]
+        {
+          slot_->release(slot_state::active);
+        }
+        slot_ = std::exchange(other.slot_, nullptr);
+      }
+      return *this;
+    }
+
+    lent_slot(lent_slot const&)                    = delete;
+    auto operator=(lent_slot const&) -> lent_slot& = delete;
+
+    ~lent_slot()
+    {
+      if (slot_)
+      {
+        slot_->release(slot_state::active);
+      }
+    }
+
+    explicit
+    operator bool() const noexcept
+    {
+      return slot_ != nullptr;
+    }
+
+    auto
+    operator*() noexcept -> decltype(auto)
+    {
+      return slot_->value();
+    }
+
+    auto
+    operator*() const noexcept -> decltype(auto)
+    {
+      return slot_->value();
+    }
+
+    auto
+    operator->() noexcept -> decltype(auto)
+    {
+      return &slot_->value();
+    }
+
+    auto
+    operator->() const noexcept -> decltype(auto)
+    {
+      return &slot_->value();
+    }
+
+    template<typename... Args>
+    auto
+    operator()(Args&&... args) noexcept -> decltype(auto)
+      requires std::invocable<decltype(**this), Args...>
+    {
+      return std::invoke(**this, std::forward<Args>(args)...);
+    }
+
+    template<typename... Args>
+    auto
+    operator()(Args&&... args) const noexcept -> decltype(auto)
+      requires std::invocable<decltype(**this) const, Args...>
+    {
+      return std::invoke(**this, std::forward<Args>(args)...);
+    }
+  };
 }
 
 #undef FWD

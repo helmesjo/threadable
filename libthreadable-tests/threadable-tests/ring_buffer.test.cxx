@@ -555,6 +555,79 @@ SCENARIO("ring_buffer: stress-test")
       REQUIRE(ring.size() == 0);
     }
   }
+  GIVEN("4 producers & 4 consumers")
+  {
+    static constexpr auto capacity      = std::size_t{1 << 14};
+    static constexpr auto nr_producers  = std::size_t{4};
+    static constexpr auto nr_consumers  = std::size_t{4};
+    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+
+    auto ring    = fho::ring_buffer<func_t, capacity>();
+    auto barrier = std::barrier{nr_consumers + nr_producers};
+
+    THEN("there are no race conditions")
+    {
+      std::atomic_size_t tasksExecuted{0};
+      std::atomic_size_t tasksConsumed{0};
+
+      // start producers
+      std::vector<std::thread> producers;
+      for (std::size_t i = 0; i < nr_producers; ++i)
+      {
+        producers.emplace_back(
+          [&barrier, &ring, &tasksExecuted]
+          {
+            auto tokens = fho::token_group{};
+            barrier.arrive_and_wait();
+            for (std::size_t i = 0; i < ring.max_size(); ++i)
+            {
+              tokens += ring.emplace_back(
+                [&tasksExecuted]
+                {
+                  ++tasksExecuted;
+                });
+            }
+            tokens.wait();
+          });
+      }
+      // start consumers
+      std::vector<std::thread> consumers;
+      for (std::size_t i = 0; i < nr_consumers; ++i)
+      {
+        consumers.emplace_back(
+          [&barrier, &ring, &tasksConsumed, &producers]
+          {
+            barrier.arrive_and_wait();
+            while (std::ranges::any_of(producers,
+                                       [](auto const& p)
+                                       {
+                                         return p.joinable();
+                                       }) ||
+                   !ring.empty())
+            {
+              if (auto e = ring.try_pop(); e)
+              {
+                e();
+                tasksConsumed++;
+              }
+            }
+          });
+      }
+
+      for (auto& producer : producers)
+      {
+        producer.join();
+      }
+
+      for (auto& consumer : consumers)
+      {
+        consumer.join();
+      }
+
+      REQUIRE(tasksConsumed == tasksExecuted);
+      REQUIRE(ring.size() == 0);
+    }
+  }
 }
 
 SCENARIO("ring_buffer: standard algorithms")
