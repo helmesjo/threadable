@@ -107,7 +107,7 @@ namespace fho
     /// successful, making it suitable for low-contention scenarios.
     /// @param `exp` Expected state.
     inline void
-    acquire(slot_state const exp = slot_state::empty) noexcept
+    acquire(slot_state const exp) noexcept
     {
       auto expected = exp;
       while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_acq_rel,
@@ -127,7 +127,7 @@ namespace fho
     {
       auto expected = exp;
       while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_acq_rel,
-                                           std::memory_order_acquire)) [[likely]]
+                                           std::memory_order_acquire)) [[unlikely]]
       {
         if (expected != exp) [[unlikely]]
         {
@@ -182,6 +182,18 @@ namespace fho
       state_.template wait<State, Old>(std::memory_order_acquire);
     }
 
+    /// @brief Tests if any states specified by the mask are set.
+    /// @details Atomically loads the current value and checks if any bits in `Mask` are set.
+    /// @tparam Mask A constant expression representing the bitmask to test.
+    /// @param orders Memory orders for the load operation (e.g., `std::memory_order_seq_cst`).
+    /// @return True if any bits in `Mask` are set, false otherwise.
+    template<slot_state Mask>
+    [[nodiscard]] inline auto
+    test(std::same_as<std::memory_order> auto... orders) const noexcept -> bool
+    {
+      return state_.test<Mask>(orders...);
+    }
+
     /// @brief Releases the slot.
     /// @details Requires the slot to be in the `active` state. Destroys the stored value if it is
     /// not trivially destructible, sets the state to `empty`, and notifies any waiters. In debug
@@ -201,7 +213,7 @@ namespace fho
       value_ = {};
 #endif
       auto expected = exp;
-      while (!state_.compare_exchange_weak(expected, slot_state::empty, std::memory_order_acq_rel,
+      while (!state_.compare_exchange_weak(expected, slot_state::free, std::memory_order_acq_rel,
                                            std::memory_order_acquire)) [[likely]]
       {
         expected = exp;
@@ -256,9 +268,10 @@ namespace fho
     }
 
   private:
-    fho::atomic_state_t state_; ///< Atomic state of the slot (e.g., `empty`, `claimed`, `active`).
-    alignas(T) std::array<std::byte, sizeof(T)> value_; ///< Aligned storage for the value of type
-                                                        ///< `T`.
+    /// Atomic state of the slot (e.g., `empty`, `free`, `claimed`, `active`).
+    fho::atomic_state_t state_{slot_state::free};
+    /// Aligned storage for the value of type `T`.
+    alignas(T) std::array<std::byte, sizeof(T)> value_;
   };
 
   template<typename T>

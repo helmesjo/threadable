@@ -119,22 +119,22 @@ namespace fho
   /// @warning Only one consumer should call `consume()` at a time to ensure thread safety.
   ///          Multiple producers can safely call `emplace_back()` concurrently.
   /// @example
-  // Logical view; actual indices unbounded, masked for array access.
-  // When tail or head reaches the end they will wrap around.
+  /// Logical view; actual indices unbounded, masked for array access.
+  /// When tail or head reaches the end they will wrap around.
   /// ```cpp
   /// // Logical view; actual indices unbounded, masked for array access.
   /// // When tail or head reaches the end they will wrap around.
-  /// //  _
-  /// // |_|
-  /// // |_|
-  /// // |_| ┐→ tail  (next claim) - consumer
-  /// // |_| │
-  /// // |_| │
-  /// // |_| │
-  /// // |_| │
-  /// // |_| ┘→ head-1 (last elem) - consumer
-  /// // |_|  ← head   (next slot) - producer
-  /// // |_|
+  ///  _
+  /// |_|
+  /// |_|
+  /// |_| ┐→ tail  (next claim) - consumer
+  /// |_| │
+  /// |_| │
+  /// |_| │
+  /// |_| │
+  /// |_| ┘→ head-1 (last elem) - consumer
+  /// |_|  ← head   (next slot) - producer
+  /// |_|
   /// auto buffer = fho::ring_buffer<>{}; // Uses fast_func_t by default
   /// auto token = buffer.emplace_back([]() { std::cout << "Hello, World!\n"; });
   /// auto range = buffer.consume();
@@ -147,14 +147,19 @@ namespace fho
            typename Allocator = aligned_allocator<ring_slot<T>, details::cache_line_size>>
   class ring_buffer
   {
-    static constexpr auto index_mask = Capacity - 1u;
-
+  public:
     using value_type      = T;
-    using slot_type       = ring_slot<value_type>;
     using size_type       = std::size_t;
     using reference       = value_type&;
+    using pointer         = value_type*;
     using const_reference = value_type const&;
     using allocator_type  = Allocator;
+
+  private:
+    static constexpr auto index_mask = Capacity - 1u;
+
+    using slot_type   = ring_slot<value_type>;
+    using stolen_type = lent_slot<slot_type>;
 
     using atomic_index_t        = std::atomic_uint_fast64_t;
     using index_t               = typename atomic_index_t::value_type;
@@ -204,12 +209,10 @@ namespace fho
     ring_buffer(ring_buffer&& rhs) noexcept
       : tail_(rhs.tail_.load(std::memory_order::relaxed))
       , head_(rhs.head_.load(std::memory_order::relaxed))
-      , next_(rhs.next_.load(std::memory_order::relaxed))
       , elems_(std::move(rhs.elems_))
     {
       rhs.tail_.store(0, std::memory_order::relaxed);
       rhs.head_.store(0, std::memory_order::relaxed);
-      rhs.next_.store(0, std::memory_order::relaxed);
     }
 
     auto operator=(ring_buffer const&) -> ring_buffer& = delete;
@@ -223,7 +226,6 @@ namespace fho
     {
       tail_  = rhs.tail_.load(std::memory_order::relaxed);
       head_  = rhs.head_.load(std::memory_order::relaxed);
-      next_  = rhs.next_.load(std::memory_order::relaxed);
       elems_ = std::move(rhs.elems_);
       return *this;
     }
@@ -231,11 +233,12 @@ namespace fho
     /// @brief Constructs a value into the buffer with an existing token.
     /// @details Adds a value to the buffer, associating it with a provided token. The process
     ///          involves:
-    ///          1. **Claim a slot**: Atomically increments `next_` to reserve a slot.
+    ///          1. **Claim a slot**: Atomically increments `head_` & acquire the slot.
+    //              Blocks via `tail_.wait()` if the buffer is full until space is freed by the
+    //              consumer.
     ///          2. **Assign the value**: Constructs the value in the slot and binds the token.
-    ///          3. **Commit the slot**: Updates `head_` using a compare-exchange loop to make the
-    ///          slot available. Blocks via `tail_.wait()` if the buffer is full until space is
-    ///          freed by the consumer, then notifies via `head_.notify_one()`.
+    ///          3. **Commit the slot**: Updates slot `state` to make the slot available, then
+    ///             notifies via `head_.notify_one()`.
     /// @param token Token to associate with the slot.
     /// @param args Arguments to construct the value.
     /// @return Reference to the provided token.
@@ -250,30 +253,29 @@ namespace fho
     auto
     emplace_back(slot_token& token, Args&&... args) noexcept -> slot_token&
     {
-      // 1. Claim a slot.
-      auto const slot = next_.fetch_add(1, std::memory_order_acquire);
-      slot_type& elem = elems_[ring_iterator_t::mask(slot)];
-      elem.acquire(slot_state::empty);
+      // 1. Claim a slot
 
-      // 2. Assign `value_type`.
+      // @NOTE: Relaxed `head_.fetch_add()` mem order
+      //        ok, it's followed by slot acquire.
+      auto const slot = head_.fetch_add(1, std::memory_order_relaxed);
+      slot_type& elem = elems_[ring_iterator_t::mask(slot)];
+
+      // @NOTE: Check if full before assigning.
+      if (auto tail = tail_.load(std::memory_order_acquire); slot - tail >= Capacity) [[unlikely]]
+      {
+        tail_.wait(tail, std::memory_order_acquire);
+      }
+
+      assert(elem.template test<slot_state::free>() and "ring_buffer::emplace_back()");
+      elem.acquire(slot_state::free);
+
+      // 2. Assign/Commit `value_type`.
       elem.emplace(FWD(args)...);
       elem.bind(token);
 
-      // 3. Commit slot.
-      index_t expected; // NOLINT
-      do
-      {
-        // Check if full before committing.
-        if (auto tail = tail_.load(std::memory_order_acquire);
-            ring_iterator_t::mask(slot - tail) >= Capacity) [[unlikely]]
-        {
-          tail_.wait(tail, std::memory_order_acquire);
-        }
-        expected = slot;
-      }
-      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_acq_rel,
-                                          std::memory_order_acquire));
-      head_.notify_one();
+      // 3. Notify slot.
+      head_.notify_all();
+
       return token;
     }
 
@@ -329,6 +331,7 @@ namespace fho
     ///          Thread-safe for a single consumer. Does not notify waiters; use a separate
     ///          mechanism if notification is needed.
     /// @pre `size() > 0`
+    /// @note Popping beyond emplaced items results in undefined behavior.
     void
     pop() noexcept
     {
@@ -371,7 +374,7 @@ namespace fho
     }
 
     /// @brief Consumes a range of items from the buffer.
-    /// @details Retrieves a range of values from `tail_` to `head_`, up to a specified maximum.
+    /// @details Retrieves a range of values from `front()` to `end()` (or `max`).
     ///          Returns a `subrange_type` that must be processed within its lifetime; slots are
     ///          released when the subrange is destroyed.
     /// @param `max` Maximum number of items to consume. Defaults to `max_size()`.
@@ -387,9 +390,21 @@ namespace fho
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
-      auto const cap  = tail + std::min<index_t>(max, head - tail); // Cap range size
-      auto       b    = ring_iterator_t(elems_.data(), tail);
-      auto       e    = ring_iterator_t(elems_.data(), cap);
+      auto       cap  = tail;
+
+      // @NOTE: Forward-scan until last active within cap
+      while (cap < head && (cap - tail) < max)
+      {
+        auto& elem = elems_[ring_iterator_t::mask(cap)];
+        if (!elem.template test<slot_state::active>(std::memory_order_acquire))
+        {
+          break;
+        }
+        ++cap;
+      }
+
+      auto b = ring_iterator_t(elems_.data(), tail);
+      auto e = ring_iterator_t(elems_.data(), cap);
       tail_.store(cap, std::memory_order_release);
       tail_.notify_all();
       return subrange_type(std::ranges::subrange(b, e), slot_value_accessor<value_type>);
@@ -468,7 +483,6 @@ namespace fho
   private:
     alignas(details::cache_line_size) atomic_index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
-    alignas(details::cache_line_size) atomic_index_t next_{0};
 
     alignas(details::cache_line_size) std::vector<slot_type, allocator_type> elems_{Capacity};
 

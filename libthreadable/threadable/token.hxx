@@ -11,12 +11,16 @@ namespace fho
 {
   enum slot_state : std::uint_fast8_t
   {
-    /// @brief Empty, with no value assigned.
+    /// @brief Empty - no value assigned.
     empty = 0,
-    /// @brief Claimed, reserved or being processed.
-    claimed = 1 << 0,
-    /// @brief Active, with a value ready or being processed.
-    active = 1 << 1
+    /// @brief Empty - no value assigned.
+    free = 1 << 0,
+    /// @brief Claimed - reserved or being processed.
+    claimed = 1 << 1,
+    /// @brief Active - ready or being processed.
+    active = 1 << 2,
+    /// @brief Release - being released.
+    release = 1 << 3
   };
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;
