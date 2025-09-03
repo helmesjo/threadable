@@ -132,11 +132,11 @@ namespace fho
     inline void
     acquire() noexcept
     {
-      auto exp = slot_state::empty;
+      auto exp = slot_state::free;
       while (!state_.compare_exchange_weak(exp, slot_state::claimed, std::memory_order_release,
                                            std::memory_order_relaxed)) [[likely]]
       {
-        exp = slot_state::empty;
+        exp = slot_state::free;
       }
     }
 
@@ -195,7 +195,7 @@ namespace fho
 #ifndef NDEBUG
       value_ = {};
 #endif
-      state_.store(slot_state::empty, std::memory_order_release);
+      state_.store(slot_state::free, std::memory_order_release);
       state_.notify_all();
     }
 
@@ -251,7 +251,7 @@ namespace fho
     }
 
     /// Atomic state of the slot.
-    fho::atomic_state_t state_{slot_state::empty};
+    fho::atomic_state_t state_{slot_state::free};
     /// Aligned storage for the value of type `T`.
     alignas(T) std::array<std::byte, sizeof(T)> value_;
   };
