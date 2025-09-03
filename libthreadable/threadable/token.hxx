@@ -19,6 +19,10 @@ namespace fho
     claimed = 1 << 1,
     /// @brief Ready to, or being, processed.
     active = 1 << 2,
+    /// @brief For debugging purposes only.
+    claimed_free = claimed | free,
+    /// @brief For debugging purposes only.
+    claimed_active = claimed | active,
   };
 
   inline constexpr auto
