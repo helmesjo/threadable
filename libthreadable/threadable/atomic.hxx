@@ -84,8 +84,8 @@ namespace fho
     /// @param expected Reference to the expected value.
     /// @param desired The desired value to set if comparison succeeds.
     /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
-    /// @return True if the exchange was successful, false otherwise.
-    auto
+    /// @return `true` if the exchange succeeded, `false` otherwise.
+    inline auto
     compare_exchange_strong(T& expected, T const desired,
                             std::same_as<std::memory_order> auto... orders) noexcept -> bool
       requires (!std::is_same_v<T, underlying_type>)
@@ -96,13 +96,75 @@ namespace fho
       return res;
     }
 
+    /// @brief Performs a strong compare-and-exchange on masked bits.
+    /// @details Atomically loads the current value using the `failure` memory order.
+    /// Checks if the bits in `ExpMask` match the expected state: all set if `Expected` is true,
+    /// all unset if false. If the condition holds, computes a new value by setting the bits in
+    /// `DesMask` to all set if `Desired` is true or all unset if false, while leaving bits
+    /// outside `DesMask` unchanged. Attempts to replace the current value with this new value
+    /// using compare-exchange. Retries with weak compare-exchange until success or the bit
+    /// condition no longer holds (due to concurrent modification).
+    /// @tparam `ExpMask` A constant expression representing the bitmask for the expected condition.
+    /// @tparam `Expected` The expected state of the `ExpMask` bits: true for all set, false for all
+    /// unset.
+    /// @tparam `DesMask` A constant expression representing the bitmask for the desired update.
+    /// @tparam `Desired` The desired state to set the `DesMask` bits to: true for all set, false
+    /// for all unset.
+    /// @param `success` Memory order on success (defaults to `seq_cst`).
+    /// @param `failure` Memory order on failure (defaults to `seq_cst`; must not be stronger than
+    /// success per `std::atomic` rules).
+    /// @return `true` if the exchange succeeded (condition held and CAS won), `false` otherwise.
+    template<T ExpMask, bool Expected, T DesMask, bool Desired>
+    inline auto
+    compare_exchange_strong(std::memory_order success = std::memory_order_seq_cst,
+                            std::memory_order failure = std::memory_order_seq_cst) noexcept -> bool
+      requires (!std::is_same_v<T, underlying_type>)
+    {
+      auto           cur      = this->load(failure);
+      constexpr auto exp_bits = Expected ? ExpMask : underlying_type{0u};
+      for (;;)
+      {
+        if ((cur & ExpMask) != exp_bits)
+        {
+          return false;
+        }
+        auto const des = (cur & ~DesMask) | (Desired ? DesMask : underlying_type{0u});
+        if (this->compare_exchange_weak(cur, des, success, failure))
+        {
+          return true;
+        }
+      }
+    }
+
+    template<T ExpMask, bool Expected>
+    inline auto
+    compare_exchange_strong(T desired, std::memory_order success = std::memory_order_seq_cst,
+                            std::memory_order failure = std::memory_order_seq_cst) noexcept -> bool
+      requires (!std::is_same_v<T, underlying_type>)
+    {
+      auto           cur      = this->load(failure);
+      constexpr auto exp_bits = Expected ? ExpMask : underlying_type{0u};
+      for (;;)
+      {
+        if ((cur & ExpMask) != exp_bits)
+        {
+          return false;
+        }
+        auto const des = (cur & ~desired) | (desired ? desired : underlying_type{0u});
+        if (this->compare_exchange_weak(cur, des, success, failure))
+        {
+          return true;
+        }
+      }
+    }
+
     /// @brief Weak version of compare_exchange_strong for enum types.
     /// @details Similar to `compare_exchange_strong`, but may spuriously fail.
     /// @param expected Reference to the expected value.
     /// @param desired The desired value to set if comparison succeeds.
     /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
-    /// @return True if the exchange was successful, false otherwise.
-    auto
+    /// @return `true` if the exchange succeeded, `false` otherwise.
+    inline auto
     compare_exchange_weak(T& expected, T const desired,
                           std::same_as<std::memory_order> auto... orders) noexcept -> bool
       requires (!std::is_same_v<T, underlying_type>)
@@ -111,6 +173,41 @@ namespace fho
       auto res = this->compare_exchange_weak(exp, to_underlying(desired), orders...);
       expected = from_underlying<T>(exp);
       return res;
+    }
+
+    /// @brief Performs a weak compare-and-exchange on masked bits.
+    /// @details Atomically loads the current value using the `failure` memory order.
+    /// Checks if the bits in `ExpMask` match the expected state: all set if `Expected` is true,
+    /// all unset if false. If the condition holds, computes a new value by setting the bits in
+    /// `DesMask` to all set if `Desired` is true or all unset if false, while leaving bits
+    /// outside `DesMask` unchanged. Attempts a single weak replacement with this new value; may
+    /// fail spuriously even if condition holds and value matches. No retries; returns false on
+    /// condition failure or CAS failure (including spurious).
+    /// @tparam `ExpMask` A constant expression representing the bitmask for the expected condition.
+    /// @tparam `Expected` The expected state of the `ExpMask` bits: true for all set, false for all
+    /// unset.
+    /// @tparam `DesMask` A constant expression representing the bitmask for the desired update.
+    /// @tparam `Desired` The desired state to set the `DesMask` bits to: true for all set, false
+    /// for all unset.
+    /// @param `success` Memory order on success (defaults to `seq_cst`).
+    /// @param `failure` Memory order on failure (defaults to `seq_cst`; must not be stronger than
+    /// success per `std::atomic` rules).
+    /// @return `true` if the exchange succeeded (condition held and CAS won), `false` otherwise.
+    template<T ExpMask, bool Expected, T DesMask, bool Desired>
+    inline auto
+    compare_exchange_weak(std::memory_order success = std::memory_order_seq_cst,
+                          std::memory_order failure = std::memory_order_seq_cst) noexcept -> bool
+      requires (!std::is_same_v<T, underlying_type>)
+    {
+      auto           cur      = this->load(failure);
+      constexpr auto exp_bits = Expected ? ExpMask : underlying_type{0u};
+      constexpr auto des_bits = Desired ? DesMask : underlying_type{0u};
+      if ((cur & ExpMask) != exp_bits)
+      {
+        return false;
+      }
+      auto const des = (cur & ~DesMask) | des_bits;
+      return this->compare_exchange_weak(cur, des, success, failure);
     }
 
     /// @brief Tests if any bits specified by the mask are set.
