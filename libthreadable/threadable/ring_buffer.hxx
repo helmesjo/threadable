@@ -31,7 +31,7 @@ namespace fho
     inline constexpr std::size_t default_capacity = 1 << 16;
   }
 
-  /// @brief A subrange of active slots in the buffer.
+  /// @brief A subrange of slots `ready` in the buffer.
   /// @details Represents a range of consumed slots ready for processing. It manages the
   ///          lifetime of these slots, releasing them when the subrange is destroyed to prevent
   ///          reuse before processing is complete. Uses a `shared_ptr` with a static dummy
@@ -88,7 +88,7 @@ namespace fho
                                   for (auto i = b; i < e; ++i)
                                   {
                                     Slot& elem = d[Iterator::mask(i)];
-                                    elem.template release<slot_state::active>();
+                                    elem.template release<slot_state::ready>();
                                   }
                                 }
                               }
@@ -259,10 +259,10 @@ namespace fho
       //        it's followed by slot acquire.
       auto const slot = head_.fetch_add(1, std::memory_order_relaxed);
       slot_type& elem = elems_[ring_iterator_t::mask(slot)];
-      elem.template wait<slot_state::active | slot_state::claimed>(std::memory_order_acquire);
+      elem.template wait<slot_state::ready | slot_state::claimed>(std::memory_order_acquire);
 
-      assert(elem.template test<slot_state::free>() and "ring_buffer::emplace_back()");
-      elem.claim(slot_state::free);
+      assert(elem.template test<slot_state::empty>() and "ring_buffer::emplace_back()");
+      elem.claim(slot_state::empty);
 
       // 2. Assign/Commit `value_type`.
       elem.emplace(FWD(args)...);
@@ -438,11 +438,11 @@ namespace fho
       auto const head = head_.load(std::memory_order_acquire);
       auto       cap  = tail;
 
-      // @NOTE: Forward-scan until last active within cap
+      // @NOTE: Forward-scan until last one ready within cap.
       while (cap < head && (cap - tail) < max)
       {
         auto& elem = elems_[ring_iterator_t::mask(cap)];
-        if (!elem.template test<slot_state::active>(std::memory_order_acquire))
+        if (!elem.template test<slot_state::ready>(std::memory_order_acquire))
         {
           break;
         }

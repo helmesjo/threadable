@@ -23,10 +23,10 @@ namespace fho
 {
   template<typename S>
   concept atomic_slot = requires (S slot, slot_token& token) {
-                          { slot.claim(slot_state::null) } noexcept;
-                          { slot.template release<slot_state::active>() } noexcept;
+                          { slot.claim(slot_state::empty) } noexcept;
+                          { slot.template release<slot_state::ready>() } noexcept;
                           {
-                            slot.template wait<slot_state::active, true>(std::memory_order_acquire)
+                            slot.template wait<slot_state::ready, true>(std::memory_order_acquire)
                           } noexcept;
                         };
 
@@ -35,12 +35,12 @@ namespace fho
   /// @details The `ring_slot` class is designed for use in concurrent environments, such as thread
   /// pools or task queues, where slots must be acquired, assigned values, processed, and released
   /// efficiently. It uses atomic operations to manage state transitions between `empty`, `claimed`,
-  /// and `active`. The class is aligned to the cache line size to prevent false sharing in
+  /// and `ready`. The class is aligned to the cache line size to prevent false sharing in
   /// multithreaded scenarios. Thread safety is ensured through atomic state management, but users
   /// must follow the correct sequence of operations.
   /// @tparam `T` The type of the value stored in the slot. Must be movable and, if not trivially
   /// destructible, must be destructible.
-  /// @note The state must transition as follows: `empty` -> `claimed` -> `active` -> `empty`.
+  /// @note The state must transition as follows: `empty` -> `claimed` -> `ready` -> `empty`.
   /// Deviating from this sequence may result in undefined behavior.
   template<typename T>
   class alignas(details::cache_line_size) ring_slot
@@ -93,7 +93,7 @@ namespace fho
 
     /// @brief Conversion to reference to `T`.
     /// @details Allows the slot to be used as if it were the stored value. Ensure the slot is in
-    /// an appropriate state (e.g., `active`) before accessing the value to avoid undefined
+    /// an appropriate state (e.g., `ready`) before accessing the value to avoid undefined
     /// behavior.
     inline
     operator T&() noexcept
@@ -103,7 +103,7 @@ namespace fho
 
     /// @brief Conversion to const reference to `T`.
     /// @details Allows the slot to be used as if it were the stored value. Ensure the slot is in
-    /// an appropriate state (e.g., `active`) before accessing the value to avoid undefined
+    /// an appropriate state (e.g., `ready`) before accessing the value to avoid undefined
     /// behavior.
     inline
     operator T const&() const noexcept
@@ -128,7 +128,7 @@ namespace fho
 
     /// @brief Assigns a value to the slot.
     /// @details Requires the slot to be in the `claimed` state. Constructs a new value of type `T`
-    /// in place using the provided arguments and sets the state to `active`. In debug mode, asserts
+    /// in place using the provided arguments and sets the state to `ready`. In debug mode, asserts
     /// that the current value is all zeros if convertible to `bool`.
     /// @param `args` Arguments to forward to the constructor of `T`.
     inline void
@@ -152,20 +152,20 @@ namespace fho
              "ring_slot::emplace()");
 
       std::construct_at<T>(data(), FWD(args)...);
-      state_.store(slot_state::active, std::memory_order_release);
+      state_.store(slot_state::ready, std::memory_order_release);
       // @NOTE: Intentionally not notifying here since that is redundant (and costly),
-      //        it is designed to be waited on by checking state active -> inactive.
+      //        it is designed to be waited on by checking state `ready` -> `empty`.
     }
 
     /// @brief Try to acquire the slot by claiming it.
-    /// @details Atomically attempts to change the state from `active` to `claimed`. Spins until
+    /// @details Atomically attempts to change the state from `ready` to `claimed`. Spins until
     /// successful unless `exp` doesn't match current value.
     /// @param `exp` Expected state.
-    /// @return `true` if exchanged `active` -> `lent` (`claimed`), else `false`.
+    /// @return `true` if exchanged `ready` -> `lent` (`claimed`), else `false`.
     inline auto
     try_claim() noexcept -> bool
     {
-      auto expected = slot_state::active;
+      auto expected = slot_state::ready;
       return state_.compare_exchange_strong(expected, slot_state::claimed,
                                             std::memory_order_acq_rel, std::memory_order_acquire);
     }
@@ -175,7 +175,7 @@ namespace fho
     {
       assert(state_.template test<slot_state::claimed>(std::memory_order_acquire) and
              "ring_slot::undo_claim()");
-      state_.store(slot_state::active, std::memory_order_release);
+      state_.store(slot_state::ready, std::memory_order_release);
     }
 
     /// @brief Waits for the slot to leave a state.
@@ -204,7 +204,7 @@ namespace fho
     }
 
     /// @brief Releases the slot.
-    /// @details Requires the slot to be in the `active` state. Destroys the stored value if it is
+    /// @details Requires the slot to be in the `ready` state. Destroys the stored value if it is
     /// not trivially destructible, sets the state to `empty`, and notifies any waiters. In debug
     /// mode, resets the value to zero to aid in detecting use-after-free errors.
     /// @tparam `State` State to transition.
@@ -212,7 +212,7 @@ namespace fho
     inline void
     release() noexcept
     {
-      // Must be active
+      // Must be ready
       assert(state_.template test<State>(std::memory_order_acquire) and "ring_slot::release()");
       // Free up slot for re-use.
       if constexpr (!std::is_trivially_destructible_v<T>)
@@ -223,7 +223,7 @@ namespace fho
       value_ = {};
 #endif
       auto expected = State;
-      while (!state_.compare_exchange_weak(expected, slot_state::free, std::memory_order_acq_rel,
+      while (!state_.compare_exchange_weak(expected, slot_state::empty, std::memory_order_acq_rel,
                                            std::memory_order_acquire)) [[likely]]
       {
         expected = State;
@@ -243,7 +243,7 @@ namespace fho
 
     /// @brief Gets a pointer to the stored value.
     /// @details Returns a pointer to the memory where the value is stored. Ensure the slot is in
-    /// an appropriate state (e.g., `active`) before accessing to avoid undefined behavior.
+    /// an appropriate state (e.g., `ready`) before accessing to avoid undefined behavior.
     inline constexpr auto
     data() noexcept -> T*
     {
@@ -252,7 +252,7 @@ namespace fho
 
     /// @brief Gets a const pointer to the stored value.
     /// @details Returns a const pointer to the memory where the value is stored. Ensure the slot
-    /// is in an appropriate state (e.g., `active`) before accessing to avoid undefined behavior.
+    /// is in an appropriate state (e.g., `ready`) before accessing to avoid undefined behavior.
     inline constexpr auto
     data() const noexcept -> T const*
     {
@@ -261,7 +261,7 @@ namespace fho
 
     /// @brief Gets a reference to the stored value.
     /// @details Returns a reference to the stored value. Ensure the slot is in an appropriate
-    /// state (e.g., `active`) before accessing to avoid undefined behavior.
+    /// state (e.g., `ready`) before accessing to avoid undefined behavior.
     inline constexpr auto
     value() noexcept -> T&
     {
@@ -270,7 +270,7 @@ namespace fho
 
     /// @brief Gets a const reference to the stored value.
     /// @details Returns a const reference to the stored value. Ensure the slot is in an
-    /// appropriate state (e.g., `active`) before accessing to avoid undefined behavior.
+    /// appropriate state (e.g., `ready`) before accessing to avoid undefined behavior.
     inline constexpr auto
     value() const noexcept -> T const&
     {
@@ -278,8 +278,8 @@ namespace fho
     }
 
   private:
-    /// Atomic state of the slot (e.g., `empty`, `free`, `claimed`, `active`).
-    fho::atomic_state_t state_{slot_state::free};
+    /// Atomic state of the slot (e.g., `empty`, `claimed`, `ready`).
+    fho::atomic_state_t state_{slot_state::empty};
     /// Aligned storage for the value of type `T`.
     alignas(T) std::array<std::byte, sizeof(T)> value_;
   };
@@ -298,7 +298,7 @@ namespace fho
   /// automatically releasing the slot when it goes out of scope. It supports dereferencing, arrow
   /// access, and invocation if the value is callable. Move-only to transfer ownership safely.
   /// @tparam `Slot` The slot type, typically `ring_slot<T>`.
-  /// @note Assumes the slot is in `active` state when lent; undefined otherwise.
+  /// @note Assumes the slot is in `ready` state when lent; undefined otherwise.
   /// @example
   /// ```cpp
   /// auto slot = queue.try_pop();

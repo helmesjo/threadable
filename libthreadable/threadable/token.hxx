@@ -12,17 +12,17 @@ namespace fho
   enum slot_state : std::uint_fast8_t
   {
     /// @brief No state, only used as variable default init.
-    null = 0,
+    invalid = 0,
     /// @brief No value assigned.
-    free = 1 << 0,
-    /// @brief Reserved.
+    empty = 1 << 0,
+    /// @brief Reserved/locked.
     claimed = 1 << 1,
     /// @brief Ready to, or being, processed.
-    active = 1 << 2,
+    ready = 1 << 2,
     /// @brief For debugging purposes only.
-    claimed_free = claimed | free,
+    claimed_empty = claimed | empty,
     /// @brief For debugging purposes only.
-    claimed_active = claimed | active,
+    claimed_ready = claimed | ready,
   };
 
   inline constexpr auto
@@ -34,7 +34,7 @@ namespace fho
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;
 
-  static constexpr auto null_state = atomic_state_t{slot_state::null};
+  static constexpr auto null_state = atomic_state_t{slot_state::invalid};
 
   /// @brief A token representing a claim on a `ring_slot` state.
   /// @details The `slot_token` class allows for monitoring and controlling the state of a
@@ -123,13 +123,13 @@ namespace fho
     }
 
     /// @brief Checks if the associated `ring_slot` is done.
-    /// @details Returns `true` if the `ring_slot` state is not `active` or if no `ring_slot` is
+    /// @details Returns `true` if the `ring_slot` state is not `ready` or if no `ring_slot` is
     /// associated.
     [[nodiscard]] auto
     done() const noexcept -> bool
     {
       auto state = state_.load(std::memory_order_acquire);
-      return !state || !state->test<slot_state::active>(std::memory_order_acquire);
+      return !state || !state->test<slot_state::ready>(std::memory_order_acquire);
     }
 
     /// @brief Cancels the associated `ring_slot`.
@@ -149,7 +149,7 @@ namespace fho
     }
 
     /// @brief Waits for the associated `ring_slot` to be processed.
-    /// @details Blocks until the `ring_slot` state changes from `active`.
+    /// @details Blocks until the `ring_slot` state changes from `ready`.
     /// @note: The associated state pointer might be rebound during waiting, for example,
     /// in repeated/self-submitting tasks. This will wait until the chain is fully processed.
     void
@@ -159,7 +159,7 @@ namespace fho
       while (state)
       {
         assert(state != nullptr and "state must never be assigned null while owned");
-        state->wait<slot_state::active | slot_state::claimed, true>(std::memory_order_acquire);
+        state->wait<slot_state::ready | slot_state::claimed, true>(std::memory_order_acquire);
         // Re-fetch to handle rebinding. If it
         // stayed same, then it wasn't rebound.
         if (auto next = state_.load(std::memory_order_acquire); next == state) [[likely]]
