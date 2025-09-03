@@ -21,6 +21,15 @@
 
 namespace fho
 {
+  template<typename S>
+  concept atomic_slot = requires (S slot, slot_token& token) {
+                          { slot.claim(slot_state::null) } noexcept;
+                          { slot.template release<slot_state::active>() } noexcept;
+                          {
+                            slot.template wait<slot_state::active, true>(std::memory_order_acquire)
+                          } noexcept;
+                        };
+
   /// @brief A slot in a ring buffer that holds a value of type `T` and manages its state
   /// atomically.
   /// @details The `ring_slot` class is designed for use in concurrent environments, such as thread
@@ -274,6 +283,8 @@ namespace fho
     /// Aligned storage for the value of type `T`.
     alignas(T) std::array<std::byte, sizeof(T)> value_;
   };
+
+  static_assert(atomic_slot<ring_slot<int>>);
 
   template<typename T>
   inline constexpr auto slot_value_accessor = [](auto&& a) -> std::add_lvalue_reference_t<T>

@@ -3,6 +3,7 @@
 #include <threadable/atomic.hxx>
 #include <threadable/ring_buffer.hxx>
 
+#include <concepts>
 #include <ranges>
 #include <thread>
 
@@ -73,17 +74,21 @@ namespace fho
       return work_.emplace(
         [policy](std::ranges::range auto r)
         {
-          if constexpr (requires { r.begin().base()->wait(); })
+          if constexpr (requires { r.begin().base(); })
           {
-            if (policy == execution::seq) [[unlikely]]
+            using base_t = decltype(*r.begin().base());
+            if constexpr (atomic_slot<base_t>)
             {
-              auto const b    = r.begin().base();
-              auto const e    = r.end().base();
-              auto const prev = b - 1;
-              if (b != e && prev != e && prev < b) [[unlikely]]
+              if (policy == execution::seq) [[unlikely]]
               {
-                prev->template wait<slot_state::active | slot_state::claimed>(
-                  std::memory_order_acquire);
+                auto const b    = r.begin().base();
+                auto const e    = r.end().base();
+                auto const prev = b - 1;
+                if (b != e && prev != e) [[unlikely]]
+                {
+                  prev->template wait<slot_state::active | slot_state::claimed>(
+                    std::memory_order_acquire);
+                }
               }
             }
           }
