@@ -28,7 +28,7 @@ namespace fho
   async(std::invocable<Args...> auto&& func, Args&&... args) noexcept -> decltype(auto)
   {
     static auto& queue = create(Policy);
-    return queue.emplace_back(FWD(func), FWD(args)...);
+    return queue.emplace(FWD(func), FWD(args)...);
   }
 
   /// @brief Submits a task to a queue with the specified policy, reusing a token.
@@ -47,7 +47,7 @@ namespace fho
     -> decltype(auto)
   {
     static auto& queue = create(Policy);
-    return queue.emplace_back(token, FWD(func), FWD(args)...);
+    return queue.emplace(token, FWD(func), FWD(args)...);
   }
 
   /// @brief Submits a task to a queue with the specified policy, reusing a token, and re-submits it
@@ -86,10 +86,10 @@ namespace fho
 
       if (!token.cancelled())
       {
-        queue.emplace_back(token, self, ++counter, self, std::ref(token), FWD(func), FWD(args)...);
+        queue.emplace(token, self, ++counter, self, std::ref(token), FWD(func), FWD(args)...);
       }
     };
-    queue.emplace_back(token, lambda, 0, lambda, std::ref(token), FWD(func), FWD(args)...);
+    queue.emplace(token, lambda, 0, lambda, std::ref(token), FWD(func), FWD(args)...);
   }
 
   /// @brief Executes a range of callables with specified execution policy.
@@ -110,7 +110,7 @@ namespace fho
     auto& queue  = create(exPo);
     for (auto&& c : FWD(r))
     {
-      tokens += queue.emplace_back(FWD(c), FWD(args)...);
+      tokens += queue.emplace(FWD(c), FWD(args)...);
     }
     tokens.wait();
     return r.size();

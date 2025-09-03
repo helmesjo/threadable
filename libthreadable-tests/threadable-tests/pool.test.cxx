@@ -22,7 +22,7 @@ SCENARIO("pool: create/remove queues")
     WHEN("task is emplaced")
     {
       int  called = 0;
-      auto token  = queue.emplace_back(
+      auto token  = queue.emplace(
         [&called]
         {
           ++called;
@@ -47,7 +47,7 @@ SCENARIO("pool: create/remove queues")
       AND_WHEN("task is emplaced")
       {
         int  called = 0;
-        auto token2 = q.emplace_back(
+        auto token2 = q.emplace(
           [&called]
           {
             ++called;
@@ -66,7 +66,7 @@ SCENARIO("pool: create/remove queues")
     WHEN("added (with tasks) to pool")
     {
       int  called = 0;
-      auto token  = queue.emplace_back(
+      auto token  = queue.emplace(
         [&called]
         {
           ++called;
@@ -93,7 +93,7 @@ SCENARIO("pool: execution order")
     auto counter = std::atomic_size_t{0};
     for (std::size_t i = 0; i < queue.max_size(); ++i)
     {
-      tokens += queue.emplace_back(
+      tokens += queue.emplace(
         [i, &executed, &counter]()
         {
           executed[i] = counter++;
@@ -123,7 +123,7 @@ SCENARIO("pool: execution order")
     auto  tokens  = fho::token_group{};
     for (std::size_t i = 0; i < pool.max_size(); ++i)
     {
-      tokens += queue.emplace_back(
+      tokens += queue.emplace(
         [&counter]
         {
           ++counter;
@@ -161,7 +161,7 @@ SCENARIO("pool: stress-test")
           auto tokens = fho::token_group{};
           for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
           {
-            tokens += queue.emplace_back(
+            tokens += queue.emplace(
               [&counter]
               {
                 ++counter;
@@ -202,7 +202,7 @@ SCENARIO("pool: stress-test")
           barrier.arrive_and_wait();
           for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
           {
-            tokens += queue.emplace_back(
+            tokens += queue.emplace(
               [&counter]
               {
                 ++counter;

@@ -62,7 +62,7 @@ TEST_CASE("ring: emplace")
             ring.clear();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              bench::doNotOptimizeAway(ring.emplace_back(task_t{}));
+              bench::doNotOptimizeAway(ring.emplace(task_t{}));
             }
           });
   }
@@ -99,7 +99,7 @@ TEST_CASE("ring: iterate (sequential)")
     auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.emplace_back(task_t{});
+      ring.emplace(task_t{});
     }
 
     b.run("fho::ring_buffer<function>",
@@ -146,7 +146,7 @@ TEST_CASE("ring: iterate (parallel)")
     auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.emplace_back(task_t{});
+      ring.emplace(task_t{});
     }
 
     b.run("fho::ring_buffer<function>",
@@ -194,7 +194,7 @@ TEST_CASE("ring: execute (sequential)")
     auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.emplace_back(task_t{});
+      ring.emplace(task_t{});
     }
     auto range = ring.consume();
 
@@ -244,7 +244,7 @@ TEST_CASE("ring: execute (parallel)")
     auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.emplace_back(task_t{});
+      ring.emplace(task_t{});
     }
     auto range = ring.consume();
 

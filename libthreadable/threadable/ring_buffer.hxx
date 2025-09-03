@@ -251,7 +251,7 @@ namespace fho
     template<typename... Args>
       requires std::constructible_from<T, Args...>
     auto
-    emplace_back(slot_token& token, Args&&... args) noexcept -> slot_token&
+    emplace(slot_token& token, Args&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot
 
@@ -287,10 +287,10 @@ namespace fho
     template<typename... Args>
       requires std::constructible_from<T, Args...>
     auto
-    emplace_back(Args&&... args) noexcept -> slot_token
+    emplace(Args&&... args) noexcept -> slot_token
     {
       slot_token token;
-      (void)emplace_back(token, FWD(args)...);
+      (void)emplace(token, FWD(args)...);
       return token;
     }
 
