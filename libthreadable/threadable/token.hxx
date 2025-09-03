@@ -11,8 +11,8 @@ namespace fho
 {
   enum slot_state : std::uint_fast8_t
   {
-    /// @brief No state.
-    empty = 0,
+    /// @brief No state, only used as variable default init.
+    null = 0,
     /// @brief No value assigned.
     free = 1 << 0,
     /// @brief Reserved.
@@ -30,7 +30,7 @@ namespace fho
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;
 
-  static constexpr auto null_state = atomic_state_t{slot_state::empty};
+  static constexpr auto null_state = atomic_state_t{slot_state::null};
 
   /// @brief A token representing a claim on a `ring_slot` state.
   /// @details The `slot_token` class allows for monitoring and controlling the state of a
