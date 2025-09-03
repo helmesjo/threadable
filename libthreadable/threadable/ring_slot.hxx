@@ -283,7 +283,7 @@ namespace fho
 
   /// @brief A scoped RAII wrapper for a borrowed `ring_slot` pointer, ensuring release on
   /// destruction.
-  /// @details The `lent_slot` class provides temporary access to a `ring_slot`'s value,
+  /// @details The `claimed_slot` class provides temporary access to a `ring_slot`'s value,
   /// automatically releasing the slot when it goes out of scope. It supports dereferencing, arrow
   /// access, and invocation if the value is callable. Move-only to transfer ownership safely.
   /// @tparam `Slot` The slot type, typically `ring_slot<T>`.
@@ -306,14 +306,14 @@ namespace fho
       : slot_(slot)
     {
       assert((!slot_ || slot_->template test<slot_state::claimed>(std::memory_order_acquire)) and
-             "lent_slot::lent_slot()");
+             "claimed_slot::claimed_slot()");
     }
 
     claimed_slot(claimed_slot&& other) noexcept
       : slot_(std::exchange(other.slot_, nullptr))
     {
       assert((!slot_ || slot_->template test<slot_state::claimed>(std::memory_order_acquire)) and
-             "lent_slot::lent_slot()");
+             "claimed_slot::claimed_slot()");
     }
 
     auto
