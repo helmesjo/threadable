@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <type_traits>
 #include <vector>
 
 namespace fho
@@ -30,6 +31,13 @@ namespace fho
   {
     using ut_t = std::underlying_type_t<slot_state>;
     return static_cast<slot_state>(static_cast<ut_t>(lhs) | static_cast<ut_t>(rhs));
+  }
+
+  inline constexpr auto
+  operator~(slot_state rhs) noexcept -> slot_state
+  {
+    using ut_t = std::underlying_type_t<slot_state>;
+    return static_cast<slot_state>(~static_cast<ut_t>(rhs));
   }
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;

@@ -84,10 +84,22 @@ namespace fho
                 auto const b    = r.begin().base();
                 auto const e    = r.end().base();
                 auto const prev = b - 1;
-                if (b != e && prev != e) [[unlikely]]
+                // @NOTE
+                // This guards seq policy; wait on prev slot completion before exec current range.
+                // Each check prevents UB/race:
+                // * `b != e`
+                //   Skips if range empty (no tasks).
+                // * `prev != e`
+                //   Skips if prev invalid (e.g., b=0, prev underflow).
+                //   Important: Prevents wait on bogus slot (e.g., elems_[huge & mask]
+                //   wrong/corrupt); avoids UB from unsigned wrap.
+                // * `prev < b`
+                //   Ensures `prev` before `b` (logical order).
+                //   Important: Validates seq chain (monotonic index); skips if wrap/overflow (rare,
+                //   but prevents wait on future/wrong slot, maintaining FIFO).
+                if (b != e && prev != e && prev < b) [[unlikely]]
                 {
-                  prev->template wait<slot_state::ready | slot_state::claimed>(
-                    std::memory_order_acquire);
+                  prev->template wait<~slot_state::empty, true>(std::memory_order_acquire);
                 }
               }
             }
