@@ -42,10 +42,10 @@ namespace fho::dbg
 
     std::fprintf( // NOLINT
       stderr,
-      "%s%sstate%s %s(%s)%s == expected%s %s(%s)%s, file %s, line %d:%d, function "
+      "%s%s(%s) %sstate == expected%s (%s)%s, file %s, line %d:%d, function "
       "%s%s\n",
-      pref, bred, reset, red, to_cstr(current), bred, reset, red, to_cstr(expected), reset,
-      l.file_name(), l.line(), l.column(), l.function_name(), reset);
+      pref, red, to_cstr(current), bred, red, to_cstr(expected), reset, l.file_name(), l.line(),
+      l.column(), l.function_name(), reset);
     std::fflush(stderr);
   }
 
