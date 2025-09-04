@@ -67,8 +67,21 @@ namespace fho
     /// @param `that` The slot to move from.
     ring_slot(ring_slot&& that) noexcept
       : state_(that.state_.load(std::memory_order_relaxed))
-      , value_(std::move(that.value_))
-    {}
+    {
+      if constexpr (!std::is_trivially_move_constructible_v<T>)
+      {
+        // Placement new with move to properly invoke
+        // T's move ctor; avoids UB for non-trivial T.
+        new (data()) T(std::move(*that.data()));
+        std::destroy_at(that.data()); // Explicitly destroy moved-from object to end its
+                                      // lifetime per [basic.life]/8.
+      }
+      else
+      {
+        value_ = std::move(that.value_); // For trivial T, bitwise move (memcpy
+                                         // equivalent) is fine and faster.
+      }
+    }
 
     /// @brief Deleted copy constructor.
     /// @details Copying slots is not allowed to prevent unintended duplication.
@@ -90,7 +103,19 @@ namespace fho
     operator=(ring_slot&& that) noexcept -> ring_slot&
     {
       state_ = that.state_.load(std::memory_order_relaxed);
-      value_ = std::move(that.value_);
+      if constexpr (!std::is_trivially_move_constructible_v<T>)
+      {
+        // Placement new with move to properly invoke
+        // T's move ctor; avoids UB for non-trivial T.
+        new (data()) T(std::move(*that.data()));
+        std::destroy_at(that.data()); // Explicitly destroy moved-from object to end its
+                                      // lifetime per [basic.life]/8.
+      }
+      else
+      {
+        value_ = std::move(that.value_); // UNCHANGED: For trivial T, bitwise move (memcpy
+                                         // equivalent) is fine and faster.
+      }
       return *this;
     }
 
