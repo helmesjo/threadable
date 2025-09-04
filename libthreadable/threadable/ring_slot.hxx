@@ -199,6 +199,35 @@ namespace fho
       //        it is designed to be waited on by checking state `ready` -> `empty`.
     }
 
+    /// @brief Releases the slot.
+    /// @details Requires the slot to be in the `ready` state. Destroys the stored value if it is
+    /// not trivially destructible, sets the state to `empty`, and notifies any waiters. In debug
+    /// mode, resets the value to zero to aid in detecting use-after-free errors.
+    /// @tparam `State` State to transition.
+    template<slot_state State>
+      requires (State == slot_state::locked_ready)
+    inline void
+    release() noexcept
+    {
+      // Must be ready
+      dbg::verify(state_, State);
+      // Free up slot for re-use.
+      if constexpr (!std::is_trivially_destructible_v<T>)
+      {
+        std::destroy_at<T>(data());
+      }
+#ifndef NDEBUG
+      value_ = {};
+#endif
+      auto expected = State;
+      while (!state_.compare_exchange_weak(expected, slot_state::empty, std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) [[likely]]
+      {
+        expected = State;
+      }
+      state_.notify_all();
+    }
+
     /// @brief Waits for the slot to leave a state.
     /// @details Blocks until the slot's state changes to/from `State`, typically indicating that
     /// the stored value (e.g., a task) has been processed and released.
@@ -230,35 +259,6 @@ namespace fho
       return from_underlying<slot_state>(state_.load(order));
     }
 
-    /// @brief Releases the slot.
-    /// @details Requires the slot to be in the `ready` state. Destroys the stored value if it is
-    /// not trivially destructible, sets the state to `empty`, and notifies any waiters. In debug
-    /// mode, resets the value to zero to aid in detecting use-after-free errors.
-    /// @tparam `State` State to transition.
-    template<slot_state State>
-      requires (State == slot_state::locked_ready)
-    inline void
-    release() noexcept
-    {
-      // Must be ready
-      dbg::verify(state_, State);
-      // Free up slot for re-use.
-      if constexpr (!std::is_trivially_destructible_v<T>)
-      {
-        std::destroy_at<T>(data());
-      }
-#ifndef NDEBUG
-      value_ = {};
-#endif
-      auto expected = State;
-      while (!state_.compare_exchange_weak(expected, slot_state::empty, std::memory_order_acq_rel,
-                                           std::memory_order_acquire)) [[likely]]
-      {
-        expected = State;
-      }
-      state_.notify_all();
-    }
-
     /// @brief Binds the slot's state to a `slot_token`.
     /// @details Enables external monitoring or control of the slot's state through the provided
     /// `slot_token`.
@@ -267,24 +267,6 @@ namespace fho
     bind(slot_token& t) noexcept
     {
       t.rebind(state_);
-    }
-
-    /// @brief Gets a pointer to the stored value.
-    /// @details Returns a pointer to the memory where the value is stored. Ensure the slot is in
-    /// an appropriate state (e.g., `ready`) before accessing to avoid undefined behavior.
-    inline constexpr auto
-    data() noexcept -> T*
-    {
-      return reinterpret_cast<T*>(value_.data()); // NOLINT
-    }
-
-    /// @brief Gets a const pointer to the stored value.
-    /// @details Returns a const pointer to the memory where the value is stored. Ensure the slot
-    /// is in an appropriate state (e.g., `ready`) before accessing to avoid undefined behavior.
-    inline constexpr auto
-    data() const noexcept -> T const*
-    {
-      return reinterpret_cast<T const*>(value_.data()); // NOLINT
     }
 
     /// @brief Gets a reference to the stored value.
@@ -306,6 +288,24 @@ namespace fho
     }
 
   private:
+    /// @brief Gets a pointer to the stored value.
+    /// @details Returns a pointer to the memory where the value is stored. Ensure the slot is in
+    /// an appropriate state (e.g., `ready`) before accessing to avoid undefined behavior.
+    inline constexpr auto
+    data() noexcept -> T*
+    {
+      return reinterpret_cast<T*>(value_.data()); // NOLINT
+    }
+
+    /// @brief Gets a const pointer to the stored value.
+    /// @details Returns a const pointer to the memory where the value is stored. Ensure the slot
+    /// is in an appropriate state (e.g., `ready`) before accessing to avoid undefined behavior.
+    inline constexpr auto
+    data() const noexcept -> T const*
+    {
+      return reinterpret_cast<T const*>(value_.data()); // NOLINT
+    }
+
     /// Atomic state of the slot.
     fho::atomic_state_t state_{slot_state::empty};
     /// Aligned storage for the value of type `T`.
