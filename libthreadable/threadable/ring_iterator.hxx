@@ -113,18 +113,6 @@ namespace fho
       return index_ == rhs.index_;
     }
 
-    /// @brief Computes the sum of two iterators' indices.
-    /// @details Adds the logical indices of two iterators, returning the result as a difference
-    /// type. Note: This is not a standard iterator operation and may be intended for specific use
-    /// cases.
-    /// @param `rhs` The iterator whose index is added.
-    /// @return The sum of the indices.
-    inline auto
-    operator+(ring_iterator const& rhs) const noexcept -> difference_type
-    {
-      return index_ + rhs.index_;
-    }
-
     /// @brief Computes the distance between two iterators.
     /// @details Subtracts the index of one iterator from another, yielding the number of positions
     /// between them, as required for random access iterators.
