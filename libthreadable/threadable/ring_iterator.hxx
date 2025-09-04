@@ -58,9 +58,9 @@ namespace fho
     /// @param `rhs` The offset (positive or negative) from the current position.
     /// @return Reference to the element at the computed position.
     inline auto
-    operator[](difference_type rhs) const noexcept -> reference
+    operator[](difference_type i) const noexcept -> reference
     {
-      return data_[mask(index_ + rhs)];
+      return data_[mask(index_ + i)];
     }
 
     /// @brief Dereferences the iterator to access the current element.
@@ -199,11 +199,7 @@ namespace fho
     inline auto
     operator++() noexcept -> ring_iterator&
     {
-      ++index_;
-      if (++current_ > (data_ + buffer_size - 1)) [[unlikely]]
-      {
-        current_ = data_;
-      }
+      current_ = data_ + mask(++index_);
       return *this;
     }
 
@@ -225,11 +221,7 @@ namespace fho
     inline auto
     operator--() noexcept -> ring_iterator&
     {
-      --index_;
-      if (--current_ < data_) [[unlikely]]
-      {
-        current_ = (data_ + buffer_size - 1);
-      }
+      current_ = data_ + mask(--index_);
       return *this;
     }
 
