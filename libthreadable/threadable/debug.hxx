@@ -3,6 +3,7 @@
 #include <threadable/token.hxx>
 
 #include <atomic>
+#include <mutex>
 #include <source_location>
 
 namespace fho::dbg
@@ -40,6 +41,8 @@ namespace fho::dbg
     static char const* bred  = color ? "\033[1;31m" : "";
     static char const* reset = color ? "\033[0m" : "";
 
+    static auto mut = std::mutex{};
+    auto        _   = std::scoped_lock{mut};
     std::fprintf( // NOLINT
       stderr,
       "%s%s(%s) %sstate == expected%s (%s)%s, file %s, line %d:%d, function "

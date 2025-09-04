@@ -419,7 +419,7 @@ namespace fho
 
     /// @brief Consumes a range of items from the buffer.
     /// @details Retrieves a range of values from `front()` to `end()` (or `max`).
-    ///          Returns a `subrange_type` that must be processed within its lifetime; slots are
+    ///          The `subrange_type` must be processed within its lifetime; slots are
     ///          released when the subrange is destroyed.
     /// @param `max` Maximum number of items to consume. Defaults to `max_size()`.
     /// @return Subrange of consumed values.
