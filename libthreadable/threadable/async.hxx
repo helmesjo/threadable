@@ -82,10 +82,9 @@ namespace fho
     auto lambda = [](int counter, auto&& self, fho::slot_token& token, decltype(func) func,
                      decltype(args)... args) -> void
     {
-      FWD(func)(FWD(args)...);
-
       if (!token.cancelled())
       {
+        FWD(func)(FWD(args)...);
         queue.emplace(token, self, ++counter, self, std::ref(token), FWD(func), FWD(args)...);
       }
     };

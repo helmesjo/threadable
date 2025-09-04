@@ -84,6 +84,28 @@ SCENARIO("async: submit tasks")
       REQUIRE(counter == nr_of_tasks);
     }
   }
+  GIVEN("a repeated task is submitted with cancelled token")
+  {
+    auto counter = std::size_t{0};
+    auto token   = fho::slot_token{};
+    token.cancel();
+    fho::repeat_async<fho::execution::seq>(
+      token,
+      [&counter](fho::slot_token& token) mutable
+      {
+        ++counter;
+      },
+      std::ref(token));
+
+    token.wait();
+
+    REQUIRE(token.done());
+    REQUIRE(token.cancelled());
+    THEN("it re-submits automatically")
+    {
+      REQUIRE(counter == 0);
+    }
+  }
 }
 
 SCENARIO("execute: execute range of tasks")
