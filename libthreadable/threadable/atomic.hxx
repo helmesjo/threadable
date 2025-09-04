@@ -29,18 +29,6 @@ namespace fho
     return static_cast<underlying_t>(t);
   }
 
-  /// @brief Converts a value from its underlying type to the specified type.
-  /// @details Casts the underlying type value back to the specified type `T`.
-  /// @tparam T The target type to cast to.
-  /// @param u The underlying type value to convert.
-  /// @return The value cast to type `T`.
-  template<typename T>
-  inline constexpr auto
-  from_underlying(auto&& u) noexcept
-  {
-    return static_cast<T>(u);
-  }
-
   /// @brief A template class for atomic bitfield operations.
   /// @details This class extends `std::atomic<T>` to provide atomic operations on individual bits
   /// or groups of bits within an underlying integer type `T`. It supports testing, setting,
@@ -63,6 +51,16 @@ namespace fho
     using underlying_type = details::underlying_type_t<T>;
     using atomic_t        = std::atomic<underlying_type>;
 
+    /// @brief Converts a value from its underlying type to the specified type.
+    /// @details Casts the underlying type value back to the specified type `T`.
+    /// @param u The underlying type value to convert.
+    /// @return The value cast to type `T`.
+    inline static constexpr auto
+    from_underlying(auto&& u) noexcept -> T
+    {
+      return static_cast<T>(u);
+    }
+
   public:
     using atomic_t::atomic_t;
     using atomic_t::is_lock_free;
@@ -72,7 +70,7 @@ namespace fho
     using atomic_t::exchange;
     using atomic_t::fetch_and;
     using atomic_t::fetch_or;
-    using atomic_t::load;
+    // using atomic_t::load;
     using atomic_t::notify_all;
     using atomic_t::notify_one;
     using atomic_t::store;
@@ -87,11 +85,12 @@ namespace fho
     /// @return `true` if the exchange succeeded, `false` otherwise.
     inline auto
     compare_exchange_strong(T& expected, T const desired,
-                            std::same_as<std::memory_order> auto... orders) noexcept -> bool
+                            std::same_as<std::memory_order> auto... orders) volatile noexcept
+      -> bool
       requires (!std::is_same_v<T, underlying_type>)
     {
       auto exp = to_underlying(expected);
-      return this->compare_exchange_strong(exp, to_underlying(desired), orders...);
+      return atomic_t::compare_exchange_strong(exp, to_underlying(desired), orders...);
     }
 
     /// @brief Weak version of compare_exchange_strong for enum types.
@@ -102,11 +101,17 @@ namespace fho
     /// @return `true` if the exchange succeeded, `false` otherwise.
     inline auto
     compare_exchange_weak(T& expected, T const desired,
-                          std::same_as<std::memory_order> auto... orders) noexcept -> bool
+                          std::same_as<std::memory_order> auto... orders) volatile noexcept -> bool
       requires (!std::is_same_v<T, underlying_type>)
     {
       auto exp = to_underlying(expected);
-      return this->compare_exchange_weak(exp, to_underlying(desired), orders...);
+      return atomic_t::compare_exchange_weak(exp, to_underlying(desired), orders...);
+    }
+
+    inline auto
+    load(std::memory_order order = std::memory_order_seq_cst) const volatile noexcept -> T
+    {
+      return from_underlying(atomic_t::load(order));
     }
 
     /// @brief Tests if any bits specified by the mask are set.
@@ -116,9 +121,9 @@ namespace fho
     /// @return True if any bits in `Mask` are set, false otherwise.
     template<T Mask>
     [[nodiscard]] inline auto
-    test(std::same_as<std::memory_order> auto... orders) const noexcept -> bool
+    test(std::same_as<std::memory_order> auto... orders) const volatile noexcept -> bool
     {
-      return (this->load(orders...) & Mask) != 0;
+      return (atomic_t::load(orders...) & Mask) != 0;
     }
 
     /// @brief Atomically tests and sets or clears the bits specified by the mask.
@@ -130,17 +135,17 @@ namespace fho
     /// @return True if any of the bits in `Mask` were set before the operation, false otherwise.
     template<T Mask, bool Value>
     inline auto
-    test_and_set(std::same_as<std::memory_order> auto... orders) noexcept -> bool
+    test_and_set(std::same_as<std::memory_order> auto... orders) volatile noexcept -> bool
     {
       if constexpr (Value)
       {
         // Set the bits
-        return (this->fetch_or(from_underlying<T>(Mask), orders...) & Mask) != 0;
+        return (atomic_t::fetch_or(to_underlying(Mask), orders...) & Mask) != 0;
       }
       else
       {
         // Clear the bits
-        return (this->fetch_and(from_underlying<T>(~Mask), orders...) & Mask) != 0;
+        return (atomic_t::fetch_and(to_underlying(~Mask), orders...) & Mask) != 0;
       }
     }
 
@@ -152,7 +157,7 @@ namespace fho
     /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
     template<T Mask, bool Value>
     inline void
-    set(std::same_as<std::memory_order> auto... orders) noexcept
+    set(std::same_as<std::memory_order> auto... orders) volatile noexcept
     {
       (void)test_and_set<Mask, Value>(orders...);
     }
@@ -164,7 +169,7 @@ namespace fho
     /// @return True if any bits in `Mask` were set before clearing, false otherwise.
     template<T Mask>
     inline auto
-    reset(std::same_as<std::memory_order> auto... orders) noexcept -> bool
+    reset(std::same_as<std::memory_order> auto... orders) volatile noexcept -> bool
     {
       return test_and_set<Mask, false>(orders...);
     }
@@ -173,9 +178,9 @@ namespace fho
     /// @details Sets the entire atomic variable to 0, clearing all bits.
     /// @param orders Memory orders for the store operation (e.g., `std::memory_order_seq_cst`).
     inline void
-    clear(std::same_as<std::memory_order> auto... orders) noexcept
+    clear(std::same_as<std::memory_order> auto... orders) volatile noexcept
     {
-      this->store(0, orders...);
+      atomic_t::store(0, orders...);
     }
 
     /// @brief Waits until the bits in the mask change from the specified initial state.
@@ -191,23 +196,23 @@ namespace fho
     /// ```
     template<T Mask, bool Old>
     inline void
-    wait(std::same_as<std::memory_order> auto... orders) const noexcept
+    wait(std::same_as<std::memory_order> auto... orders) const volatile noexcept
     {
-      auto current = this->load(orders...);
+      auto current = atomic_t::load(orders...);
       if constexpr (Old)
       {
         while ((current & Mask) != 0)
         {
-          this->wait(current, orders...);
-          current = this->load(orders...);
+          atomic_t::wait(current, orders...);
+          current = atomic_t::load(orders...);
         }
       }
       else
       {
         while ((current & Mask) != Mask)
         {
-          this->wait(current, orders...);
-          current = this->load(orders...);
+          atomic_t::wait(current, orders...);
+          current = atomic_t::load(orders...);
         }
       }
     }

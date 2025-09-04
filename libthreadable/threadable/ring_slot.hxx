@@ -256,7 +256,7 @@ namespace fho
     [[nodiscard]] inline auto
     load(std::memory_order order) const noexcept -> slot_state
     {
-      return from_underlying<slot_state>(state_.load(order));
+      return state_.load(order);
     }
 
     /// @brief Binds the slot's state to a `slot_token`.
