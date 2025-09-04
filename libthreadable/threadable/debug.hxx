@@ -72,4 +72,28 @@ namespace fho::dbg
   {
     verify(static_cast<slot_state>(current.load(std::memory_order_relaxed)), expected, l);
   }
+
+  inline void
+  verify_bitwise(slot_state current, slot_state mask, // NOLINT
+                 std::source_location l = std::source_location::current()) noexcept
+  {
+#ifndef NDEBUG
+    if ((current & mask) != 0) [[likely]]
+    {
+      return;
+    }
+
+    log("Assertion failed: ", current, mask, l);
+    std::abort();
+#endif
+  }
+
+  template<typename T>
+  inline void
+  verify_bitwise(T& current, slot_state mask,
+                 std::source_location l = std::source_location::current()) noexcept
+    requires requires (T& c) { c.load(std::memory_order_relaxed); }
+  {
+    verify_bitwise(static_cast<slot_state>(current.load(std::memory_order_relaxed)), mask, l);
+  }
 }

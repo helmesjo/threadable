@@ -209,7 +209,6 @@ namespace fho
     inline void
     release() noexcept
     {
-      // Must be ready
       dbg::verify(state_, State);
       // Free up slot for re-use.
       if constexpr (!std::is_trivially_destructible_v<T>)
@@ -294,7 +293,9 @@ namespace fho
     inline constexpr auto
     data() noexcept -> T*
     {
-      return reinterpret_cast<T*>(value_.data()); // NOLINT
+      // Launder to ensure aliasing compliance post-construction.
+      dbg::verify_bitwise(state_, slot_state::ready | slot_state::locked_ready);
+      return std::launder(reinterpret_cast<T*>(value_.data())); // NOLINT
     }
 
     /// @brief Gets a const pointer to the stored value.
@@ -303,7 +304,9 @@ namespace fho
     inline constexpr auto
     data() const noexcept -> T const*
     {
-      return reinterpret_cast<T const*>(value_.data()); // NOLINT
+      // Launder to ensure aliasing compliance post-construction.
+      dbg::verify_bitwise(state_, slot_state::ready | slot_state::locked_ready);
+      return std::launder(reinterpret_cast<T const*>(value_.data())); // NOLINT
     }
 
     /// Atomic state of the slot.
