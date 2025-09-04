@@ -43,7 +43,7 @@ namespace fho
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;
 
-  static constexpr auto null_state = atomic_state_t{slot_state::invalid};
+  inline constexpr auto null_state = atomic_state_t{slot_state::invalid};
 
   /// @brief A token representing a claim on a `ring_slot` state.
   /// @details The `slot_token` class allows for monitoring and controlling the state of a
