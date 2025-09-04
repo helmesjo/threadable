@@ -47,7 +47,7 @@ orchestrating task distribution to executors running
 in dedicated threads via a scheduler._
 
 **task Queues** (`ring_buffer`):  
-_Lock-free multi-producer, single-consumer ring buffer  
+_Lock-free multi-producer, multi-consumer ring buffer  
 to store tasks._
 
 **Ring Iterator** (`ring_iterator`) + **Slot** (`ring_slot`):  

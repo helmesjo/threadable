@@ -101,11 +101,11 @@ namespace fho
   ///          cache line size minus `1` byte reserved for the `ring_slot` state handling.
   using fast_func_t = function<details::slot_size>;
 
-  /// @brief A Multi-Producer Single-Consumer (MPSC) ring buffer for managing objects in a
+  /// @brief A Multi-Producer Multi-Consumer (MPMC) ring buffer for managing objects in a
   /// threading environment.
   /// @details This class provides a lock-free ring buffer that allows multiple producers to add
-  /// objects concurrently and a single consumer to remove them. It uses atomic operations to
-  /// manage the buffer's state, ensuring thread safety. The buffer has a fixed capacity, which
+  /// objects concurrently and multiple consumer to claim & remove them. It uses atomic operations
+  /// to manage the buffer's state, ensuring thread safety. The buffer has a fixed capacity, which
   /// must be a power of 2 greater than 1 for mask-based indexing; full `Capacity` slots usable.
   /// Slots are aligned to cache lines to reduce false sharing and improve performance in concurrent
   /// scenarios.
@@ -463,8 +463,6 @@ namespace fho
     }
 
     /// @brief Returns a const iterator to the buffer's start.
-    /// @details Points to the first consumable item at `tail_`. Returns a const iterator due to
-    ///          single-consumer design.
     /// @return Const iterator to the start of the buffer.
     auto
     begin() const noexcept
@@ -474,7 +472,6 @@ namespace fho
     }
 
     /// @brief Returns a const iterator to the buffer's end.
-    /// @details Points past the last consumable item at `head_`.
     /// @return Const iterator to the end of the buffer.
     auto
     end() const noexcept
