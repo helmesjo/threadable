@@ -14,16 +14,17 @@ namespace fho
   {
     /// @brief No state, only used as variable default init.
     invalid = 0,
-    /// @brief No value assigned.
+    /// @brief Un-assigned & free to claim.
     empty = 1 << 0,
-    /// @brief Reserved/locked.
-    claimed = 1 << 1,
-    /// @brief Ready to, or being, processed.
-    ready = 1 << 2,
-    /// @brief For debugging purposes only.
-    claimed_empty = claimed | empty,
-    /// @brief For debugging purposes only.
-    claimed_ready = claimed | ready,
+    /// @brief Un-assigned & ready to be claimed.
+    ready = 1 << 1,
+    /// @brief Exclusive ownership.
+    locked = 1 << 2,
+    /// @brief Owned & empty = Assign.
+    locked_empty = locked | empty,
+    /// @brief Owned & ready = Read/Modify
+    locked_ready = locked | ready,
+    all          = static_cast<std::underlying_type_t<slot_state>>(-1)
   };
 
   inline constexpr auto
@@ -167,7 +168,7 @@ namespace fho
       while (state)
       {
         assert(state != nullptr and "state must never be assigned null while owned");
-        state->wait<slot_state::ready | slot_state::claimed, true>(std::memory_order_acquire);
+        state->wait<slot_state::ready, true>(std::memory_order_acquire);
         // Re-fetch to handle rebinding. If it
         // stayed same, then it wasn't rebound.
         if (auto next = state_.load(std::memory_order_acquire); next == state) [[likely]]

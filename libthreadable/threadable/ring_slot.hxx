@@ -1,6 +1,7 @@
 #pragma once
 
 #include <threadable/atomic.hxx>
+#include <threadable/debug.hxx>
 #include <threadable/function.hxx>
 #include <threadable/token.hxx>
 
@@ -23,8 +24,9 @@ namespace fho
 {
   template<typename S>
   concept atomic_slot = requires (S slot, slot_token& token) {
-                          { slot.claim(slot_state::empty) } noexcept;
-                          { slot.template release<slot_state::ready>() } noexcept;
+                          { slot.template lock<slot_state::empty>() } noexcept;
+                          { slot.template unlock<slot_state::locked_empty>() } noexcept;
+                          { slot.template release<slot_state::locked_ready>() } noexcept;
                           {
                             slot.template wait<slot_state::ready, true>(std::memory_order_acquire)
                           } noexcept;
@@ -34,13 +36,14 @@ namespace fho
   /// atomically.
   /// @details The `ring_slot` class is designed for use in concurrent environments, such as thread
   /// pools or task queues, where slots must be acquired, assigned values, processed, and released
-  /// efficiently. It uses atomic operations to manage state transitions between `empty`, `claimed`,
-  /// and `ready`. The class is aligned to the cache line size to prevent false sharing in
+  /// efficiently. It uses atomic operations to manage state transitions between `empty`, `ready`
+  /// and inbetween. The class is aligned to the cache line size to prevent false sharing in
   /// multithreaded scenarios. Thread safety is ensured through atomic state management, but users
   /// must follow the correct sequence of operations.
   /// @tparam `T` The type of the value stored in the slot. Must be movable and, if not trivially
   /// destructible, must be destructible.
-  /// @note The state must transition as follows: `empty` -> `claimed` -> `ready` -> `empty`.
+  /// @note The state must transition as follows:
+  //  `empty` -> `locked_empty` -> `ready` -> `locked_ready` -> `empty`.
   /// Deviating from this sequence may result in undefined behavior.
   template<typename T>
   class alignas(details::cache_line_size) ring_slot
@@ -111,29 +114,65 @@ namespace fho
       return value();
     }
 
-    /// @brief Acquires the slot by claiming it.
-    /// @details Atomically attempts to change the state from `exp` to `claimed`. Spins until
-    /// successful, making it suitable for low-contention scenarios.
-    /// @param `exp` Expected state.
+    template<slot_state State>
+      requires (State == slot_state::empty || State == slot_state::ready)
     inline void
-    claim(slot_state const exp) noexcept
+    lock() noexcept
     {
-      auto expected = exp;
-      while (!state_.compare_exchange_weak(expected, slot_state::claimed, std::memory_order_acq_rel,
-                                           std::memory_order_acquire)) [[likely]]
+      constexpr auto desired =
+        State == slot_state::empty ? slot_state::locked_empty : slot_state::locked_ready;
+
+      auto exp = State;
+      while (!state_.compare_exchange_weak(exp, desired, std::memory_order_acq_rel,
+                                           std::memory_order_acquire))
       {
-        expected = exp;
+        exp = State;
+      }
+    }
+
+    template<slot_state State>
+      requires (State == slot_state::empty || State == slot_state::ready)
+    inline auto
+    try_lock() noexcept -> bool
+    {
+      constexpr auto desired =
+        State == slot_state::empty ? slot_state::locked_empty : slot_state::locked_ready;
+
+      auto exp = State;
+      if (state_.compare_exchange_weak(exp, desired, std::memory_order_acq_rel,
+                                       std::memory_order_acquire))
+      {
+        return true;
+      }
+      return false;
+    }
+
+    template<slot_state State>
+      requires (State == slot_state::locked_empty || State == slot_state::locked_ready)
+    void
+    unlock() noexcept
+    {
+      constexpr auto desired =
+        State == slot_state::locked_empty ? slot_state::empty : slot_state::ready;
+
+      dbg::verify(state_, State);
+      auto exp = State;
+      while (!state_.compare_exchange_weak(exp, desired, std::memory_order_acq_rel,
+                                           std::memory_order_acquire))
+      {
+        exp = State;
       }
     }
 
     /// @brief Assigns a value to the slot.
-    /// @details Requires the slot to be in the `claimed` state. Constructs a new value of type `T`
-    /// in place using the provided arguments and sets the state to `ready`. In debug mode, asserts
-    /// that the current value is all zeros if convertible to `bool`.
+    /// @details Requires the slot to be in the `locked_empty` state. Constructs a new value of type
+    /// `T` in place using the provided arguments and sets the state to `ready`. In debug mode,
+    /// asserts that the current value is all zeros if convertible to `bool`.
     /// @param `args` Arguments to forward to the constructor of `T`.
     inline void
     emplace(auto&&... args) noexcept
     {
+      dbg::verify(state_, slot_state::locked_empty);
 #ifndef NDEBUG
       if constexpr (requires {
                       { value() } -> std::convertible_to<bool>;
@@ -147,35 +186,17 @@ namespace fho
                "ring_slot::emplace()");
       }
 #endif
-      // Must be claimed
-      assert(state_.load(std::memory_order_acquire) == slot_state::claimed and
-             "ring_slot::emplace()");
 
       std::construct_at<T>(data(), FWD(args)...);
-      state_.store(slot_state::ready, std::memory_order_release);
-      // @NOTE: Intentionally not notifying here since that is redundant (and costly),
+      auto exp = slot_state::locked_empty;
+      if (!state_.compare_exchange_strong(exp, slot_state::ready, std::memory_order_acq_rel,
+                                          std::memory_order_acquire))
+      {
+        dbg::log("Prerequisite violation: ", exp, slot_state::locked_empty);
+        std::terminate();
+      }
+      // @NOTE: Intentionally not notifying here since it's redundant (and costly),
       //        it is designed to be waited on by checking state `ready` -> `empty`.
-    }
-
-    /// @brief Try to acquire the slot by claiming it.
-    /// @details Atomically attempts to change the state from `ready` to `claimed`. Spins until
-    /// successful unless `exp` doesn't match current value.
-    /// @param `exp` Expected state.
-    /// @return `true` if exchanged `ready` -> `lent` (`claimed`), else `false`.
-    inline auto
-    try_claim() noexcept -> bool
-    {
-      auto expected = slot_state::ready;
-      return state_.compare_exchange_strong(expected, slot_state::claimed,
-                                            std::memory_order_acq_rel, std::memory_order_acquire);
-    }
-
-    inline void
-    undo_claim() noexcept
-    {
-      assert(state_.template test<slot_state::claimed>(std::memory_order_acquire) and
-             "ring_slot::undo_claim()");
-      state_.store(slot_state::ready, std::memory_order_release);
     }
 
     /// @brief Waits for the slot to leave a state.
@@ -203,17 +224,24 @@ namespace fho
       return state_.test<State>(orders...);
     }
 
+    [[nodiscard]] inline auto
+    load(std::memory_order order) const noexcept -> slot_state
+    {
+      return from_underlying<slot_state>(state_.load(order));
+    }
+
     /// @brief Releases the slot.
     /// @details Requires the slot to be in the `ready` state. Destroys the stored value if it is
     /// not trivially destructible, sets the state to `empty`, and notifies any waiters. In debug
     /// mode, resets the value to zero to aid in detecting use-after-free errors.
     /// @tparam `State` State to transition.
     template<slot_state State>
+      requires (State == slot_state::locked_ready)
     inline void
     release() noexcept
     {
       // Must be ready
-      assert(state_.template test<State>(std::memory_order_acquire) and "ring_slot::release()");
+      dbg::verify(state_, State);
       // Free up slot for re-use.
       if constexpr (!std::is_trivially_destructible_v<T>)
       {
@@ -278,7 +306,7 @@ namespace fho
     }
 
   private:
-    /// Atomic state of the slot (e.g., `empty`, `claimed`, `ready`).
+    /// Atomic state of the slot.
     fho::atomic_state_t state_{slot_state::empty};
     /// Aligned storage for the value of type `T`.
     alignas(T) std::array<std::byte, sizeof(T)> value_;
@@ -316,15 +344,23 @@ namespace fho
     claimed_slot(Slot* slot)
       : slot_(slot)
     {
-      assert((!slot_ || slot_->template test<slot_state::claimed>(std::memory_order_acquire)) and
-             "claimed_slot::claimed_slot()");
+#ifndef NDEBUG
+      if (slot_)
+      {
+        dbg::verify(*slot_, slot_state::locked_ready);
+      }
+#endif
     }
 
     claimed_slot(claimed_slot&& other) noexcept
       : slot_(std::exchange(other.slot_, nullptr))
     {
-      assert((!slot_ || slot_->template test<slot_state::claimed>(std::memory_order_acquire)) and
-             "claimed_slot::claimed_slot()");
+#ifndef NDEBUG
+      if (slot_)
+      {
+        dbg::verify(*slot_, slot_state::locked_ready);
+      }
+#endif
     }
 
     auto
@@ -334,7 +370,7 @@ namespace fho
       {
         if (slot_) [[unlikely]]
         {
-          slot_->template release<slot_state::claimed>();
+          slot_->template release<slot_state::locked_ready>();
         }
         slot_ = std::exchange(other.slot_, nullptr);
       }
@@ -348,7 +384,7 @@ namespace fho
     {
       if (slot_)
       {
-        slot_->template release<slot_state::claimed>();
+        slot_->template release<slot_state::locked_ready>();
       }
     }
 

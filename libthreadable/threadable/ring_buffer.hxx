@@ -2,6 +2,7 @@
 
 #include <threadable/allocator.hxx>
 #include <threadable/atomic.hxx>
+#include <threadable/debug.hxx>
 #include <threadable/function.hxx>
 #include <threadable/ring_iterator.hxx>
 #include <threadable/ring_slot.hxx>
@@ -88,7 +89,7 @@ namespace fho
                                   for (auto i = b; i < e; ++i)
                                   {
                                     Slot& elem = d[Iterator::mask(i)];
-                                    elem.template release<slot_state::ready>();
+                                    elem.template release<slot_state::locked_ready>();
                                   }
                                 }
                               }
@@ -254,17 +255,14 @@ namespace fho
     emplace(slot_token& token, Args&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot
-
-      // @NOTE: Relaxed fetch-add mem order ok,
-      //        it's followed by slot acquire.
+      //
+      // @NOTE: Relaxed fetch-add mem order ok, it's followed by slot lock.
       auto const slot = head_.fetch_add(1, std::memory_order_relaxed);
       slot_type& elem = elems_[ring_iterator_t::mask(slot)];
-      elem.template wait<slot_state::ready | slot_state::claimed>(std::memory_order_acquire);
+      elem.template lock<slot_state::empty>();
+      dbg::verify(elem, slot_state::locked_empty);
 
-      assert(elem.template test<slot_state::empty>() and "ring_buffer::emplace_back()");
-      elem.claim(slot_state::empty);
-
-      // 2. Assign/Commit `value_type`.
+      // 2. Assign & Commit.
       elem.emplace(FWD(args)...);
       elem.bind(token);
 
@@ -338,10 +336,10 @@ namespace fho
         tail = tail_.load(std::memory_order_acquire);
         // 2. Acquire tail slot.
         slot_type& elem = elems_[ring_iterator_t::mask(tail)];
-        if (elem.try_claim()) [[likely]]
+        if (elem.template try_lock<slot_state::ready>()) [[likely]]
         {
           // 3. Release tail slot.
-          elem.template release<slot_state::claimed>();
+          elem.template release<slot_state::locked_ready>();
           auto expected = tail;
           while (!tail_.compare_exchange_weak(expected, tail + 1, std::memory_order_acq_rel,
                                               std::memory_order_acquire))
@@ -366,7 +364,7 @@ namespace fho
       auto  tail = tail_.load(std::memory_order_acquire);
       auto& elem = elems_[ring_iterator_t::mask(tail)];
       // 1. If element exists, try to claim it & advance tail.
-      if (elem.try_claim()) [[likely]]
+      if (elem.template try_lock<slot_state::ready>()) [[likely]]
       {
         if (tail_.compare_exchange_strong(tail, tail + 1, std::memory_order_acq_rel)) [[likely]]
         {
@@ -376,7 +374,7 @@ namespace fho
         else [[unlikely]]
         {
           // Fail: contention lost, return slot
-          elem.undo_claim();
+          elem.template unlock<slot_state::locked_ready>();
         }
       }
       return nullptr;
@@ -390,7 +388,7 @@ namespace fho
       auto  head = head_.load(std::memory_order_acquire);
       auto& elem = elems_[ring_iterator_t::mask(head - 1)];
       // 1. If element exists, try to claim it & recede head.
-      if (elem.try_claim()) [[likely]]
+      if (elem.template try_lock<slot_state::ready>()) [[likely]]
       {
         if (head_.compare_exchange_strong(head, head - 1, std::memory_order_acq_rel)) [[likely]]
         {
@@ -400,7 +398,7 @@ namespace fho
         else [[unlikely]]
         {
           // Fail: contention lost, return slot
-          elem.undo_claim();
+          elem.template unlock<slot_state::locked_ready>();
         }
       }
       return nullptr;
@@ -442,7 +440,7 @@ namespace fho
       while (cap < head && (cap - tail) < max)
       {
         auto& elem = elems_[ring_iterator_t::mask(cap)];
-        if (!elem.template test<slot_state::ready>(std::memory_order_acquire))
+        if (!elem.template try_lock<slot_state::ready>())
         {
           break;
         }
