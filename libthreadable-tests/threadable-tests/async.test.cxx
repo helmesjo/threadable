@@ -91,7 +91,7 @@ SCENARIO("async: submit tasks")
     token.cancel();
     fho::repeat_async<fho::execution::seq>(
       token,
-      [&counter](fho::slot_token& token) mutable
+      [&counter](fho::slot_token&) mutable
       {
         ++counter;
       },

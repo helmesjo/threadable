@@ -53,8 +53,8 @@ namespace fho::dbg
   }
 
   inline void
-  verify(slot_state current, slot_state expected, // NOLINT
-         std::source_location l = std::source_location::current()) noexcept
+  verify([[maybe_unused]] slot_state current, [[maybe_unused]] slot_state expected, // NOLINT
+         [[maybe_unused]] std::source_location l = std::source_location::current()) noexcept
   {
 #ifndef NDEBUG
     if (current == expected) [[likely]]
@@ -77,8 +77,8 @@ namespace fho::dbg
   }
 
   inline void
-  verify_bitwise(slot_state current, slot_state mask, // NOLINT
-                 std::source_location l = std::source_location::current()) noexcept
+  verify_bitwise([[maybe_unused]] slot_state current, [[maybe_unused]] slot_state mask, // NOLINT
+                 [[maybe_unused]] std::source_location l = std::source_location::current()) noexcept
   {
 #ifndef NDEBUG
     if ((current & mask) != 0) [[likely]]
