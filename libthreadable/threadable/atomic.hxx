@@ -85,8 +85,7 @@ namespace fho
     /// @return `true` if the exchange succeeded, `false` otherwise.
     inline auto
     compare_exchange_strong(T& expected, T const desired,
-                            std::same_as<std::memory_order> auto... orders) volatile noexcept
-      -> bool
+                            std::same_as<std::memory_order> auto... orders) noexcept -> bool
       requires (!std::is_same_v<T, underlying_type>)
     {
       auto exp = to_underlying(expected);
@@ -101,7 +100,7 @@ namespace fho
     /// @return `true` if the exchange succeeded, `false` otherwise.
     inline auto
     compare_exchange_weak(T& expected, T const desired,
-                          std::same_as<std::memory_order> auto... orders) volatile noexcept -> bool
+                          std::same_as<std::memory_order> auto... orders) noexcept -> bool
       requires (!std::is_same_v<T, underlying_type>)
     {
       auto exp = to_underlying(expected);
@@ -109,7 +108,7 @@ namespace fho
     }
 
     inline auto
-    load(std::memory_order order = std::memory_order_seq_cst) const volatile noexcept -> T
+    load(std::memory_order order = std::memory_order_seq_cst) const noexcept -> T
     {
       return from_underlying(atomic_t::load(order));
     }
@@ -121,7 +120,7 @@ namespace fho
     /// @return True if any bits in `Mask` are set, false otherwise.
     template<T Mask>
     [[nodiscard]] inline auto
-    test(std::same_as<std::memory_order> auto... orders) const volatile noexcept -> bool
+    test(std::same_as<std::memory_order> auto... orders) const noexcept -> bool
     {
       return (atomic_t::load(orders...) & Mask) != 0;
     }
@@ -135,7 +134,7 @@ namespace fho
     /// @return True if any of the bits in `Mask` were set before the operation, false otherwise.
     template<T Mask, bool Value>
     inline auto
-    test_and_set(std::same_as<std::memory_order> auto... orders) volatile noexcept -> bool
+    test_and_set(std::same_as<std::memory_order> auto... orders) noexcept -> bool
     {
       if constexpr (Value)
       {
@@ -157,7 +156,7 @@ namespace fho
     /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
     template<T Mask, bool Value>
     inline void
-    set(std::same_as<std::memory_order> auto... orders) volatile noexcept
+    set(std::same_as<std::memory_order> auto... orders) noexcept
     {
       (void)test_and_set<Mask, Value>(orders...);
     }
@@ -169,7 +168,7 @@ namespace fho
     /// @return True if any bits in `Mask` were set before clearing, false otherwise.
     template<T Mask>
     inline auto
-    reset(std::same_as<std::memory_order> auto... orders) volatile noexcept -> bool
+    reset(std::same_as<std::memory_order> auto... orders) noexcept -> bool
     {
       return test_and_set<Mask, false>(orders...);
     }
@@ -178,7 +177,7 @@ namespace fho
     /// @details Sets the entire atomic variable to 0, clearing all bits.
     /// @param orders Memory orders for the store operation (e.g., `std::memory_order_seq_cst`).
     inline void
-    clear(std::same_as<std::memory_order> auto... orders) volatile noexcept
+    clear(std::same_as<std::memory_order> auto... orders) noexcept
     {
       atomic_t::store(0, orders...);
     }
@@ -196,7 +195,7 @@ namespace fho
     /// ```
     template<T Mask, bool Old>
     inline void
-    wait(std::same_as<std::memory_order> auto... orders) const volatile noexcept
+    wait(std::same_as<std::memory_order> auto... orders) const noexcept
     {
       auto current = atomic_t::load(orders...);
       if constexpr (Old)
