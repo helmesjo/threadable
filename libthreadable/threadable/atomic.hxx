@@ -17,18 +17,6 @@ namespace fho
                                   std::type_identity<T>>::type;
   }
 
-  /// @brief Converts a value to its underlying type.
-  /// @details If `T` is an enum, converts it to its underlying integer type; otherwise, returns `T`
-  /// unchanged.
-  /// @param t The value to convert.
-  /// @return The underlying type value.
-  inline constexpr auto
-  to_underlying(auto&& t) noexcept
-  {
-    using underlying_t = details::underlying_type_t<std::remove_reference_t<decltype(t)>>;
-    return static_cast<underlying_t>(t);
-  }
-
   /// @brief A template class for atomic bitfield operations.
   /// @details This class extends `std::atomic<T>` to provide atomic operations on individual bits
   /// or groups of bits within an underlying integer type `T`. It supports testing, setting,
@@ -50,6 +38,16 @@ namespace fho
   {
     using underlying_type = details::underlying_type_t<T>;
     using atomic_t        = std::atomic<underlying_type>;
+
+    /// @brief Converts a value to its underlying type.
+    /// @details If `T` is an enum, converts it to its underlying integer type; otherwise, returns
+    /// `T` unchanged.
+    /// @return The underlying type value.
+    inline constexpr auto
+    to_underlying(auto&& t) noexcept
+    {
+      return static_cast<underlying_type>(t);
+    }
 
     /// @brief Converts a value from its underlying type to the specified type.
     /// @details Casts the underlying type value back to the specified type `T`.
