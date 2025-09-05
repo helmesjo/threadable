@@ -302,7 +302,7 @@ namespace fho
   /// ```cpp
   /// auto buffer = fho::ring_buffer<>{};
   /// buffer.emplace_back([]() { std::cout << "Task\n"; });
-  /// auto range = buffer.consume();
+  /// auto range = buffer.pop range();
   /// for (auto& func : range) { // range is a ring_transform_view
   ///     func();
   /// }

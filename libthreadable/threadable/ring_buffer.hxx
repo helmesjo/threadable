@@ -33,10 +33,10 @@ namespace fho
   }
 
   /// @brief A subrange of slots `ready` in the buffer.
-  /// @details Represents a range of consumed slots ready for processing. It manages the
-  ///          lifetime of these slots, releasing them when the subrange is destroyed to prevent
-  ///          reuse before processing is complete. Uses a `shared_ptr` with a static dummy
-  ///          object to handle cleanup without extra allocation.
+  /// @details Represents a range of slots ready for processing. It manages the lifetime of these
+  ///          slots, releasing them when the subrange is destroyed to prevent reuse before
+  ///          processing is complete. Uses a `shared_ptr` with a static dummy object to handle
+  ///          cleanup without extra allocation.
   /// @tparam `Iterator` The iterator type (`ring_iterator_t` or `const_ring_iterator_t`).
   template<typename Iterator, typename Slot>
   class active_subrange final : public std::ranges::subrange<Iterator>
@@ -117,8 +117,8 @@ namespace fho
   ///                     allocator for `ring_slot<T>`.
   /// @note The buffer uses three atomic indices: `tail_` (next slot to consume), `head_` (next
   ///       slot to produce into), and `next_` (next slot to claim for production).
-  /// @warning Only one consumer should call `consume()` at a time to ensure thread safety.
-  ///          Multiple producers can safely call `emplace_back()` concurrently.
+  /// @warning Only one consumer should call `pop range()` at a time to ensure thread safety.
+  ///          Multiple producers can safely call `emplace()` concurrently.
   /// @example
   /// Logical view; actual indices unbounded, masked for array access.
   /// When tail or head reaches the end they will wrap around.
@@ -138,7 +138,7 @@ namespace fho
   /// |_|
   /// auto buffer = fho::ring_buffer<>{}; // Uses fast_func_t by default
   /// auto token = buffer.emplace_back([]() { std::cout << "Hello, World!\n"; });
-  /// auto range = buffer.consume();
+  /// auto range = buffer.pop_range();
   /// for (auto& func : range) {
   ///     func();
   /// }
@@ -201,7 +201,7 @@ namespace fho
     /// @details Consumes all remaining items to ensure proper cleanup.
     ~ring_buffer()
     {
-      (void)consume();
+      (void)pop_range();
     }
 
     /// @brief Move constructor.
@@ -353,6 +353,43 @@ namespace fho
       }
     }
 
+    /// @brief Consumes a range of items from the buffer.
+    /// @details Retrieves a range of values from `front()` to `end()` (or `max`).
+    ///          The `subrange_type` must be processed within its lifetime; slots are
+    ///          released when the subrange is destroyed.
+    /// @param `max` Maximum number of items to consume. Defaults to `max_size()`.
+    /// @return Subrange of consumed values.
+    /// @warning Only one consumer should call this at a time to avoid race conditions.
+    /// @example
+    /// ```cpp
+    /// auto range = buffer.pop_range(10);
+    /// for (auto& value : range) { /* Process value */ }
+    /// ```
+    auto
+    pop_range(index_t max = max_size()) noexcept
+    {
+      auto const tail = tail_.load(std::memory_order_acquire);
+      auto const head = head_.load(std::memory_order_acquire);
+      auto       cap  = tail;
+
+      // @NOTE: Forward-scan until last one ready within cap.
+      while (cap < head && (cap - tail) < max)
+      {
+        auto& elem = elems_[ring_iterator_t::mask(cap)];
+        if (!elem.template try_lock<slot_state::ready>())
+        {
+          break;
+        }
+        ++cap;
+      }
+
+      auto b = ring_iterator_t(elems_.data(), tail);
+      auto e = ring_iterator_t(elems_.data(), cap);
+      tail_.store(cap, std::memory_order_release);
+      tail_.notify_all();
+      return subrange_type(std::ranges::subrange(b, e), slot_value_accessor<value_type>);
+    }
+
     /// @brief Claims the first element from the ring buffer.
     /// @details Claims the item at `front()` and advances `tail_`.
     /// The claimed slot is released when it goes out of scope.
@@ -417,49 +454,12 @@ namespace fho
       }
     }
 
-    /// @brief Consumes a range of items from the buffer.
-    /// @details Retrieves a range of values from `front()` to `end()` (or `max`).
-    ///          The `subrange_type` must be processed within its lifetime; slots are
-    ///          released when the subrange is destroyed.
-    /// @param `max` Maximum number of items to consume. Defaults to `max_size()`.
-    /// @return Subrange of consumed values.
-    /// @warning Only one consumer should call this at a time to avoid race conditions.
-    /// @example
-    /// ```cpp
-    /// auto range = buffer.consume(10);
-    /// for (auto& value : range) { /* Process value */ }
-    /// ```
-    auto
-    consume(index_t max = max_size()) noexcept
-    {
-      auto const tail = tail_.load(std::memory_order_acquire);
-      auto const head = head_.load(std::memory_order_acquire);
-      auto       cap  = tail;
-
-      // @NOTE: Forward-scan until last one ready within cap.
-      while (cap < head && (cap - tail) < max)
-      {
-        auto& elem = elems_[ring_iterator_t::mask(cap)];
-        if (!elem.template try_lock<slot_state::ready>())
-        {
-          break;
-        }
-        ++cap;
-      }
-
-      auto b = ring_iterator_t(elems_.data(), tail);
-      auto e = ring_iterator_t(elems_.data(), cap);
-      tail_.store(cap, std::memory_order_release);
-      tail_.notify_all();
-      return subrange_type(std::ranges::subrange(b, e), slot_value_accessor<value_type>);
-    }
-
     /// @brief Clears all items from the buffer.
     /// @details Consumes all available items, leaving the buffer empty.
     void
     clear() noexcept
     {
-      (void)consume();
+      (void)pop_range();
     }
 
     /// @brief Returns a const iterator to the buffer's start.

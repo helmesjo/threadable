@@ -25,7 +25,7 @@ namespace fho
   /// @example
   /// ```cpp
   /// fho::executor exec;
-  /// auto range = queue.consume();
+  /// auto range = queue.pop range();
   /// auto token = exec.submit(range, fho::execution::seq);
   /// token.wait();
   /// ```
@@ -155,7 +155,7 @@ namespace fho
     {
       while (!stop_) [[likely]]
       {
-        if (auto r = work_.consume(); !r.empty()) [[likely]]
+        if (auto r = work_.pop_range(); !r.empty()) [[likely]]
         {
           for (auto& j : r)
           {

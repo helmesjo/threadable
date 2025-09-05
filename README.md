@@ -29,7 +29,7 @@ int main() {
   }
   assert(ring.size() == 3);
 
-  for (auto v : ring.consume())
+  for (auto v : ring.pop_range())
   {
     cout << format("{}\n", v); // prints 1 2 3
   }

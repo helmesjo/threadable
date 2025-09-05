@@ -23,7 +23,7 @@ namespace
   using func_t = fho::fast_func_t;
 }
 
-SCENARIO("ring_buffer: emplace & consume")
+SCENARIO("ring_buffer: emplace & pop range")
 {
   GIVEN("ring with capacity 2 (max size 1)")
   {
@@ -39,7 +39,7 @@ SCENARIO("ring_buffer: emplace & consume")
       {
         REQUIRE_NOTHROW(ring.begin());
         REQUIRE_NOTHROW(ring.end());
-        REQUIRE_NOTHROW(ring.consume());
+        REQUIRE_NOTHROW(ring.pop_range());
       }
       THEN("clear() does not throw/crash")
       {
@@ -52,10 +52,10 @@ SCENARIO("ring_buffer: emplace & consume")
         {
           REQUIRE_NOTHROW(ring.begin());
           REQUIRE_NOTHROW(ring.end());
-          REQUIRE_NOTHROW(ring.consume());
+          REQUIRE_NOTHROW(ring.pop_range());
           REQUIRE(ring.size() == 0);
           REQUIRE(ring.empty());
-          REQUIRE(ring.consume().empty());
+          REQUIRE(ring.pop_range().empty());
           REQUIRE_NOTHROW(ring.clear());
         }
       }
@@ -130,9 +130,9 @@ SCENARIO("ring_buffer: emplace & consume")
           REQUIRE(called == 0);
         }
       }
-      AND_WHEN("consume and execute tasks")
+      AND_WHEN("pop range and execute tasks")
       {
-        auto r = ring.consume();
+        auto r = ring.pop_range();
         REQUIRE(r.begin() != r.end());
         REQUIRE(ring.size() == 0);
         for (auto& task : r)
@@ -164,7 +164,7 @@ SCENARIO("ring_buffer: emplace & consume")
         // NOLINTEND
 
         REQUIRE(ring.size() == 1);
-        for (auto& task : ring.consume())
+        for (auto& task : ring.pop_range())
         {
           task();
         }
@@ -190,9 +190,9 @@ SCENARIO("ring_buffer: emplace & consume")
       }
       REQUIRE(ring.size() == ring.max_size());
 
-      AND_WHEN("consume and execute tasks")
+      AND_WHEN("pop range and execute tasks")
       {
-        for (auto& task : ring.consume())
+        for (auto& task : ring.pop_range())
         {
           REQUIRE(task);
           task();
@@ -386,7 +386,7 @@ SCENARIO("ring_buffer: completion token")
     }
     THEN("token is done after task was invoked")
     {
-      for (auto& task : ring.consume())
+      for (auto& task : ring.pop_range())
       {
         task();
       }
@@ -405,7 +405,7 @@ SCENARIO("ring_buffer: completion token")
         // meant to be reacted upon by used code -
         // the task will still be executed if
         // processed by a background thread.
-        for (auto& task : ring.consume())
+        for (auto& task : ring.pop_range())
         {
           task();
         }
@@ -825,7 +825,7 @@ SCENARIO("ring_buffer: standard algorithms")
             ++executed;
           });
       }
-      auto r = ring.consume();
+      auto r = ring.pop_range();
       AND_WHEN("std::for_each")
       {
         std::ranges::for_each(r,
