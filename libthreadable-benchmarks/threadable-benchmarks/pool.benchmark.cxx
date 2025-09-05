@@ -1,6 +1,7 @@
 #include <threadable-benchmarks/util.hxx>
 #include <threadable/pool.hxx>
 
+#include <format>
 #include <queue>
 
 #include <doctest/doctest.h>
@@ -58,7 +59,7 @@ TEST_CASE("pool: task execution")
       .run("fho::pool (queues: 1)",
            [&]
            {
-             fho::token_group group;
+             auto group = fho::token_group(tasks_per_iteration);
              for (std::size_t i = 0; i < tasks_per_iteration; ++i)
              {
                group += queue.emplace(task_t{});
@@ -74,14 +75,17 @@ TEST_CASE("pool: task execution")
         pool.create(fho::execution::par), pool.create(fho::execution::par),
         pool.create(fho::execution::par), pool.create(fho::execution::par)};
 
+    auto const tasks_per_queue = (tasks_per_iteration / queues.size()); // NOLINT
+
+    auto title = std::format("fho::pool (queues: {})", queues.size());
     b.batch(tasks_per_iteration)
-      .run("fho::pool (queues: 4)",
+      .run(title.c_str(),
            [&]
            {
-             fho::token_group group;
-             for (std::size_t i = 0; i < tasks_per_iteration >> 2; ++i)
+             auto group = fho::token_group(tasks_per_iteration);
+             for (decltype(pool)::queue_t& queue : queues)
              {
-               for (decltype(pool)::queue_t& queue : queues)
+               for (std::size_t i = 0; i < tasks_per_queue; ++i)
                {
                  group += queue.emplace(task_t{});
                }
