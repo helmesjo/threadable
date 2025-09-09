@@ -78,9 +78,9 @@ EmptyLineAfterAccessModifier: Never
 FixNamespaceComments: false
 LambdaBodyIndentation: Signature
 LineEnding: LF
-# These only work for quoted includes, for some unknown reason
-# IncludeIsMainRegex: '$?'
 # IncludeIsMainSourceRegex: '?$'
+IncludeIsMainRegex: '([-_](test|unittest))?$'
+MainIncludeChar: AngleBracket
 IncludeBlocks: Regroup
 IncludeCategories:
   # NOTE: Hyphen `-` must be last in bracket to work
