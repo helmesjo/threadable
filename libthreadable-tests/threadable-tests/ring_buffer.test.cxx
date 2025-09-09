@@ -39,7 +39,7 @@ SCENARIO("ring_buffer: emplace & pop range")
       {
         REQUIRE_NOTHROW(ring.begin());
         REQUIRE_NOTHROW(ring.end());
-        REQUIRE_NOTHROW(ring.pop_range());
+        REQUIRE_NOTHROW(ring.pop_front_range());
       }
       THEN("clear() does not throw/crash")
       {
@@ -52,10 +52,10 @@ SCENARIO("ring_buffer: emplace & pop range")
         {
           REQUIRE_NOTHROW(ring.begin());
           REQUIRE_NOTHROW(ring.end());
-          REQUIRE_NOTHROW(ring.pop_range());
+          REQUIRE_NOTHROW(ring.pop_front_range());
           REQUIRE(ring.size() == 0);
           REQUIRE(ring.empty());
-          REQUIRE(ring.pop_range().empty());
+          REQUIRE(ring.pop_front_range().empty());
           REQUIRE_NOTHROW(ring.clear());
         }
       }
@@ -132,7 +132,7 @@ SCENARIO("ring_buffer: emplace & pop range")
       }
       AND_WHEN("pop range and execute tasks")
       {
-        auto r = ring.pop_range();
+        auto r = ring.pop_front_range();
         REQUIRE(r.begin() != r.end());
         REQUIRE(ring.size() == 0);
         for (auto& task : r)
@@ -164,7 +164,7 @@ SCENARIO("ring_buffer: emplace & pop range")
         // NOLINTEND
 
         REQUIRE(ring.size() == 1);
-        for (auto& task : ring.pop_range())
+        for (auto& task : ring.pop_front_range())
         {
           task();
         }
@@ -192,7 +192,7 @@ SCENARIO("ring_buffer: emplace & pop range")
 
       AND_WHEN("pop range and execute tasks")
       {
-        for (auto& task : ring.pop_range())
+        for (auto& task : ring.pop_front_range())
         {
           REQUIRE(task);
           task();
@@ -238,7 +238,7 @@ SCENARIO("ring_buffer: stealing")
   auto ring = fho::ring_buffer<int, 8>{};
   GIVEN("an empty ring")
   {
-    auto e = ring.try_steal();
+    auto e = ring.try_pop_back();
     REQUIRE_FALSE(e);
   }
   GIVEN("a ring with 2 emplaced items")
@@ -250,19 +250,19 @@ SCENARIO("ring_buffer: stealing")
       THEN("it steals from head")
       {
         {
-          auto e = ring.try_steal();
+          auto e = ring.try_pop_back();
           REQUIRE(e);
           REQUIRE(*e == 2);
           REQUIRE(ring.size() == 1);
         }
         {
-          auto e = ring.try_steal();
+          auto e = ring.try_pop_back();
           REQUIRE(e);
           REQUIRE(*e == 1);
           REQUIRE(ring.size() == 0);
         }
         {
-          auto e = ring.try_steal();
+          auto e = ring.try_pop_back();
           REQUIRE_FALSE(e);
         }
       }
@@ -308,9 +308,9 @@ SCENARIO("ring_buffer: custom type")
       REQUIRE(ring.size() == 2);
       REQUIRE(ring.front() == my_type(1, 2.5f));
       REQUIRE(ring.back() == my_type(3, 4.5f));
-      ring.pop();
+      ring.pop_front();
       REQUIRE(ring.front() == my_type(3, 4.5f));
-      ring.pop();
+      ring.pop_front();
       REQUIRE(ring.size() == 0);
     }
   }
@@ -334,9 +334,9 @@ SCENARIO("ring_buffer: custom type")
       ring.emplace(my_too_big_type());
 
       REQUIRE(ring.size() == 2);
-      ring.pop();
+      ring.pop_front();
       REQUIRE(ring.size() == 1);
-      ring.pop();
+      ring.pop_front();
       REQUIRE(ring.size() == 0);
     }
   }
@@ -386,7 +386,7 @@ SCENARIO("ring_buffer: completion token")
     }
     THEN("token is done after task was invoked")
     {
-      for (auto& task : ring.pop_range())
+      for (auto& task : ring.pop_front_range())
       {
         task();
       }
@@ -405,7 +405,7 @@ SCENARIO("ring_buffer: completion token")
         // meant to be reacted upon by used code -
         // the task will still be executed if
         // processed by a background thread.
-        for (auto& task : ring.pop_range())
+        for (auto& task : ring.pop_front_range())
         {
           task();
         }
@@ -454,7 +454,7 @@ SCENARIO("ring_buffer: stress-test")
         {
           ++executed;
         });
-      if (auto e = ring.try_pop(); e)
+      if (auto e = ring.try_pop_front(); e)
       {
         e();
       }
@@ -507,7 +507,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             while (keep_consuming(ring, producers))
             {
-              if (auto e = ring.try_pop(); e)
+              if (auto e = ring.try_pop_front(); e)
               {
                 e();
               }
@@ -570,7 +570,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             while (keep_consuming(ring, producers))
             {
-              if (auto e = ring.try_pop(); e)
+              if (auto e = ring.try_pop_front(); e)
               {
                 e();
               }
@@ -633,7 +633,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             while (keep_consuming(ring, producers))
             {
-              if (auto e = ring.try_pop(); e)
+              if (auto e = ring.try_pop_front(); e)
               {
                 e();
               }
@@ -696,7 +696,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             while (keep_consuming(ring, producers))
             {
-              if (auto e = ring.try_pop(); e)
+              if (auto e = ring.try_pop_front(); e)
               {
                 e();
               }
@@ -760,7 +760,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             while (keep_consuming(ring, producers))
             {
-              if (auto e = ring.try_pop(); e)
+              if (auto e = ring.try_pop_front(); e)
               {
                 e();
               }
@@ -777,7 +777,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             while (keep_consuming(ring, producers))
             {
-              if (auto e = ring.try_steal(); e)
+              if (auto e = ring.try_pop_back(); e)
               {
                 e();
               }
@@ -825,7 +825,7 @@ SCENARIO("ring_buffer: standard algorithms")
             ++executed;
           });
       }
-      auto r = ring.pop_range();
+      auto r = ring.pop_front_range();
       AND_WHEN("std::for_each")
       {
         std::ranges::for_each(r,

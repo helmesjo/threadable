@@ -155,7 +155,7 @@ namespace fho
     {
       while (!stop_) [[likely]]
       {
-        if (auto r = work_.pop_range(); !r.empty()) [[likely]]
+        if (auto r = work_.pop_front_range(); !r.empty()) [[likely]]
         {
           for (auto& j : r)
           {

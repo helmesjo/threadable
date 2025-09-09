@@ -196,7 +196,7 @@ TEST_CASE("ring: execute (sequential)")
     {
       ring.emplace(task_t{});
     }
-    auto range = ring.pop_range();
+    auto range = ring.pop_front_range();
 
     b.run("fho::ring_buffer<function>",
           [&]
@@ -246,7 +246,7 @@ TEST_CASE("ring: execute (parallel)")
     {
       ring.emplace(task_t{});
     }
-    auto range = ring.pop_range();
+    auto range = ring.pop_front_range();
 
     b.run("fho::ring_buffer<function>",
           [&]

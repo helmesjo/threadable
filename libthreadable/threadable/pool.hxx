@@ -121,8 +121,8 @@ namespace fho
                 // @NOTE: The `cap` is arbitrary and should be
                 //        dealt with by a load balancer.
                 //        Runs until queues are exhausted.
-                for (auto range = buffer.pop_range(cap); !range.empty();
-                     range      = buffer.pop_range(cap)) [[likely]]
+                for (auto range = buffer.pop_front_range(cap); !range.empty();
+                     range      = buffer.pop_front_range(cap)) [[likely]]
                 {
                   if (mt) [[likely]]
                   {

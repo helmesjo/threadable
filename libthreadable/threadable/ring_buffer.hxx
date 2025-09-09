@@ -201,7 +201,7 @@ namespace fho
     /// @details Consumes all remaining items to ensure proper cleanup.
     ~ring_buffer()
     {
-      (void)pop_range();
+      (void)pop_front_range();
     }
 
     /// @brief Move constructor.
@@ -326,7 +326,7 @@ namespace fho
     /// @pre `size() > 0`
     /// @note Popping beyond emplaced items results in undefined behavior.
     void
-    pop() noexcept
+    pop_front() noexcept
     {
       assert(size() > 0 and "ring_buffer::pop()");
       index_t tail; // NOLINT
@@ -366,7 +366,7 @@ namespace fho
     /// for (auto& value : range) { /* Process value */ }
     /// ```
     auto
-    pop_range(index_t max = max_size()) noexcept
+    pop_front_range(index_t max = max_size()) noexcept
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
@@ -390,13 +390,13 @@ namespace fho
       return subrange_type(std::ranges::subrange(b, e), slot_value_accessor<value_type>);
     }
 
-    /// @brief Claims the first element from the ring buffer.
-    /// @details Claims the item at `front()` and advances `tail_`.
+    /// @brief Claim the first element from the ring buffer.
+    /// @details Attempts to claims the item at `front()` and advances `tail_`.
     /// The claimed slot is released when it goes out of scope.
     /// Thread-safe for multiple consumers.
     /// @note: Makes only a single attempt to claim next item in line.
     auto
-    try_pop() noexcept -> claimed_type
+    try_pop_front() noexcept -> claimed_type
     {
       auto  tail = tail_.load(std::memory_order_acquire);
       auto& elem = elems_[ring_iterator_t::mask(tail)];
@@ -417,10 +417,13 @@ namespace fho
       return nullptr;
     }
 
-    /// @brief
-    /// @details
+    /// @brief Claim the last element from the ring buffer.
+    /// @details Attempts to claims the item at `back()` and advances `head_`.
+    /// The claimed slot is released when it goes out of scope.
+    /// Thread-safe for multiple consumers.
+    /// @note: Makes only a single attempt to claim next item in line.
     auto
-    try_steal() noexcept -> claimed_type
+    try_pop_back() noexcept -> claimed_type
     {
       auto  head = head_.load(std::memory_order_acquire);
       auto& elem = elems_[ring_iterator_t::mask(head - 1)];
@@ -459,7 +462,7 @@ namespace fho
     void
     clear() noexcept
     {
-      (void)pop_range();
+      (void)pop_front_range();
     }
 
     /// @brief Returns a const iterator to the buffer's start.
