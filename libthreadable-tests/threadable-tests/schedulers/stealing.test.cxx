@@ -307,7 +307,7 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
   };
   auto stealer = [&victim]() -> auto
   {
-    return victim.try_pop_back();
+    return victim.try_pop_front();
   };
 
   /// @brief Tests exploit action with empty self queue.
@@ -391,6 +391,12 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
       REQUIRE(exec.failed_steals == 0);
       REQUIRE(victim.empty());
       REQUIRE(self.size() == 1);
+
+      AND_THEN("action::exploit with task in self={t}, victim={}")
+      {
+        sched::process_action(sched::action::exploit, activity, exec, self, stealer);
+        REQUIRE(order == std::vector<bool>{false});
+      }
     }
   }
 
@@ -500,7 +506,7 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
   }
 
   /// @brief Tests suspend action with ready initially false and pre-set counters.
-  /// @pre Activity ready=false, thieves=1; exec has yields=17, failed_steals=1025.
+  /// @pre Activity ready=false, exec has yields=17, failed_steals=1025.
   /// @details Verifies blocks until notify, decrements thieves, resets counters post-wake; uses
   /// thread/latch for simulation.
   GIVEN("action::suspend with ready initially false")
@@ -508,11 +514,10 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
     auto activity = sched::activity_stats{.ready = false};
     auto exec     = sched::exec_stats{.failed_steals = 1025, .yields = 17};
     auto action   = sched::action::suspend;
-    THEN("waits (blocks), dec thieves, resets yields/failed_steals post-wake")
+    THEN("waits (blocks), resets yields/failed_steals post-wake")
     {
-      activity.thieves = 1;
-      auto l           = std::latch{2};
-      auto th          = std::thread(
+      auto l  = std::latch{2};
+      auto th = std::thread(
         [&]
         {
           l.arrive_and_wait();
