@@ -1,7 +1,6 @@
-#include <threadable/schedulers/stealing.hxx>
-
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/ring_buffer.hxx>
+#include <threadable/schedulers/stealing.hxx>
 
 namespace stealing = fho::schedulers::stealing;
 
@@ -26,7 +25,7 @@ SCENARIO("schedulers: stealing")
 
   GIVEN("worker has task")
   {
-    self.emplace(task);
+    self.push_back(task);
     THEN("next task is from self")
     {
       REQUIRE(self.size() == 1);
@@ -37,7 +36,7 @@ SCENARIO("schedulers: stealing")
   }
   GIVEN("worker has no task")
   {
-    victim.emplace(task);
+    victim.push_back(task);
     THEN("next task is from victim")
     {
       REQUIRE(victim.size() == 1);
@@ -96,7 +95,7 @@ SCENARIO("schedulers: stealing")
   }
 }
 
-SCENARIO("schedulers: stealing (async)")
+SCENARIO("schedulers: stealing (acceptance)")
 {
   auto activity = stealing::activity_stats{};
   auto exec     = stealing::exec_stats{};
@@ -127,13 +126,13 @@ SCENARIO("schedulers: stealing (async)")
 
   // auto worker = std::thread(func, activity, self, stealer);
 
-  self.emplace(selfTask);
-  self.emplace(selfTask);
-  self.emplace(selfTask);
-  victim.emplace(victimTask);
-  victim.emplace(victimTask);
-  victim.emplace(victimTask);
-  victim.emplace(
+  self.push_back(selfTask);
+  self.push_back(selfTask);
+  self.push_back(selfTask);
+  victim.push_back(victimTask);
+  victim.push_back(victimTask);
+  victim.push_back(victimTask);
+  victim.push_back(
     [&activity]
     {
       activity.abort = true;

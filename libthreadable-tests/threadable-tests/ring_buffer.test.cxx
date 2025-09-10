@@ -87,7 +87,7 @@ SCENARIO("ring_buffer: emplace & pop range")
         }
       };
 
-      ring.emplace(type{});
+      ring.emplace_back(type{});
       REQUIRE(ring.size() == 1);
 
       called    = 0;
@@ -106,7 +106,7 @@ SCENARIO("ring_buffer: emplace & pop range")
       {
         {
           auto ring2 = fho::ring_buffer<func_t, 2>{};
-          ring2.emplace(type{});
+          ring2.emplace_back(type{});
           called    = 0;
           destroyed = 0;
         }
@@ -153,7 +153,7 @@ SCENARIO("ring_buffer: emplace & pop range")
         int called       = 0;
         using big_data_t = std::array<std::byte, fho::details::slot_size * 2>;
         // both capturing big data & passing as argument
-        ring.emplace(
+        ring.emplace_back(
           [&called, bigData = big_data_t{}](int arg, big_data_t const& data)
           {
             called = arg;
@@ -182,7 +182,7 @@ SCENARIO("ring_buffer: emplace & pop range")
       auto executed = std::vector<std::size_t>(ring.max_size(), 0);
       for (std::size_t i = 1; i <= ring.max_size(); ++i)
       {
-        ring.emplace(
+        ring.emplace_back(
           [i, &executed]
           {
             executed[i - 1] = i;
@@ -243,8 +243,8 @@ SCENARIO("ring_buffer: stealing")
   }
   GIVEN("a ring with 2 emplaced items")
   {
-    ring.emplace(1);
-    ring.emplace(2);
+    ring.emplace_back(1);
+    ring.emplace_back(2);
     WHEN("stealing items")
     {
       THEN("it steals from head")
@@ -302,8 +302,8 @@ SCENARIO("ring_buffer: custom type")
       static_assert(sizeof(slot_t) == fho::details::cache_line_size);
 
       // basic sanity-tests:
-      ring.emplace(1, 2.5f);
-      ring.emplace(my_type(3, 4.5f));
+      ring.emplace_back(1, 2.5f);
+      ring.emplace_back(my_type(3, 4.5f));
 
       REQUIRE(ring.size() == 2);
       REQUIRE(ring.front() == my_type(1, 2.5f));
@@ -330,8 +330,8 @@ SCENARIO("ring_buffer: custom type")
       static_assert(sizeof(slot_t) == fho::details::cache_line_size * 2);
 
       // basic sanity-tests:
-      ring.emplace();
-      ring.emplace(my_too_big_type());
+      ring.emplace_back();
+      ring.emplace_back(my_too_big_type());
 
       REQUIRE(ring.size() == 2);
       ring.pop_front();
@@ -349,7 +349,7 @@ SCENARIO("ring_buffer: alignment")
   {
     for (std::size_t i = 0; i < ring.max_size(); ++i)
     {
-      ring.emplace([] {});
+      ring.emplace_back([] {});
     }
     THEN("all are aligned to cache line boundaries")
     {
@@ -367,7 +367,7 @@ SCENARIO("ring_buffer: completion token")
   GIVEN("emplace task & store token")
   {
     int  called = 0;
-    auto token  = ring.emplace(
+    auto token  = ring.emplace_back(
       [&called]
       {
         ++called;
@@ -449,7 +449,7 @@ SCENARIO("ring_buffer: stress-test")
 
     for (std::size_t i = 0; i < nr_of_tasks; ++i)
     {
-      auto token = ring.emplace(
+      auto token = ring.emplace_back(
         [&executed]
         {
           ++executed;
@@ -489,7 +489,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              ring.emplace(
+              ring.emplace_back(
                 [&executed]
                 {
                   ++executed;
@@ -552,7 +552,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              ring.emplace(
+              ring.emplace_back(
                 [&executed]
                 {
                   ++executed;
@@ -615,7 +615,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              ring.emplace(
+              ring.emplace_back(
                 [&executed]
                 {
                   ++executed;
@@ -678,7 +678,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              ring.emplace(
+              ring.emplace_back(
                 [&executed]
                 {
                   ++executed;
@@ -742,7 +742,7 @@ SCENARIO("ring_buffer: stress-test")
             barrier.arrive_and_wait();
             for (std::size_t i = 0; i < ring.max_size(); ++i)
             {
-              ring.emplace(
+              ring.emplace_back(
                 [&executed]
                 {
                   ++executed;
@@ -819,7 +819,7 @@ SCENARIO("ring_buffer: standard algorithms")
     {
       while (ring.size() < ring.max_size())
       {
-        ring.emplace(
+        ring.emplace_back(
           [&executed]
           {
             ++executed;

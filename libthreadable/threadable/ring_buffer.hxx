@@ -252,7 +252,7 @@ namespace fho
     template<typename... Args>
       requires std::constructible_from<T, Args...>
     auto
-    emplace(slot_token& token, Args&&... args) noexcept -> slot_token&
+    emplace_back(slot_token& token, Args&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot
       //
@@ -285,11 +285,48 @@ namespace fho
     template<typename... Args>
       requires std::constructible_from<T, Args...>
     auto
-    emplace(Args&&... args) noexcept -> slot_token
+    emplace_back(Args&&... args) noexcept -> slot_token
     {
       slot_token token;
-      (void)emplace(token, FWD(args)...);
+      (void)emplace_back(token, FWD(args)...);
       return token;
+    }
+
+    /// @brief Pushes a value into the buffer with an existing token.
+    /// @details Adds a value to the buffer, associating it with a provided token.
+    /// @param token Token to associate with the slot.
+    /// @param val Value to add.
+    /// @return Reference to the provided token.
+    /// @note Thread-safe for multiple producers.
+    /// @example
+    /// ```cpp
+    /// fho::slot_token token;
+    /// buffer.push_back(token, []() { std::cout << "Task\n"; });
+    /// ```
+    auto
+    push_back(slot_token& token, auto&& val) noexcept -> slot_token&
+      requires std::constructible_from<value_type, decltype(val)>
+    {
+      return emplace_back(token, FWD(val));
+    }
+
+    /// @brief Pushes a value into the buffer and returns a new token.
+    /// @details Adds a value to the buffer by creating a new token and delegating to the
+    ///          token-based overload.
+    /// @param `args` Arguments to construct the value.
+    /// @return New token associated with the slot.
+    /// @note Thread-safe for multiple producers.
+    /// @example
+    /// ```cpp
+    /// auto token = buffer.push_back([]() { std::cout << "Task\n"; });
+    /// ```
+    template<typename... Args>
+      requires std::constructible_from<T, Args...>
+    auto
+    push_back(auto&& val) noexcept -> slot_token
+      requires std::constructible_from<value_type, decltype(val)>
+    {
+      return emplace_back(FWD(val));
     }
 
     /// @brief Accesses the first element in the ring buffer.
