@@ -305,9 +305,10 @@ namespace fho
     /// fho::slot_token token;
     /// buffer.push_back(token, []() { std::cout << "Task\n"; });
     /// ```
+    template<typename U>
+      requires std::constructible_from<T, U>
     auto
-    push_back(slot_token& token, auto&& val) noexcept -> slot_token&
-      requires std::constructible_from<value_type, decltype(val)>
+    push_back(slot_token& token, U&& val) noexcept -> slot_token&
     {
       return emplace_back(token, FWD(val));
     }
@@ -322,11 +323,10 @@ namespace fho
     /// ```cpp
     /// auto token = buffer.push_back([]() { std::cout << "Task\n"; });
     /// ```
-    template<typename... Args>
-      requires std::constructible_from<T, Args...>
+    template<typename U>
+      requires std::constructible_from<T, U>
     auto
-    push_back(auto&& val) noexcept -> slot_token
-      requires std::constructible_from<value_type, decltype(val)>
+    push_back(U&& val) noexcept -> slot_token
     {
       return emplace_back(FWD(val));
     }
