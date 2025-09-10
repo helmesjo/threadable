@@ -29,7 +29,7 @@ SCENARIO("schedulers: stealing")
     THEN("next task is from self")
     {
       REQUIRE(self.size() == 1);
-      REQUIRE(stealing::exploit_task(activity, exec, self));
+      REQUIRE(stealing::exploit_task(self));
       REQUIRE(self.size() == 0);
       REQUIRE(called == 1);
     }
@@ -40,7 +40,7 @@ SCENARIO("schedulers: stealing")
     THEN("next task is from victim")
     {
       REQUIRE(victim.size() == 1);
-      REQUIRE(stealing::explore_task(activity, exec, stealer));
+      REQUIRE(stealing::explore_task(activity, stealer));
       REQUIRE(victim.size() == 0);
       REQUIRE(called == 1);
     }

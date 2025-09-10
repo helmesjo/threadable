@@ -17,7 +17,7 @@ namespace fho::schedulers::stealing
   // Global shared atomics (accessed by all workers).
   struct activity_stats
   {
-    std::atomic_bool   ready{false}; // Workers should stop.
+    std::atomic_bool   ready{false}; // Workers should process tasks.
     std::atomic_bool   abort{false}; // Workers should stop.
     std::atomic_size_t actives{0};   // Workers currently exploiting/executing tasks.
     std::atomic_size_t thieves{0};   // Workers currently in stealing mode.
@@ -26,10 +26,11 @@ namespace fho::schedulers::stealing
   // Per-worker non-atomic counters (thread-local, reset per idle cycle).
   struct exec_stats
   {
-    std::size_t steal_bound   = 1024; // Max consecutive failed steals
-    std::size_t yield_bound   = 16;   // Max consecutive yields
-    std::size_t yields        = 0;    // Count of consecutive yield attempts.
-    std::size_t failed_steals = 0;    // Count of consecutive failed steal attempts.
+    std::size_t steal_bound    = 1024; // Max consecutive failed steals
+    std::size_t yield_bound    = 16;   // Max consecutive yields
+    std::size_t yields         = 0;    // Count of consecutive yield attempts.
+    std::size_t failed_exploit = 0;    // Count of consecutive yield attempts.
+    std::size_t failed_steals  = 0;    // Count of consecutive failed steal attempts.
   };
 
   enum class action
@@ -43,39 +44,18 @@ namespace fho::schedulers::stealing
   // Attempts to exploit a task from own deque (FIFO pop).
   // Returns true if a task was exploited and executed, false if deque empty.
   auto
-  exploit_task(activity_stats& activity, exec_stats& exec, ring_buffer<>& self) noexcept -> bool
+  exploit_task(ring_buffer<>& self) noexcept -> bool
   {
-    // Increment actives to signal exploiting (acquire-release for visibility).
-    auto active = activity.actives.fetch_add(1, std::memory_order_acq_rel);
-
-    // If we are first, wake up next.
-    if (active == 1 && activity.thieves.load(std::memory_order_acquire) == 0) [[unlikely]]
-    {
-      activity.ready.exchange(true, std::memory_order_release);
-      activity.ready.notify_one();
-    }
-
     // Try LIFO pop from own deque (maximize locality).
     if (auto t = self.try_pop_back(); t)
     {
       std::invoke(t);
-
-      // Decrement actives post-execution.
-      if (auto active = activity.actives.fetch_sub(1, std::memory_order_acq_rel); active == 0)
-      {
-        activity.ready.exchange(false, std::memory_order_release);
-      }
-
-      // Reset per-worker counters on success.
-      exec.yields        = 0;
-      exec.failed_steals = 0;
-
       return true;
     }
     else
     {
       // Failed to exploit: Decrement actives immediately.
-      activity.actives.fetch_sub(1, std::memory_order_acq_rel);
+      // activity.actives.fetch_sub(1, std::memory_order_acq_rel);
       return false;
     }
   }
@@ -83,12 +63,8 @@ namespace fho::schedulers::stealing
   // Attempts to explore (steal) a task from a random victim (FIFO pop).
   // Returns true if a task was stolen and executed, false if steal failed.
   auto
-  explore_task(activity_stats& activity, exec_stats& exec, invocable_return auto&& stealer) noexcept
-    -> bool
+  explore_task(invocable_return auto&& stealer) noexcept -> bool
   {
-    // Increment thieves to signal stealing mode.
-    activity.thieves.fetch_add(1, std::memory_order_acq_rel);
-
     // Try FIFO pop from victim's deque (minimize contention).
     if (auto t = stealer(); t)
     {
@@ -98,17 +74,10 @@ namespace fho::schedulers::stealing
       // Stolen: Execute the task (as in exploit).
       std::invoke(t);
 
-      // Reset counters on success.
-      exec.yields        = 0;
-      exec.failed_steals = 0;
-
       return true;
     }
     else
     {
-      // Failed steal: Increment per-worker counter.
-      ++exec.failed_steals;
-
       // Decrement thieves.
       activity.thieves.fetch_sub(1, std::memory_order_acq_rel);
 
@@ -164,6 +133,7 @@ namespace fho::schedulers::stealing
   {
     exec_stats exec; // Per-worker stats; thread-local, non-atomic, reset on task success in
                      // exploit/explore.
+    activity.actives.fetch_add(1, std::memory_order_release);
     while (true)     // Infinite loop until abort or external stop; assumes caller handles shutdown
                      // (e.g., via activity flag).
     {
@@ -171,19 +141,42 @@ namespace fho::schedulers::stealing
       // owner). This should succeed if local tasks exist (e.g., pushed successors in DAGs),
       // resetting counters on success. Note: Single attempt only — do not drain internally to allow
       // timely stealing (per paper's design for responsiveness).
-      if (auto ok = exploit_task(activity, exec, self); !ok)
-      { // If exploit fails (empty queue), proceed to explore.
-
-        // Attempt to steal (explore) a single task from a random victim's ring_buffer (LIFO for
-        // thief). Resets counters on success; increments failed_steals on failure.
-        if (ok = explore_task(activity, exec, stealer);
-            ok) // If steal succeeds, continue loop immediately (no wait).
-        {
-          // Empty block: No-op if success — loop back to exploit next (allows draining after steal
-          // if successors pushed).
-          continue;
-        }
+      if (exploit_task(self))
+      {
+        // Reset per-worker counters on success.
+        exec.yields         = 0;
+        exec.failed_exploit = 0;
+        exec.failed_steals  = 0;
+        continue;
       }
+
+      // If exploit fails (empty queue), proceed to explore.
+      if (++exec.failed_exploit == 1)
+      {
+        // Increment thieves to signal stealing mode.
+        activity.thieves.fetch_add(1, std::memory_order_acq_rel);
+      }
+      // Attempt to steal (explore) a single task from a random victim's ring_buffer (LIFO for
+      // thief). Resets counters on success; increments failed_steals on failure.
+      if (explore_task(activity, stealer))
+      // If steal succeeds, continue loop immediately (no wait).
+      {
+        // Reset counters on success.
+        exec.yields        = 0;
+        exec.failed_steals = 0;
+
+        // Empty block: No-op if success — loop back to exploit next (allows draining after steal
+        // if successors pushed).
+        continue;
+      }
+      else
+      {
+        // Failed steal: Increment per-worker counter.
+        ++exec.failed_steals;
+      }
+
+      // If explore fails (nothing to steal), evaluate next action.
+      ++exec.failed_exploit;
 
       auto action = wait_for_task(activity, exec); // Decide adaptive action based on
                                                    // counters/actives (retry/yield/suspend).
@@ -202,13 +195,30 @@ namespace fho::schedulers::stealing
         // After steal_bound fails or yield_bound with actives > 0: Brief yield to reduce contention
         // before retry.
         case action::yield:
+          ++exec.yields;
           std::this_thread::yield();
           break;
         //
         // Yield_bound exceeded and actives == 0: Block until potential work (e.g., new
         // submissions). Wait for tasks to be available.
         case action::suspend:
+          // Decrement actives post-execution.
+          if (auto active = activity.actives.fetch_sub(1, std::memory_order_acq_rel); active == 1)
+          {
+            auto exp = true;
+            activity.ready.compare_exchange_strong(exp, false, std::memory_order_release);
+          }
+
           activity.ready.wait(false, std::memory_order_acquire);
+          exec = {}; // Clear workers state, start from clean slate.
+          // Increment actives to signal exploiting.
+          auto active = activity.actives.fetch_add(1, std::memory_order_acq_rel);
+          // If we are first, wake up next.
+          if (active == 1 && activity.thieves.load(std::memory_order_acquire) == 0) [[unlikely]]
+          {
+            activity.ready.exchange(true, std::memory_order_release);
+            activity.ready.notify_one();
+          }
           break;
       }
       // Post-action: Loop back to exploit — ensures draining if work appeared during yield/suspend.
