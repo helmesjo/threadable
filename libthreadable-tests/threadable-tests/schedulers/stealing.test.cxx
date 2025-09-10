@@ -295,7 +295,7 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
   auto activity   = sched::activity_stats{};
   auto exec       = sched::exec_stats{};
   auto victim     = fho::ring_buffer<>{};
-  auto self       = fho::ring_buffer<>{};
+  auto self       = fho::ring_buffer<decltype(victim)::claimed_type>{};
   auto order      = std::vector<bool>{};
   auto selfTask   = [&order]
   {
@@ -339,9 +339,12 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
     auto activity = sched::activity_stats{};
     auto exec     = sched::exec_stats{};
     auto action   = sched::action::exploit;
-    self.push_back(selfTask);
-    self.push_back(selfTask);
-    self.push_back(selfTask);
+    victim.push_back(selfTask);
+    victim.push_back(selfTask);
+    victim.push_back(selfTask);
+    self.push_back(victim.try_pop_front());
+    self.push_back(victim.try_pop_front());
+    self.push_back(victim.try_pop_front());
     THEN("drains all, actives toggles once, resets counters, executes in order")
     {
       sched::process_action(action, activity, exec, self, stealer);
