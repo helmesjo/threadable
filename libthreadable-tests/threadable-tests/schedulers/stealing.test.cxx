@@ -360,14 +360,14 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
   GIVEN("action::explore with no task in victim")
   {
     auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{};
+    auto exec     = sched::exec_stats{.steal_bound = 8};
     auto action   = sched::action::explore;
-    THEN("no execution, thieves unchanged (no inc/dec), no resets, no failed inc")
+    THEN("no execution, thieves unchanged (no inc/dec), no resets, failed steals reached bounds")
     {
       sched::process_action(action, activity, exec, self, stealer);
       REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
-      REQUIRE(exec.yields == 0);
-      REQUIRE(exec.failed_steals == 1);
+      REQUIRE(exec.yields == 1);
+      REQUIRE(exec.failed_steals == exec.steal_bound);
       REQUIRE(victim.empty());
       REQUIRE(order.empty());
     }
@@ -375,22 +375,22 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
 
   /// @brief Tests explore action with task in victim.
   /// @pre Victim queue has one task pushed; activity and exec are default-initialized.
-  /// @details Verifies execution, thieves unchanged, resets counters, victim empties, and task
-  /// runs.
-  GIVEN("action::explore with task in victim")
+  /// @details Verifies no execution (task only stolen), thieves unchanged, resets counters, victim
+  /// empty, self holds task.
+  GIVEN("action::explore with task in victim={t}")
   {
     auto activity = sched::activity_stats{};
     auto exec     = sched::exec_stats{};
     auto action   = sched::action::explore;
     victim.push_back(victimTask);
-    THEN("executes, thieves unchanged, resets counters, victim emptied")
+    THEN("executes, thieves unchanged, resets counters, victim={}, self={t}")
     {
       sched::process_action(action, activity, exec, self, stealer);
       REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
       REQUIRE(exec.yields == 0);
       REQUIRE(exec.failed_steals == 0);
       REQUIRE(victim.empty());
-      REQUIRE(order == std::vector<bool>{false});
+      REQUIRE(self.size() == 1);
     }
   }
 

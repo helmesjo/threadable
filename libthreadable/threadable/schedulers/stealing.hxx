@@ -369,14 +369,13 @@ namespace fho::schedulers::stealing
         { // Match paper's Algorithm 3: drain the queue under a single inc/dec of actives,
           // with notify_one if becoming first active and no thieves (to wake potential sleepers,
           // ensuring Lemma 1 under-subscription prevention).
-          auto prev = activity.actives.fetch_add(1, std::memory_order_acq_rel);
-          if (prev == 0 && activity.thieves.load(std::memory_order_acquire) == 0)
+          if (activity.actives.fetch_add(1, std::memory_order_acq_rel) == 0 &&
+              activity.thieves.load(std::memory_order_acquire) == 0)
           {
             // Notify one sleeper (paper's notifier.notify_one(); here using atomic notify for
             // simplicity, but for full EventCount, use two-phase to reduce thundering herd).
             // Memory: acquire on thieves ensures no race with concurrent dec; notify has release
             // semantics implicitly for visibility.
-            activity.ready.store(true, std::memory_order_release);
             activity.ready.notify_one();
           }
           bool executed = false;
@@ -400,18 +399,36 @@ namespace fho::schedulers::stealing
         { // Match paper's single steal_random in worker loop: no inc/dec thieves (Lemma 2); only
           // for initial probe post-exploit-fail. C++20: no atomics here, assuming stealer() is
           // lock-free CAS-based (e.g., Chase-Lev FIFO steal).
-          if (auto t = stealer())
+
+          if (activity.thieves.fetch_add(1, std::memory_order_acq_rel) == 0)
           {
-            (*t)();
-            exec.yields        = 0;
-            exec.failed_steals = 0; // Reset on success (consistent with paper's success exit).
+            // no-op
           }
-          else
+
+          exec.failed_steals = 0; // Reset per phase entry (paper resets implicitly;
+                                  // non-atomic safe, prevents carry-over races).
+          exec.yields = 0;        // Similar reset for yields in bounded phase.
+
+          for (; exec.failed_steals < exec.steal_bound; ++exec.failed_steals)
+          {                       // Inner loop for bounded steals (yield per fail).
+            if (auto t = stealer(); t)
+            {
+              self.push_back(std::move(*t));
+              exec.yields        = 0;
+              exec.failed_steals = 0;
+              break; // Early exit on successful steal (aligns with paper break).
+            }
+          }
+
+          if (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1)
           {
-            ++exec.failed_steals;
+            activity.ready.notify_one(); // Wake one (low herd; release pairs acquire wait).
           }
-          // No inc failed_steals (paper accumulates only in bounded phase; fixed from previous
-          // per-fail inc, avoiding premature bound reach).
+          if (exec.failed_steals >= exec.steal_bound)
+          {
+            std::this_thread::yield(); // Yield post-bound (paper yield on exceed; noexcept).
+            ++exec.yields;             // Inc post-yield.
+          }
           break;
         }
         case action::abort:
@@ -457,6 +474,13 @@ namespace fho::schedulers::stealing
           // while(!ready.load(acquire)) wait() for better spurious handling). Assumption: thieves
           // inc occurred in bounded phase entry (caller must ensure before this action); ready
           // notify_all on submissions/completions (release paired).
+
+          if (activity.abort.load(std::memory_order_acquire))
+          {
+            activity.ready.store(true, std::memory_order_release);
+            activity.ready.notify_all();
+            break;
+          }
           activity.thieves.fetch_sub(1, std::memory_order_acq_rel);
           activity.ready.wait(false, std::memory_order_acquire);
           exec.yields        = 0;
