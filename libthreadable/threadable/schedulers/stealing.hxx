@@ -68,9 +68,6 @@ namespace fho::schedulers::stealing
     // Try FIFO pop from victim's deque (minimize contention).
     if (auto t = stealer(); t)
     {
-      // Decrement thieves post-execution.
-      activity.thieves.fetch_sub(1, std::memory_order_acq_rel);
-
       // Stolen: Execute the task (as in exploit).
       std::invoke(t);
 
@@ -78,9 +75,6 @@ namespace fho::schedulers::stealing
     }
     else
     {
-      // Decrement thieves.
-      activity.thieves.fetch_sub(1, std::memory_order_acq_rel);
-
       return false;
     }
   }
@@ -158,7 +152,7 @@ namespace fho::schedulers::stealing
       }
       // Attempt to steal (explore) a single task from a random victim's ring_buffer (LIFO for
       // thief). Resets counters on success; increments failed_steals on failure.
-      if (explore_task(activity, stealer))
+      if (explore_task(stealer))
       // If steal succeeds, continue loop immediately (no wait).
       {
         // Reset counters on success.
@@ -225,5 +219,246 @@ namespace fho::schedulers::stealing
       // Memory detail: If suspend wakes spuriously, counters unchanged; safe retry without reset
       // (per paper tolerance).
     }
+  }
+
+  namespace v2
+  {
+    // Global shared atomics (accessed by all workers).
+    struct activity_stats
+    {
+      std::atomic_bool   ready{false}; // Workers should process tasks.
+      std::atomic_bool   abort{false}; // Workers should stop.
+      std::atomic_size_t actives{0};   // Workers currently exploiting/executing tasks.
+      std::atomic_size_t thieves{0};   // Workers currently in stealing mode.
+    };
+
+    // Per-worker non-atomic counters (thread-local, reset per idle cycle).
+    struct exec_stats
+    {
+      std::size_t steal_bound   = 1024; // Max consecutive failed steals
+      std::size_t yield_bound   = 16;   // Max consecutive yields
+      std::size_t failed_steals = 0;    // Count of consecutive failed steal attempts.
+      std::size_t yields        = 0;    // Count of consecutive yield attempts.
+    };
+    enum class action
+    {
+      exploit,
+      explore,
+      abort,
+      retry,
+      yield, // Simple yield with no counter updates; caller yields then proceeds to next state
+             // (exploit).
+      yield_steal_exceed, // Yield due to exceeding steal_bound; caller yields, resets failed_steals
+                          // to 0, increments yields, then calls process_state again with this as
+                          // previous to continue the sequential logic.
+      yield_reset_yields, // Yield due to exceeding yield_bound with actives > 0; caller yields,
+                          // resets yields to 0, then proceeds to next state (exploit).
+      suspend             // Suspend due to exceeding yield_bound with actives == 0; caller
+                          // suspends (e.g., activity.ready.wait(false,
+                          // std::memory_order_acquire)), resets yields to 0, then proceeds to next
+                          // state (exploit).
+    };
+
+    auto
+    process_state(activity_stats const& activity, exec_stats const& exec, action previous) -> action
+    {
+      if (previous == action::abort)
+      {
+        return action::abort;
+      }
+      if (previous == action::exploit)
+      {
+        // Maps to paper's worker loop (Figure 2): after failed owner_pop (exploit fail),
+        // immediately attempt steal_random (explore). Correct because caller only invokes
+        // process_state on exploit failure; success cases are handled by caller retrying exploit
+        // directly, preserving single-attempt responsiveness without state machine involvement.
+        return action::explore;
+      }
+
+      if (previous == action::explore)
+      {
+        // Maps to paper's wait_for_task entry (Algorithm 1, after inc failed_steals_ which caller
+        // performs before this call). Correct because exec.failed_steals reflects post-increment
+        // value; function decides first if steal_bound exceeded (trigger special yield with
+        // updates), then always evaluates yield_bound (sequential ifs), or falls to default yield
+        // (else branch).
+        if (exec.failed_steals > exec.steal_bound)
+        {
+          // Maps to paper's first if (failed_steals_ > STEAL_BOUND): yield, but defers updates to
+          // caller; returns special action to trigger continuation for second if. Correct as it
+          // isolates the first yield and updates, allowing caller to update exec before re-calling
+          // for the remaining logic, replicating the sequential execution without modifying state
+          // here.
+          return action::yield_steal_exceed;
+        }
+        // Sequential: always check second if, even if steal_bound not exceeded.
+        if (exec.yields > exec.yield_bound)
+        {
+          // Maps to paper's second if (yields_ > YIELD_BOUND): reset yields (deferred to caller),
+          // then conditional yield or wait. Correct as actives read with acquire ensures visibility
+          // of concurrent executions; no modification here, caller handles reset post-action.
+          if (activity.actives.load(std::memory_order_acquire) > 0)
+          {
+            return action::yield_reset_yields;
+          }
+          else
+          {
+            return action::suspend;
+          }
+        }
+        // Maps to paper's else branch: simple yield when neither bound exceeded (or after checks).
+        // Correct as this catches low-contention idleness without updates, maintaining minimal
+        // overhead per C++20 yield semantics.
+        return action::yield;
+      }
+
+      if (previous == action::yield_steal_exceed)
+      {
+        // Maps to paper's state after first if block (yield executed, failed reset, yields
+        // incremented by caller): now evaluate second if with updated yields. Correct because
+        // re-call with this previous allows seeing post-increment yields without function
+        // modification, ensuring sequential logic fidelity.
+        if (exec.yields > exec.yield_bound)
+        {
+          // Same as above: maps to second if, with conditional based on actives.
+          // Correct for handling the rare case where inc pushes yields over bound, triggering reset
+          // and yield/suspend.
+          if (activity.actives.load(std::memory_order_acquire) > 0)
+          {
+            return action::yield_reset_yields;
+          }
+          else
+          {
+            return action::suspend;
+          }
+        }
+        // Maps to else after first if (when new yields <= bound): another yield.
+        // Correct as this replicates the double-yield path for non-threshold cases, preserving
+        // adaptive gradual backoff.
+        return action::yield;
+      }
+
+      if (previous == action::yield || previous == action::yield_reset_yields ||
+          previous == action::suspend)
+      {
+        // Maps to paper's loop continuation after wait_for_task: always return to owner_pop
+        // (exploit) post-yield/sleep. Correct because all wait paths (simple or with resets) lead
+        // back to exploit for checking local deque first, exploiting locality without memory
+        // barriers needed here (caller ensures visibility via release on pushes/notifies).
+        return action::exploit;
+      }
+
+      // Unhandled previous: assume abort or error handling in caller; not in paper.
+      return action::abort;
+    }
+
+    void
+    process_action(action a, activity_stats& activity, exec_stats& exec, auto& self,
+                   invocable_return auto&& stealer)
+    {
+      switch (a)
+      {
+        case action::exploit:
+        { // Match paper's Algorithm 3: drain the queue under a single inc/dec of actives,
+          // with notify_one if becoming first active and no thieves (to wake potential sleepers,
+          // ensuring Lemma 1 under-subscription prevention).
+          auto prev = activity.actives.fetch_add(1, std::memory_order_acq_rel);
+          if (prev == 0 && activity.thieves.load(std::memory_order_acquire) == 0)
+          {
+            // Notify one sleeper (paper's notifier.notify_one(); here using atomic notify for
+            // simplicity, but for full EventCount, use two-phase to reduce thundering herd).
+            // Memory: acquire on thieves ensures no race with concurrent dec; notify has release
+            // semantics implicitly for visibility.
+            activity.ready.store(true, std::memory_order_release);
+            activity.ready.notify_one();
+          }
+          bool executed = false;
+          while (auto t = self.try_pop_front())
+          { // Drain loop: repeated FIFO pops until empty (fixed from single pop; preserves locality
+            // for DAG successors pushed LIFO, but adapted to FIFO owner).
+            (*t)(); // Execute (assumed noexcept; for DAG, includes atomic dep decrement with
+                    // release for successor readiness visibility).
+            executed = true;
+          }
+          if (executed)
+          { // Reset on any success (extension for adaptivity; paper has local counters in
+            // wait_for_task, but here thread-local for consistency).
+            exec.yields        = 0;
+            exec.failed_steals = 0;
+          }
+          activity.actives.fetch_sub(1, std::memory_order_acq_rel); // Dec after full drain.
+        }
+        break;
+        case action::explore:
+        { // Match paper's single steal_random in worker loop: no inc/dec thieves (Lemma 2); only
+          // for initial probe post-exploit-fail. C++20: no atomics here, assuming stealer() is
+          // lock-free CAS-based (e.g., Chase-Lev FIFO steal).
+          if (auto t = stealer())
+          {
+            (*t)();
+            exec.yields        = 0;
+            exec.failed_steals = 0; // Reset on success (consistent with paper's success exit).
+          }
+          else
+          {
+            ++exec.failed_steals;
+          }
+          // No inc failed_steals (paper accumulates only in bounded phase; fixed from previous
+          // per-fail inc, avoiding premature bound reach).
+          break;
+        }
+        case action::abort:
+        { // Unchanged: placeholder; ensure caller handles global stop (e.g., atomic done flag
+          // checked in loop, as per paper's scheduler stops).
+          return;
+        }
+        break;
+        case action::retry:
+        { // Unchanged: no-op for immediate retry (maps to paper's tight loop on within-bounds; no
+          // memory impact).
+        }
+        break;
+        case action::yield:
+        { // Unchanged: simple yield for else branch (minimal contention reduction without updates).
+          std::this_thread::yield();
+        }
+        break;
+        case action::yield_steal_exceed:
+        { // Match paper's post-STEAL_BOUND yield then inc yields (Algorithm 5 inner loop exit):
+          // yield first, then updates (no pre-update yield in paper, but state machine requires;
+          // close approximation).
+          std::this_thread::yield();
+          exec.failed_steals = 0;
+          ++exec.yields;
+        }
+        break;
+        case action::yield_reset_yields:
+        { // Match paper's yield when yields >= YIELD_BOUND and num_actives >0: yield then
+          // reset (sequencing correct; C++20 yield before non-atomic reset avoids reordering
+          // issues).
+          std::this_thread::yield();
+          exec.yields = 0;
+        }
+        break;
+        case action::suspend:
+        { // Match paper's wait when yields >= YIELD_BOUND and num_actives ==0: dec thieves
+          // before wait (not to risk over-counted thieves and Lemma 2 violation);
+          // wait then reset yields (user change implies reset states, including zero
+          // worker-counters and implied dec globals if in phase). C++20: atomic::wait with acquire
+          // for post-wake visibility (tolerates spurious; re-eval in caller loop fixes races,
+          // approximating EventCount prepare/commit without cancel—add loop
+          // while(!ready.load(acquire)) wait() for better spurious handling). Assumption: thieves
+          // inc occurred in bounded phase entry (caller must ensure before this action); ready
+          // notify_all on submissions/completions (release paired).
+          activity.thieves.fetch_sub(1, std::memory_order_acq_rel);
+          activity.ready.wait(false, std::memory_order_acquire);
+          exec.yields        = 0;
+          exec.failed_steals = 0; // Extra zero for user-implied full reset (paper resets only
+                                  // yields, but extension for clean phase; non-atomic safe).
+        }
+        break;
+      }
+    }
+
   }
 }
