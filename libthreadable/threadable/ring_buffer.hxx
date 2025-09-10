@@ -179,6 +179,8 @@ namespace fho
     using iterator       = std::ranges::iterator_t<transform_type>;       // NOLINT
     using const_iterator = std::ranges::iterator_t<const_transform_type>; // NOLINT
 
+    static constexpr bool is_always_lock_free = false; // Waits if Capacity exceeded.
+
     static_assert(std::is_unsigned_v<index_t>);
     static_assert(Capacity > 1, "capacity must be greater than 1");
     static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");

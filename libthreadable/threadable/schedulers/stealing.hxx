@@ -14,6 +14,13 @@ namespace fho::schedulers::stealing
                                { !std::invoke(t) } -> std::same_as<bool>;
                              };
 
+  template<typename T>
+  concept cas_deque = requires (T t) {
+                        { t.try_pop_front() } -> std::invocable;
+                        { t.try_pop_back() } -> std::invocable;
+                        { T::is_always_lock_free } -> std::equality_comparable_with<bool>;
+                      };
+
   // Global shared atomics (accessed by all workers).
   struct activity_stats
   {
@@ -353,7 +360,7 @@ namespace fho::schedulers::stealing
     }
 
     void
-    process_action(action a, activity_stats& activity, exec_stats& exec, auto& self,
+    process_action(action a, activity_stats& activity, exec_stats& exec, cas_deque auto& self,
                    invocable_return auto&& stealer)
     {
       switch (a)
