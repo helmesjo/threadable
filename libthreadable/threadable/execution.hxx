@@ -2,6 +2,7 @@
 
 #include <threadable/atomic.hxx>
 #include <threadable/ring_buffer.hxx>
+#include <threadable/schedulers/stealing.hxx>
 
 #include <concepts>
 #include <ranges>
@@ -176,6 +177,39 @@ namespace fho
     ring_buffer<>    work_;
     std::thread      thread_;
   };
+
+  namespace v2
+  {
+    namespace sched = fho::schedulers::stealing;
+
+    class executor
+    {
+    public:
+      executor(sched::invocable_return auto&& stealer)
+      {
+        thread_ = std::thread(*this, FWD(stealer));
+      }
+
+      void
+      operator()(sched::invocable_return auto&& stealer) noexcept
+      {
+        auto activity = sched::activity_stats{};
+        auto exec     = sched::exec_stats{};
+        auto victim   = fho::ring_buffer<>{};
+        auto self     = fho::ring_buffer<decltype(victim)::claimed_type>{};
+        auto order    = std::vector<bool>{};
+        auto action   = sched::action::exploit;
+        while (true)
+        {
+          sched::process_action(action, activity, exec, self, stealer);
+          action = sched::process_state(activity, exec, action);
+        }
+      }
+
+    private:
+      std::thread thread_;
+    };
+  }
 }
 
 #undef FWD
