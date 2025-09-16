@@ -516,7 +516,7 @@ namespace fho
     {
       static_assert(sizeof(size()) == 1,
                     "Implicit boolean conversion assumes size-field to be 1 byte");
-      return static_cast<bool>(*data());
+      return size() != 0;
     }
 
     /// @brief Resets the buffer.
