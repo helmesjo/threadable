@@ -57,7 +57,7 @@ namespace fho::schedulers::stealing
                         // state (exploit).
   };
 
-  auto
+  inline auto
   process_state(activity_stats const& activity, exec_stats const& exec, action previous) -> action
   {
     if (previous == action::abort)
@@ -151,7 +151,7 @@ namespace fho::schedulers::stealing
     return action::abort;
   }
 
-  void
+  inline void
   process_action(action a, activity_stats& activity, exec_stats& exec, cas_deque auto& self,
                  invocable_return auto&& stealer)
   {
