@@ -78,8 +78,7 @@ namespace fho
       }
       else
       {
-        value_ = std::move(that.value_); // For trivial T, bitwise move (memcpy
-                                         // equivalent) is fine and faster.
+        value_ = std::move(that.value_); // For trivial T, bitwise move (memcpy equivalent).
       }
     }
 
@@ -113,8 +112,7 @@ namespace fho
       }
       else
       {
-        value_ = std::move(that.value_); // UNCHANGED: For trivial T, bitwise move (memcpy
-                                         // equivalent) is fine and faster.
+        value_ = std::move(that.value_); // For trivial T, bitwise move (memcpy equivalent).
       }
       return *this;
     }
@@ -320,7 +318,7 @@ namespace fho
     {
       // Launder to ensure aliasing compliance post-construction.
       dbg::verify_bitwise(state_, slot_state::ready | slot_state::locked_ready);
-      return std::launder(reinterpret_cast<T*>(value_.data())); // NOLINT
+      return details::launder_as<T>(value_.data());
     }
 
     /// @brief Gets a const pointer to the stored value.
@@ -331,7 +329,7 @@ namespace fho
     {
       // Launder to ensure aliasing compliance post-construction.
       dbg::verify_bitwise(state_, slot_state::ready | slot_state::locked_ready);
-      return std::launder(reinterpret_cast<T const*>(value_.data())); // NOLINT
+      return details::launder_as<T const>(value_.data());
     }
 
     /// Atomic state of the slot.
