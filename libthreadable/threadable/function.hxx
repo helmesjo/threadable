@@ -46,6 +46,36 @@ namespace fho
     constexpr auto cache_line_size = std::size_t{64}; // Fallback for unknown architectures
   #endif
 #endif
+
+    /// @brief Converts a raw pointer to a laundered `T*` pointer, using the appropriate cast.
+    /// @details Uses `static_cast` if `Src*` is convertible to `T*`, otherwise `reinterpret_cast`,
+    /// and applies `std::launder` for aliasing/lifetime compliance. Handles const-qualified
+    /// sources.
+    /// @tparam `T` The target type to cast to (non-byte, non-void type).
+    /// @tparam `Src` The source pointer type (e.g., `std::byte*`, `const std::byte*`, `void*`).
+    /// @param `src` The raw pointer to storage containing a `T` object.
+    /// @return A laundered `T*` pointing to the current `T` object.
+    /// @requires The src pointer must point to valid, aligned storage containing a `T` object.
+    template<typename T, typename Src>
+    [[nodiscard]] constexpr auto
+    launder_as(Src* src) noexcept -> T*
+    {
+      static_assert(std::is_pointer_v<decltype(src)>, "Src must be a pointer type");
+      static_assert(!std::is_same_v<T, void>, "T must not be a void");
+      static_assert(std::is_object_v<T>, "T must be an object type for laundering");
+
+      if constexpr (requires { static_cast<T*>(src); })
+      {
+        // Use static_cast for convertible pointers (e.g., void*, T*, or derived-to-base).
+        return std::launder(static_cast<T*>(src));
+      }
+      else
+      {
+        // Use reinterpret_cast for non-convertible pointers (e.g., std::byte*, char*).
+        return std::launder(reinterpret_cast<T*>(src)); // NOLINT
+      }
+    }
+
     /// @brief Invokes the callable object stored in the buffer.
     /// @details Casts the buffer to the callable type and invokes it using `std::invoke`. Used
     /// internally to execute stored callables.
@@ -55,7 +85,7 @@ namespace fho
     inline constexpr void
     invoke_func(void* buffer)
     {
-      std::invoke(*static_cast<Func*>(buffer));
+      std::invoke(*launder_as<Func>(buffer));
     }
 
     enum class method : std::uint_fast8_t
@@ -83,7 +113,7 @@ namespace fho
         {
           if constexpr (std::copy_constructible<value_t>)
           {
-            std::construct_at(static_cast<value_t*>(self), *static_cast<T const*>(that));
+            std::construct_at(launder_as<value_t>(self), *launder_as<T const>(that));
           }
           else
           {
@@ -96,11 +126,11 @@ namespace fho
         {
           if constexpr (std::move_constructible<value_t>)
           {
-            std::construct_at(static_cast<value_t*>(self), std::move(*static_cast<T*>(that)));
+            std::construct_at(launder_as<value_t>(self), std::move(*launder_as<T>(that)));
           }
           else if constexpr (std::copy_constructible<value_t>)
           {
-            std::construct_at(static_cast<value_t*>(self), *static_cast<T const*>(that));
+            std::construct_at(launder_as<value_t>(self), *launder_as<T const>(that));
           }
           else
           {
@@ -113,7 +143,7 @@ namespace fho
         case method::dtor:
         {
           static_assert(std::destructible<value_t>);
-          std::destroy_at(static_cast<value_t*>(self));
+          std::destroy_at(launder_as<value_t>(self));
         }
         break;
       }
@@ -134,7 +164,7 @@ namespace fho
     inline auto
     size(std::byte* buf) noexcept -> std::uint8_t&
     {
-      return reinterpret_cast<std::uint8_t&>(*buf); // NOLINT
+      return *launder_as<std::uint8_t>(buf); // NOLINT
     }
 
     /// @brief Gets the buffer's size field value.
@@ -144,7 +174,7 @@ namespace fho
     inline auto
     size(std::byte const* buf) noexcept -> std::uint8_t
     {
-      return static_cast<std::uint8_t>(*buf);
+      return *launder_as<std::uint8_t const>(buf);
     }
 
     /// @brief Gets a reference to the buffer's invoke function pointer.
@@ -154,7 +184,7 @@ namespace fho
     inline auto
     invoke_ptr(std::byte* buf) noexcept -> invoke_func_t&
     {
-      return *static_cast<invoke_func_t*>(static_cast<void*>(buf + header_size)); // NOLINT
+      return *launder_as<invoke_func_t>(buf + header_size); // NOLINT
     }
 
     /// @brief Gets a reference to the buffer's special function pointer.
@@ -164,8 +194,7 @@ namespace fho
     inline auto
     special_func_ptr(std::byte* buf) noexcept -> invoke_special_func_t&
     {
-      return *static_cast<invoke_special_func_t*>(
-        static_cast<void*>(buf + header_size + func_ptr_size)); // NOLINT
+      return *launder_as<invoke_special_func_t>(buf + header_size + func_ptr_size); // NOLINT
     }
 
     /// @brief Gets a pointer to the callable's storage in the buffer.
@@ -339,13 +368,13 @@ namespace fho
       // body (invocation pointer)
       // body (destructor pointer)
       // body (callable)
-      details::size(buffer_.data())       = total_size;
-      details::invoke_ptr(buffer_.data()) = std::addressof(details::invoke_func<value_t>);
-      details::special_func_ptr(buffer_.data()) =
-        std::addressof(details::invoke_special_func<value_t>);
+      details::size(data())             = total_size;
+      details::invoke_ptr(data())       = std::addressof(details::invoke_func<value_t>);
+      details::special_func_ptr(data()) = std::addressof(details::invoke_special_func<value_t>);
 
-      std::construct_at(reinterpret_cast<std::remove_const_t<value_t>*>( // NOLINT
-                          details::body_ptr(buffer_.data())),
+      // Launder not strictly necessary but also doesn't harm. It's also a cleaner conversion.
+      std::construct_at(details::launder_as<std::remove_const_t<value_t>>(
+                          details::body_ptr(data())),
                         FWD(func));
     }
 
@@ -370,7 +399,7 @@ namespace fho
     /// @details Initializes the buffer with a size of `0`, indicating no callable is stored.
     function_buffer() noexcept
     {
-      details::size(buffer_.data()) = 0;
+      details::size(data()) = 0;
     }
 
     /// @brief Copy constructor.
@@ -379,8 +408,8 @@ namespace fho
     /// @param `buffer` The `function_buffer` to copy from.
     function_buffer(function_buffer const& buffer)
     {
-      details::size(buffer_.data()) = 0;
-      *this                         = buffer;
+      details::size(data()) = 0;
+      *this                 = buffer;
     }
 
     /// @brief Move constructor.
@@ -389,8 +418,8 @@ namespace fho
     /// @param `buffer` The `function_buffer` to move from.
     function_buffer(function_buffer&& buffer) noexcept
     {
-      details::size(buffer_.data()) = 0;
-      *this                         = std::move(buffer);
+      details::size(data()) = 0;
+      *this                 = std::move(buffer);
     }
 
     /// @brief Constructor that takes a `function<Size>` object.
@@ -413,8 +442,8 @@ namespace fho
     explicit function_buffer(Func&& callable) noexcept
       requires (!is_function_v<Func>)
     {
-      details::size(buffer_.data()) = 0;
-      *this                         = FWD(callable);
+      details::size(data()) = 0;
+      *this                 = FWD(callable);
     }
 
     /// @brief Constructor that takes a callable and its arguments.
@@ -428,7 +457,7 @@ namespace fho
     explicit function_buffer(auto&& callable, auto&&... args) noexcept
       requires (sizeof...(args) > 0)
     {
-      details::size(buffer_.data()) = 0;
+      details::size(data()) = 0;
       emplace(FWD(callable), FWD(args)...);
     }
 
@@ -527,7 +556,7 @@ namespace fho
       if (*this) [[unlikely]]
       {
         details::invoke_special_func(data(), details::method::dtor);
-        details::size(buffer_.data()) = 0;
+        details::size(data()) = 0;
       }
     }
 
