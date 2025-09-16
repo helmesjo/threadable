@@ -4,6 +4,7 @@
 #include <threadable/function.hxx>
 #include <threadable/token.hxx>
 
+#include <atomic>
 #include <memory>
 #include <type_traits>
 
@@ -55,8 +56,20 @@ namespace fho
     /// @param `that` The slot to move from.
     ring_slot(ring_slot&& that) noexcept
       : state_(that.state_.load(std::memory_order_relaxed))
-      , value_(std::move(that.value_))
-    {}
+    {
+      if constexpr (!std::is_trivially_move_constructible_v<T>)
+      {
+        // Placement new with move to properly invoke
+        // T's move ctor; avoids UB for non-trivial T.
+        new (data()) T(std::move(*that.data()));
+        std::destroy_at(that.data()); // Explicitly destroy moved-from object to end its
+                                      // lifetime per [basic.life]/8.
+      }
+      else
+      {
+        value_ = std::move(that.value_); // For trivial T, bitwise move (memcpy equivalent).
+      }
+    }
 
     /// @brief Deleted copy constructor.
     /// @details Copying slots is not allowed to prevent unintended duplication.
@@ -78,7 +91,18 @@ namespace fho
     operator=(ring_slot&& that) noexcept -> ring_slot&
     {
       state_ = that.state_.load(std::memory_order_relaxed);
-      value_ = std::move(that.value_);
+      if constexpr (!std::is_trivially_move_constructible_v<T>)
+      {
+        // Placement new with move to properly invoke
+        // T's move ctor; avoids UB for non-trivial T.
+        new (data()) T(std::move(*that.data()));
+        std::destroy_at(that.data()); // Explicitly destroy moved-from object to end its
+                                      // lifetime per [basic.life]/8.
+      }
+      else
+      {
+        value_ = std::move(that.value_); // For trivial T, bitwise move (memcpy equivalent).
+      }
       return *this;
     }
 
@@ -185,30 +209,13 @@ namespace fho
       t.rebind(state_);
     }
 
-    /// @brief Gets a pointer to the stored value.
-    /// @details Returns a pointer to the memory where the value is stored. Ensure the slot is in
-    /// an appropriate state (e.g., `active`) before accessing to avoid undefined behavior.
-    inline constexpr auto
-    data() noexcept -> T*
-    {
-      return reinterpret_cast<T*>(value_.data()); // NOLINT
-    }
-
-    /// @brief Gets a const pointer to the stored value.
-    /// @details Returns a const pointer to the memory where the value is stored. Ensure the slot
-    /// is in an appropriate state (e.g., `active`) before accessing to avoid undefined behavior.
-    inline constexpr auto
-    data() const noexcept -> T const*
-    {
-      return reinterpret_cast<T const*>(value_.data()); // NOLINT
-    }
-
     /// @brief Gets a reference to the stored value.
     /// @details Returns a reference to the stored value. Ensure the slot is in an appropriate
     /// state (e.g., `active`) before accessing to avoid undefined behavior.
     inline constexpr auto
     value() noexcept -> T&
     {
+      assert(state_.load(std::memory_order_acquire) == slot_state::active and "ring_slot::value()");
       return *data(); // NOLINT
     }
 
@@ -218,13 +225,35 @@ namespace fho
     inline constexpr auto
     value() const noexcept -> T const&
     {
+      assert(state_.load(std::memory_order_acquire) == slot_state::active and "ring_slot::value()");
       return *data(); // NOLINT
     }
 
   private:
-    fho::atomic_state_t state_; ///< Atomic state of the slot (e.g., `empty`, `claimed`, `active`).
-    alignas(T) std::array<std::byte, sizeof(T)> value_; ///< Aligned storage for the value of type
-                                                        ///< `T`.
+    /// @brief Gets a pointer to the stored value.
+    /// @details Returns a pointer to the memory where the value is stored. Ensure the slot is in
+    /// an appropriate state (e.g., `ready`) before accessing to avoid undefined behavior.
+    inline constexpr auto
+    data() noexcept -> T*
+    {
+      // Launder to ensure aliasing compliance post-construction.
+      return details::launder_as<T>(value_.data());
+    }
+
+    /// @brief Gets a const pointer to the stored value.
+    /// @details Returns a const pointer to the memory where the value is stored. Ensure the slot
+    /// is in an appropriate state (e.g., `ready`) before accessing to avoid undefined behavior.
+    inline constexpr auto
+    data() const noexcept -> T const*
+    {
+      // Launder to ensure aliasing compliance post-construction.
+      return details::launder_as<T const>(value_.data());
+    }
+
+    /// Atomic state of the slot.
+    fho::atomic_state_t state_{slot_state::empty};
+    /// Aligned storage for the value of type `T`.
+    alignas(T) std::array<std::byte, sizeof(T)> value_;
   };
 
   template<typename T>
