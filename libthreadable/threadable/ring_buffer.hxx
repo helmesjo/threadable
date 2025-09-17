@@ -228,8 +228,10 @@ namespace fho
     auto
     operator=(ring_buffer&& rhs) noexcept -> ring_buffer&
     {
-      tail_  = rhs.tail_.load(std::memory_order::relaxed);
-      head_  = rhs.head_.load(std::memory_order::relaxed);
+      tail_ = rhs.tail_.load(std::memory_order::relaxed);
+      head_ = rhs.head_.load(std::memory_order::relaxed);
+      rhs.tail_.store(0, std::memory_order::relaxed);
+      rhs.head_.store(0, std::memory_order::relaxed);
       elems_ = std::move(rhs.elems_);
       return *this;
     }
