@@ -628,14 +628,24 @@ SCENARIO("ring_buffer: stress-test")
       for (std::size_t i = 0; i < nr_consumers; ++i)
       {
         consumers.emplace_back(
-          [&barrier, &ring, &producers]
+          [&barrier, &ring, &producers, i]
           {
             barrier.arrive_and_wait();
             while (keep_consuming(ring, producers))
             {
-              if (auto e = ring.try_pop_front(); e)
+              if (i % 2 == 0)
               {
-                e();
+                if (auto e = ring.try_pop_front(); e)
+                {
+                  e();
+                }
+              }
+              else
+              {
+                for (auto e : ring.pop_front_range())
+                {
+                  e();
+                }
               }
             }
           });
@@ -691,14 +701,24 @@ SCENARIO("ring_buffer: stress-test")
       for (std::size_t i = 0; i < nr_consumers; ++i)
       {
         consumers.emplace_back(
-          [&barrier, &ring, &producers]
+          [&barrier, &ring, &producers, i]
           {
             barrier.arrive_and_wait();
             while (keep_consuming(ring, producers))
             {
-              if (auto e = ring.try_pop_front(); e)
+              if (i % 2 == 0)
               {
-                e();
+                if (auto e = ring.try_pop_front(); e)
+                {
+                  e();
+                }
+              }
+              else
+              {
+                for (auto e : ring.pop_front_range())
+                {
+                  e();
+                }
               }
             }
           });
@@ -755,14 +775,24 @@ SCENARIO("ring_buffer: stress-test")
       for (std::size_t i = 0; i < nr_consumers; ++i)
       {
         consumers.emplace_back(
-          [&barrier, &ring, &producers]
+          [&barrier, &ring, &producers, i]
           {
             barrier.arrive_and_wait();
             while (keep_consuming(ring, producers))
             {
-              if (auto e = ring.try_pop_front(); e)
+              if (i % 2 == 0)
               {
-                e();
+                if (auto e = ring.try_pop_front(); e)
+                {
+                  e();
+                }
+              }
+              else
+              {
+                for (auto e : ring.pop_front_range())
+                {
+                  e();
+                }
               }
             }
           });
