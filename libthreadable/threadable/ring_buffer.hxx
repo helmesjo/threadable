@@ -363,8 +363,7 @@ namespace fho
     /// @brief Removes the first element from the ring buffer.
     /// @details Releases the slot at the front (at `tail_`) and advances `tail_`. The buffer must
     ///          not be empty.
-    ///          Thread-safe for multiple consumers. Does not notify waiters; use a separate
-    ///          mechanism if notification is needed.
+    ///          Thread-safe for multiple consumers.
     /// @pre `size() > 0`
     /// @note Popping beyond emplaced items results in undefined behavior.
     void
