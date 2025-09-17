@@ -409,12 +409,13 @@ namespace fho
     auto
     pop_front_range(index_t max = max_size()) noexcept
     {
-      auto const tail = tail_.load(std::memory_order_acquire);
+      auto       tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
-      auto       cap  = tail;
+      max             = std::min(tail + max, head);
+      auto cap        = tail;
 
-      // @NOTE: Forward-scan until last one ready within cap.
-      while (cap < head && (cap - tail) < max)
+      // @NOTE: Forward-scan & claim until failure, or reached max range.
+      while (cap < max)
       {
         auto& elem = elems_[ring_iterator_t::mask(cap)];
         if (!elem.template try_lock<slot_state::ready>())
@@ -424,10 +425,21 @@ namespace fho
         ++cap;
       }
 
+      auto const exp = tail;
+      do
+      {
+        if (tail >= cap) [[unlikely]]
+        {
+          // No luck, so bail.
+          break;
+        }
+        tail = exp;
+      }
+      while (!tail_.compare_exchange_weak(tail, cap, std::memory_order_acq_rel,
+                                          std::memory_order_acquire));
+      tail_.notify_all();
       auto b = ring_iterator_t(elems_.data(), tail);
       auto e = ring_iterator_t(elems_.data(), cap);
-      tail_.store(cap, std::memory_order_release);
-      tail_.notify_all();
       return subrange_type(std::ranges::subrange(b, e), slot_value_accessor<value_type>);
     }
 
