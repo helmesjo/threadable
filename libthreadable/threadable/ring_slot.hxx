@@ -72,6 +72,7 @@ namespace fho
       {
         // Placement new with move to properly invoke
         // T's move ctor; avoids UB for non-trivial T.
+        dbg::verify_bitwise(that.state_, slot_state::ready | slot_state::locked_ready);
         new (data()) T(std::move(*that.data()));
         std::destroy_at(that.data()); // Explicitly destroy moved-from object to end its
                                       // lifetime per [basic.life]/8.
@@ -106,6 +107,7 @@ namespace fho
       {
         // Placement new with move to properly invoke
         // T's move ctor; avoids UB for non-trivial T.
+        dbg::verify_bitwise(that.state_, slot_state::ready | slot_state::locked_ready);
         new (data()) T(std::move(*that.data()));
         std::destroy_at(that.data()); // Explicitly destroy moved-from object to end its
                                       // lifetime per [basic.life]/8.
@@ -297,6 +299,7 @@ namespace fho
     inline constexpr auto
     value() noexcept -> T&
     {
+      dbg::verify(state_, slot_state::locked_ready);
       return *data(); // NOLINT
     }
 
@@ -306,6 +309,7 @@ namespace fho
     inline constexpr auto
     value() const noexcept -> T const&
     {
+      dbg::verify_bitwise(state_, slot_state::ready | slot_state::locked_ready);
       return *data(); // NOLINT
     }
 
@@ -317,7 +321,6 @@ namespace fho
     data() noexcept -> T*
     {
       // Launder to ensure aliasing compliance post-construction.
-      dbg::verify_bitwise(state_, slot_state::ready | slot_state::locked_ready);
       return details::launder_as<T>(value_.data());
     }
 
@@ -328,7 +331,6 @@ namespace fho
     data() const noexcept -> T const*
     {
       // Launder to ensure aliasing compliance post-construction.
-      dbg::verify_bitwise(state_, slot_state::ready | slot_state::locked_ready);
       return details::launder_as<T const>(value_.data());
     }
 
