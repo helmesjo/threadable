@@ -123,8 +123,6 @@ namespace fho
   /// Logical view; actual indices unbounded, masked for array access.
   /// When tail or head reaches the end they will wrap around.
   /// ```cpp
-  /// // Logical view; actual indices unbounded, masked for array access.
-  /// // When tail or head reaches the end they will wrap around.
   ///  _
   /// |_|
   /// |_|
@@ -498,13 +496,13 @@ namespace fho
     }
 
     /// @brief Waits until the buffer has items available.
-    /// @details Blocks until `head_ > tail_`, indicating items are ready for consumption.
+    /// @details Blocks until `head_ != tail_`, indicating items are ready for consumption.
     void
     wait() const noexcept
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
-      if (ring_iterator_t::mask(head - tail) == 0) [[unlikely]]
+      if (head == tail) [[unlikely]]
       {
         head_.wait(head, std::memory_order_acquire);
       }
