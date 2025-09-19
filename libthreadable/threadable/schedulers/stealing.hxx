@@ -201,7 +201,7 @@ namespace fho::schedulers::stealing
         {
           if (auto t = stealer(); t)
           {
-            (void)self.push_back(std::move(t));
+            (void)self.emplace_back(std::move(t));
             exec.yields        = 0;
             exec.failed_steals = 0;
             break;
