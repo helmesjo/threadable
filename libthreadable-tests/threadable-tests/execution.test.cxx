@@ -54,16 +54,8 @@ SCENARIO("executor v2: Submit callables")
 
   auto activity = sched::activity_stats{};
   auto master   = fho::ring_buffer<>{};
-  // auto self     = fho::ring_buffer<decltype(master)::claimed_type>{};
-  auto order = std::vector<bool>{};
-  // auto selfTask = [&order]
-  // {
-  //   order.push_back(true);
-  // };
-  auto task = [&order]
-  {
-    order.push_back(false);
-  };
+  auto order    = std::vector<bool>{};
+
   auto stealer = [&master]() -> auto
   {
     return master.try_pop_back();
@@ -89,9 +81,10 @@ SCENARIO("executor v2: Submit callables")
           executed[i] = counter++;
         });
       // simulate interruptions
+      activity.ready.store(true, std::memory_order_release);
+      activity.ready.notify_one();
       if (i % 2 == 0)
       {
-        activity.ready.store(true, std::memory_order_release);
         std::this_thread::yield();
       }
     }
@@ -102,10 +95,6 @@ SCENARIO("executor v2: Submit callables")
       THEN("all tasks are executed")
       {
         REQUIRE(executed.size() == size);
-        // for (std::size_t i = 0; i < executed.size(); ++i)
-        // {
-        //   REQUIRE(executed[i] == i);
-        // }
       }
     }
   }
