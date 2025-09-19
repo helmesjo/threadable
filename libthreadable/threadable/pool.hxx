@@ -27,6 +27,8 @@ namespace fho
 
     class alignas(details::cache_line_size) task_queue : private ring_buffer<fast_func_t>
     {
+      using base_t = ring_buffer<fast_func_t>;
+
     public:
       explicit task_queue(execution policy, schedulers::stealing::activity_stats& activity)
         : policy_(policy)
@@ -43,9 +45,128 @@ namespace fho
         activity_.ready.notify_one();
       }
 
+      template<typename U>
+        requires std::constructible_from<fast_func_t, U>
+      auto
+      push(U&& val) noexcept -> slot_token
+      {
+        auto token = emplace_back(FWD(val));
+        activity_.ready.store(true, std::memory_order_release);
+        activity_.ready.notify_one();
+        return token;
+      }
+
+      [[nodiscard]] auto
+      try_pop() noexcept
+      {
+        return base_t::try_pop_front();
+      }
+
+      [[nodiscard]] static constexpr auto
+      max_size() noexcept
+      {
+        return base_t::max_size();
+      }
+
     private:
       alignas(details::cache_line_size) execution policy_;
       alignas(details::cache_line_size) schedulers::stealing::activity_stats& activity_; // NOLINT
+    };
+
+    class pool
+    {
+    public:
+      using queue_t  = task_queue;
+      using queues_t = std::vector<std::shared_ptr<queue_t>>;
+
+      explicit pool(unsigned int threads = std::thread::hardware_concurrency())
+      {
+        executors_.reserve(threads);
+        for (unsigned int i = 0; i < threads; ++i)
+        {
+          executors_.emplace_back(std::make_unique<executor>(activity_,
+                                                             [this]
+                                                             {
+                                                               return steal();
+                                                             }));
+        }
+      }
+
+      pool(pool const&)                    = delete;
+      pool(pool&&)                         = delete;
+      auto operator=(pool const&) -> pool& = delete;
+      auto operator=(pool&&) -> pool&      = delete;
+
+      ~pool() = default; // TODO: Signal activity.ready = true & notify all (until all execs have
+                         //       stopped).
+
+      [[nodiscard]] auto
+      create(execution policy = execution::par) noexcept -> queue_t&
+      {
+        auto queue = std::make_shared<queue_t>(policy, activity_);
+        {
+          auto _ = std::scoped_lock{queueMutex_};
+          queues_.push_back(queue);
+        }
+        return *queue;
+      }
+
+      [[nodiscard]] auto
+      remove(queue_t&& queue) noexcept -> bool // NOLINT
+      {
+        auto _ = std::scoped_lock{queueMutex_};
+        if (auto itr = std::ranges::find_if(queues_,
+                                            [&queue](auto const& q)
+                                            {
+                                              return q.get() == &queue;
+                                            });
+            itr != std::end(queues_))
+        {
+          // TODO: Clear queue, it can't be used after user explicitly "removed" it.
+          queues_.erase(itr);
+          return true;
+        }
+        return false;
+      }
+
+      [[nodiscard]] auto
+      size() const noexcept -> std::size_t
+      {
+        auto _ = std::scoped_lock{queueMutex_};
+        return queues_.size();
+      }
+
+      static constexpr auto
+      max_size() noexcept -> std::size_t
+      {
+        return queue_t::max_size();
+      }
+
+    private:
+      [[nodiscard]] auto
+      steal() noexcept -> ring_buffer<>::claimed_type
+      {
+        thread_local static auto gen = std::mt19937{std::random_device{}()};
+
+        queues_t queues;
+        {
+          auto _ = std::scoped_lock{queueMutex_};
+          queues = queues_;
+        }
+
+        if (queues.empty()) [[unlikely]]
+        {
+          return nullptr;
+        }
+        auto distr = std::uniform_int_distribution<std::size_t>{0, queues.size() - 1};
+        auto idx   = distr(gen);
+        return queues[idx]->try_pop();
+      }
+
+      alignas(details::cache_line_size) sched::activity_stats activity_;
+      alignas(details::cache_line_size) mutable std::mutex queueMutex_;
+      alignas(details::cache_line_size) queues_t queues_;
+      alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
     };
   }
 
