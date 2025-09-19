@@ -189,9 +189,9 @@ namespace fho
       executor(sched::activity_stats& activity, sched::invocable_return auto&& stealer)
       {
         thread_ = std::jthread(
-          [this, &activity, &stealer](std::stop_token const& t)
+          [this, &activity, stealer = FWD(stealer)](std::stop_token const& t)
           {
-            (*this)(t, activity, FWD(stealer));
+            (*this)(t, activity, stealer);
           });
       }
 
@@ -207,9 +207,9 @@ namespace fho
 
       void
       operator()(std::stop_token const& t, sched::activity_stats& activity,
-                 sched::invocable_return auto&& stealer) noexcept
+                 sched::invocable_return auto& stealer) noexcept
       {
-        using claimed_t = typename fho::ring_buffer<>::claimed_type;
+        using claimed_t = claimed_slot<fast_func_t>;
 
         auto exec   = sched::exec_stats{};
         auto self   = fho::ring_buffer<claimed_t>{};
