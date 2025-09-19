@@ -3,6 +3,7 @@
 #include <threadable/execution.hxx>
 #include <threadable/function.hxx>
 #include <threadable/ring_buffer.hxx>
+#include <threadable/schedulers/stealing.hxx>
 
 #include <algorithm>
 #include <atomic>
@@ -21,6 +22,33 @@
 
 namespace fho
 {
+  namespace v2
+  {
+
+    class alignas(details::cache_line_size) task_queue : private ring_buffer<fast_func_t>
+    {
+    public:
+      explicit task_queue(execution policy, schedulers::stealing::activity_stats& activity)
+        : policy_(policy)
+        , activity_(activity)
+      {}
+
+      template<typename U>
+        requires std::constructible_from<fast_func_t, U>
+      auto
+      push(slot_token& token, U&& val) noexcept -> slot_token&
+      {
+        emplace_back(token, FWD(val));
+        activity_.ready.store(true, std::memory_order_release);
+        activity_.ready.notify_one();
+      }
+
+    private:
+      alignas(details::cache_line_size) execution policy_;
+      alignas(details::cache_line_size) schedulers::stealing::activity_stats& activity_; // NOLINT
+    };
+  }
+
   /// @brief A thread pool class that manages multiple executors and task queues with a fixed
   /// capacity.
   /// @details The `pool` class manages a collection of `executor` instances and multiple task
@@ -281,6 +309,7 @@ namespace fho
     }
 
   private:
+    alignas(details::cache_line_size) schedulers::stealing::activity_stats activity_;
     alignas(details::cache_line_size) mutable std::mutex queueMutex_;
     alignas(details::cache_line_size) std::atomic_bool stop_{false};
     alignas(details::cache_line_size) queues_t queues_;

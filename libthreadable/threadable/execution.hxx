@@ -6,6 +6,7 @@
 
 #include <concepts>
 #include <ranges>
+#include <stop_token>
 #include <thread>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
@@ -185,21 +186,36 @@ namespace fho
     class executor
     {
     public:
-      executor(sched::invocable_return auto&& stealer)
+      executor(sched::activity_stats& activity, sched::invocable_return auto&& stealer)
       {
-        thread_ = std::thread(*this, FWD(stealer));
+        thread_ = std::jthread(
+          [this, &activity, &stealer](std::stop_token const& t)
+          {
+            (*this)(t, activity, FWD(stealer));
+          });
+      }
+
+      executor(executor const&)                    = delete;
+      executor(executor&&)                         = delete;
+      auto operator=(executor const&) -> executor& = delete;
+      auto operator=(executor&&) -> executor&      = delete;
+
+      ~executor()
+      {
+        thread_.request_stop();
       }
 
       void
-      operator()(sched::invocable_return auto&& stealer) noexcept
+      operator()(std::stop_token const& t, sched::activity_stats& activity,
+                 sched::invocable_return auto&& stealer) noexcept
       {
-        auto activity = sched::activity_stats{};
-        auto exec     = sched::exec_stats{};
-        auto victim   = fho::ring_buffer<>{};
-        auto self     = fho::ring_buffer<decltype(victim)::claimed_type>{};
-        auto order    = std::vector<bool>{};
-        auto action   = sched::action::exploit;
-        while (true)
+        using claimed_t = typename fho::ring_buffer<>::claimed_type;
+
+        auto exec   = sched::exec_stats{};
+        auto self   = fho::ring_buffer<claimed_t>{};
+        auto order  = std::vector<bool>{};
+        auto action = sched::action::exploit;
+        while (!t.stop_requested())
         {
           sched::process_action(action, activity, exec, self, stealer);
           action = sched::process_state(activity, exec, action);
@@ -207,7 +223,7 @@ namespace fho
       }
 
     private:
-      std::thread thread_;
+      std::jthread thread_;
     };
   }
 }
