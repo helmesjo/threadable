@@ -11,13 +11,13 @@ SCENARIO("pool: print system info")
   std::cerr << "hardware_concurrency: " << std::thread::hardware_concurrency() << std::endl;
 }
 
-SCENARIO("pool (v2): create/remove queues")
+SCENARIO("pool: create/remove queues")
 {
-  auto pool = fho::v2::pool();
+  auto pool = fho::pool();
   GIVEN("queue is created")
   {
     auto& queue = pool.create();
-    static_assert(fho::v2::pool::max_size() == decltype(pool)::queue_t::max_size());
+    static_assert(fho::pool::max_size() == decltype(pool)::queue_t::max_size());
 
     WHEN("task is emplaced")
     {
@@ -81,9 +81,9 @@ SCENARIO("pool (v2): create/remove queues")
   }
 }
 
-SCENARIO("pool (v2): execution order")
+SCENARIO("pool: execution order")
 {
-  auto pool = fho::v2::pool();
+  auto pool = fho::pool();
   GIVEN("a task is submitted to a sequential queue")
   {
     auto& queue    = pool.create(fho::execution::seq);
@@ -138,7 +138,7 @@ SCENARIO("pool (v2): execution order")
   }
 }
 
-SCENARIO("pool (v2): stress-test")
+SCENARIO("pool: stress-test")
 {
   constexpr auto capacity = std::size_t{1 << 16};
 
@@ -146,7 +146,7 @@ SCENARIO("pool (v2): stress-test")
   {
     constexpr auto nr_producers = 4;
 
-    auto  pool      = fho::v2::pool(nr_producers);
+    auto  pool      = fho::pool(nr_producers);
     auto& queue     = pool.create(fho::execution::par);
     auto  counter   = std::atomic_size_t{0};
     auto  producers = std::vector<std::thread>{};
@@ -185,7 +185,7 @@ SCENARIO("pool (v2): stress-test")
   {
     static constexpr auto nr_producers = 4;
 
-    auto pool      = fho::pool<capacity>(nr_producers);
+    auto pool      = fho::pool(nr_producers);
     auto counter   = std::atomic_size_t{0};
     auto producers = std::vector<std::thread>{};
     auto barrier   = std::barrier{nr_producers};
@@ -202,7 +202,7 @@ SCENARIO("pool (v2): stress-test")
           barrier.arrive_and_wait();
           for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
           {
-            tokens += queue.emplace_back(
+            tokens += queue.push(
               [&counter]
               {
                 ++counter;

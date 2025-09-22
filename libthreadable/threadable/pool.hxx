@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <mutex>
 #include <random>
@@ -22,444 +21,230 @@
 
 namespace fho
 {
-  namespace v2
+  /// @brief A task queue for managing tasks in a thread pool with work-stealing support.
+  /// @details Extends `ring_buffer<fast_func_t>` to store tasks with an associated execution policy
+  ///          and activity stats for work-stealing coordination. Supports pushing tasks with or
+  ///          without a reusable `slot_token`, and popping tasks with sequential dependency checks
+  ///          for `execution::seq` to enforce single-edge DAG ordering. Thread-safe for multiple
+  ///          producers and consumers.
+  class alignas(details::cache_line_size) task_queue : private ring_buffer<fast_func_t>
   {
+    using base_t = ring_buffer<fast_func_t>;
 
-    class alignas(details::cache_line_size) task_queue : private ring_buffer<fast_func_t>
+  public:
+    /// @brief Constructs a task queue from an existing ring buffer with specified policy and stats.
+    /// @param base The `ring_buffer<fast_func_t>` to move into the queue.
+    /// @param policy The execution policy (`seq` for sequential, `par` for parallel).
+    /// @param activity Reference to shared `activity_stats` for work-stealing notifications.
+    explicit task_queue(base_t&& base, execution policy,
+                        schedulers::stealing::activity_stats& activity)
+      : base_t(std::move(base))
+      , policy_(policy)
+      , activity_(activity)
+    {}
+
+    /// @brief Constructs an empty task queue with specified policy and stats.
+    /// @param policy The execution policy (`seq` for sequential, `par` for parallel).
+    /// @param activity Reference to shared `activity_stats` for work-stealing notifications.
+    explicit task_queue(execution policy, schedulers::stealing::activity_stats& activity)
+      : policy_(policy)
+      , activity_(activity)
+    {}
+
+    /// @brief Pushes a task with a reusable token and arguments.
+    /// @details Emplaces a task constructed from `val...` into the queue, binding it to the
+    ///          provided `slot_token` for tracking. Signals `activity_.ready` to wake sleeping
+    ///          executors. Thread-safe for multiple producers.
+    /// @tparam U Types of the arguments to construct the task.
+    /// @param token Reference to a `slot_token` to track the task's state.
+    /// @param val Arguments to construct a `fast_func_t` task.
+    /// @return Reference to the provided `slot_token`.
+    /// @requires `fast_func_t` must be constructible from `U...`.
+    template<typename... U>
+      requires std::constructible_from<fast_func_t, U...>
+    auto
+    push(slot_token& token, U&&... val) noexcept -> decltype(auto)
     {
-      using base_t = ring_buffer<fast_func_t>;
+      emplace_back(token, FWD(val)...);
+      activity_.ready.fetch_add(1, std::memory_order_release);
+      activity_.ready.notify_one();
+      return token;
+    }
 
-    public:
-      explicit task_queue(base_t&& base, execution policy,
-                          schedulers::stealing::activity_stats& activity)
-        : base_t(std::move(base))
-        , policy_(policy)
-        , activity_(activity)
-      {}
-
-      explicit task_queue(execution policy, schedulers::stealing::activity_stats& activity)
-        : policy_(policy)
-        , activity_(activity)
-      {}
-
-      template<typename U>
-        requires std::constructible_from<fast_func_t, U>
-      auto
-      push(slot_token& token, U&& val) noexcept -> decltype(auto)
-      {
-        emplace_back(token, FWD(val));
-        activity_.ready.fetch_add(1, std::memory_order_release);
-        activity_.ready.notify_one();
-      }
-
-      template<typename U>
-        requires std::constructible_from<fast_func_t, U>
-      auto
-      push(U&& val) noexcept -> decltype(auto)
-      {
-        auto token = emplace_back(FWD(val));
-        activity_.ready.fetch_add(1, std::memory_order_release);
-        activity_.ready.notify_one();
-        return token;
-      }
-
-      [[nodiscard]] auto
-      try_pop() noexcept -> decltype(auto)
-      {
-        if (policy_ != execution::seq) [[likely]]
-        {
-          return base_t::try_pop_front(false);
-        }
-        else
-        {
-          return base_t::try_pop_front(true);
-        }
-      }
-
-      [[nodiscard]] static constexpr auto
-      max_size() noexcept
-      {
-        return base_t::max_size();
-      }
-
-    private:
-      alignas(details::cache_line_size) execution policy_;
-      alignas(details::cache_line_size) schedulers::stealing::activity_stats& activity_; // NOLINT
-    };
-
-    class pool
+    /// @brief Pushes a task with arguments and returns a new token.
+    /// @details Emplaces a task constructed from `val...` into the queue, creating a new
+    ///          `slot_token` for tracking. Signals `activity_.ready` to wake sleeping executors.
+    ///          Thread-safe for multiple producers.
+    /// @tparam U Types of the arguments to construct the task.
+    /// @param val Arguments to construct a `fast_func_t` task.
+    /// @return A `slot_token` for tracking the task's state.
+    /// @requires `fast_func_t` must be constructible from `U...`.
+    template<typename... U>
+      requires std::constructible_from<fast_func_t, U...>
+    auto
+    push(U&&... val) noexcept -> decltype(auto)
     {
-    public:
-      using queue_t  = task_queue;
-      using queues_t = std::vector<std::shared_ptr<queue_t>>;
+      auto token = emplace_back(FWD(val)...);
+      activity_.ready.fetch_add(1, std::memory_order_release);
+      activity_.ready.notify_one();
+      return token;
+    }
 
-      explicit pool(unsigned int threads = std::thread::hardware_concurrency())
+    /// @brief Attempts to claim the first task from the queue.
+    /// @details For `execution::seq`, checks if the previous task is completed (`empty` state)
+    ///          before claiming, enforcing single-edge DAG ordering. For `execution::par`, claims
+    ///          without checking dependencies. Returns a `claimed_slot<fast_func_t>` that
+    ///          auto-releases on destruction. Thread-safe for multiple consumers.
+    /// @return A `claimed_slot<fast_func_t>` if a task is claimed, or `nullptr` if the queue is
+    ///         empty, contention occurs, or the previous task is not completed (for `seq`).
+    [[nodiscard]] auto
+    try_pop() noexcept -> decltype(auto)
+    {
+      if (policy_ != execution::seq) [[likely]]
       {
-        executors_.reserve(threads);
-        for (unsigned int i = 0; i < threads; ++i)
-        {
-          executors_.emplace_back(std::make_unique<executor>(activity_,
-                                                             [this]
-                                                             {
-                                                               return steal();
-                                                             }));
-        }
+        return base_t::try_pop_front(false);
       }
-
-      pool(pool const&)                    = delete;
-      pool(pool&&)                         = delete;
-      auto operator=(pool const&) -> pool& = delete;
-      auto operator=(pool&&) -> pool&      = delete;
-
-      ~pool()
+      else
       {
-        activity_.abort.store(true, std::memory_order_release);
-        activity_.ready.store(1, std::memory_order_release);
-        activity_.ready.notify_all();
+        return base_t::try_pop_front(true);
       }
+    }
 
-      [[nodiscard]] auto
-      create(execution policy = execution::par) noexcept -> queue_t&
-      {
-        auto queue = std::make_shared<queue_t>(policy, activity_);
-        {
-          auto _ = std::scoped_lock{queueMutex_};
-          queues_.push_back(queue);
-        }
-        return *queue;
-      }
+    /// @brief Returns the maximum capacity of the queue.
+    /// @details Returns the capacity of the underlying `ring_buffer<fast_func_t>`.
+    /// @return The maximum number of tasks the queue can hold.
+    [[nodiscard]] static constexpr auto
+    max_size() noexcept
+    {
+      return base_t::max_size();
+    }
 
-      /// @brief Adds an existing queue to the pool's management.
-      /// @details Moves the provided `ring_buffer` into the pool's list of queues, allowing the
-      /// scheduler to distribute its tasks to the executors.
-      /// @param q The `ring_buffer` to add, moved into the pool.
-      /// @param policy The execution policy for the queue.
-      /// @return A reference to the added `ring_buffer`.
-      [[nodiscard]] auto
-      add(ring_buffer<fast_func_t>&& q, execution policy) -> queue_t&
-      {
-        queue_t* queue = nullptr;
-        {
-          auto _ = std::scoped_lock{queueMutex_};
-          queue =
-            queues_.emplace_back(std::make_unique<queue_t>(std::move(q), policy, activity_)).get();
-        }
+  private:
+    alignas(details::cache_line_size) execution policy_;
+    alignas(details::cache_line_size) schedulers::stealing::activity_stats& activity_; // NOLINT
+  };
 
-        return *queue;
-      }
-
-      [[nodiscard]] auto
-      remove(queue_t&& queue) noexcept -> bool // NOLINT
-      {
-        auto _ = std::scoped_lock{queueMutex_};
-        if (auto itr = std::ranges::find_if(queues_,
-                                            [&queue](auto const& q)
-                                            {
-                                              return q.get() == &queue;
-                                            });
-            itr != std::end(queues_))
-        {
-          // TODO: Clear queue, it can't be used after user explicitly "removed" it.
-          queues_.erase(itr);
-          return true;
-        }
-        return false;
-      }
-
-      [[nodiscard]] auto
-      size() const noexcept -> std::size_t
-      {
-        auto _ = std::scoped_lock{queueMutex_};
-        return queues_.size();
-      }
-
-      static constexpr auto
-      max_size() noexcept -> std::size_t
-      {
-        return queue_t::max_size();
-      }
-
-    private:
-      [[nodiscard]] auto
-      steal() noexcept -> ring_buffer<>::claimed_type
-      {
-        thread_local static auto gen = std::mt19937{std::random_device{}()};
-
-        queues_t queues;
-        {
-          auto _ = std::scoped_lock{queueMutex_};
-          queues = queues_;
-        }
-
-        if (queues.empty()) [[unlikely]]
-        {
-          return nullptr;
-        }
-        auto distr = std::uniform_int_distribution<std::size_t>{0, queues.size() - 1};
-        auto idx   = distr(gen);
-        return queues[idx]->try_pop();
-      }
-
-      alignas(details::cache_line_size) sched::activity_stats activity_;
-      alignas(details::cache_line_size) mutable std::mutex queueMutex_;
-      alignas(details::cache_line_size) queues_t queues_;
-      alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
-    };
-  }
-
-  /// @brief A thread pool class that manages multiple executors and task queues with a fixed
-  /// capacity.
-  /// @details The `pool` class manages a collection of `executor` instances and multiple task
-  /// queues (instances of `ring_buffer<fast_func_t, Capacity>`). It includes a scheduler thread
-  /// that distributes tasks from the queues to the executors. The number of worker threads
-  /// (executors) is by default set to the number of hardware threads minus one. The pool can create
-  /// new queues, add existing queues, and remove queues. Each queue has a fixed capacity specified
-  /// by the template parameter `Capacity`, which must be a power of two.
-  /// @tparam Capacity The capacity of each task queue in the pool. Must be a power of two.
-  /// @example
-  /// ```cpp
-  /// fho::pool<> pool;
-  /// auto& queue = pool.create();
-  /// auto token = queue.emplace_back([]() { std::cout << "task executed!\n"; });
-  /// token.wait();
-  /// ```
-  template<std::size_t Capacity = details::default_capacity>
+  /// @brief A thread pool managing task queues with work-stealing executors.
+  /// @details Manages a set of `task_queue`s and `executor`s, distributing tasks via work-stealing.
+  ///          Supports dynamic queue creation and removal, with tasks executed according to their
+  ///          queue’s policy (`seq` for single-edge DAG ordering, `par` for parallel). Uses a
+  ///          shared `activity_stats` for efficient executor wake-up. Thread-safe for queue
+  ///          management.
   class pool
   {
   public:
-    using queue_t = ring_buffer<fast_func_t, Capacity>;
+    using queue_t  = task_queue;
+    using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
-    /// @brief Structure representing a task queue with an associated execution policy.
-    struct task_queue
+    /// @brief Constructs a thread pool with a specified number of worker threads.
+    /// @details Initializes the pool with `threads` executors, each running a work-stealing loop.
+    ///          Defaults to `std::thread::hardware_concurrency()` for optimal parallelism.
+    ///          Creates a shared `activity_stats` for task notifications.
+    /// @param threads Number of worker threads (executors).
+    explicit pool(unsigned int threads = std::thread::hardware_concurrency())
     {
-      task_queue(task_queue const&)                    = delete;
-      task_queue(task_queue&&)                         = default;
-      auto operator=(task_queue const&) -> task_queue& = delete;
-      auto operator=(task_queue&&) -> task_queue&      = default;
-
-      task_queue(execution policy, queue_t buffer)
-        : policy(policy)
-        , buffer(std::move(buffer))
-      {}
-
-      ~task_queue() = default;
-
-      alignas(details::cache_line_size) execution policy;
-      alignas(details::cache_line_size) queue_t buffer;
-    };
-
-    using queues_t = std::vector<std::shared_ptr<task_queue>>;
-
-    /// @brief Initializes the thread pool with a specified number of worker threads.
-    /// @details Creates the specified number of `executor` instances, each running in its own
-    /// thread, and starts a separate scheduler thread that distributes tasks from the queues to
-    /// these executors. If no number is specified, it defaults to the number of hardware threads
-    /// minus one to account for the scheduler thread.
-    /// @param threads The number of worker threads (executors) to create. Defaults to
-    /// `std::thread::hardware_concurrency() - 1`.
-    pool(unsigned int threads = std::thread::hardware_concurrency() - 1) noexcept
-    {
-      // start worker threads
-      for (std::size_t i = 0; i < threads; ++i)
+      executors_.reserve(threads);
+      for (unsigned int i = 0; i < threads; ++i)
       {
-        executors_.emplace_back(std::make_unique<executor>());
+        executors_.emplace_back(std::make_unique<executor>(activity_,
+                                                           [this]
+                                                           {
+                                                             return steal();
+                                                           }));
       }
-
-      // start scheduler thread
-      scheduler_ = std::thread(
-        [this, threads]
-        {
-          using namespace std::chrono_literals;
-          using hpclock_t = std::chrono::high_resolution_clock;
-
-          auto const mt       = threads > 0;
-          auto       rd       = std::random_device{};
-          auto       gen      = std::mt19937(rd());
-          auto       distr    = std::uniform_int_distribution<std::size_t>(0, mt ? threads - 1 : 0);
-          constexpr auto cap  = std::size_t{4096};
-          auto           last = hpclock_t::time_point{};
-
-          while (true)
-          {
-            // 1. Check if quit = true. If so, bail.
-            // 2. Distribute queues' tasks to executors.
-            if (stop_.load(std::memory_order_acquire)) [[unlikely]]
-            {
-              break;
-            }
-
-            queues_t queues;
-            {
-              auto _ = std::scoped_lock{queueMutex_};
-              queues = queues_;
-            }
-
-            auto executed = false;
-            do
-            {
-              executed = false;
-              for (auto& queue : queues)
-              {
-                auto& [policy, buffer] = *queue;
-                // assign to (random) worker
-                // @TODO: Implement a proper load balancer, both
-                //        for range size & executor selection.
-                // @NOTE: The `cap` is arbitrary and should be
-                //        dealt with by a load balancer.
-                //        Runs until queues are exhausted.
-                for (auto range = buffer.pop_front_range(cap); !range.empty();
-                     range      = buffer.pop_front_range(cap)) [[likely]]
-                {
-                  if (mt) [[likely]]
-                  {
-                    executor& e = *executors_[distr(gen)];
-                    e.submit(std::move(range), policy);
-                  }
-                  else [[unlikely]]
-                  {
-                    for (auto& j : range)
-                    {
-                      assert(j and "pool::schedule()");
-                      j();
-                    }
-                  }
-                  executed = true;
-                  last     = hpclock_t::now();
-                }
-              }
-            }
-            while (executed);
-
-            // We want to save CPU time while still being reactive, but
-            // `sleep()` is not precise enough (eg. min ~1ms on Windows)
-            // and `yield()` is too aggressive.
-            // Make an educated guess if it's unlikely there will be
-            // tasks to process immediately, and only sleep if so.
-            // Prefer `yield()` during semi-high load.
-            if (hpclock_t::now() - last > 5ms) [[unlikely]]
-            {
-              if (!std::ranges::any_of(executors_,
-                                       [](auto const& e) -> bool
-                                       {
-                                         return e->busy();
-                                       }) &&
-                  !std::ranges::any_of(queues,
-                                       [](auto const& q) -> bool
-                                       {
-                                         return q->buffer.size() > 0;
-                                       })) [[unlikely]]
-              {
-                if (hpclock_t::now() - last < 10ms) [[likely]]
-                {
-                  std::this_thread::yield();
-                }
-                else [[unlikely]]
-                {
-                  std::this_thread::sleep_for(1us);
-                  last = hpclock_t::now();
-                }
-              }
-            }
-          }
-        });
     }
 
-    pool(pool const&) = delete;
-    pool(pool&&)      = delete;
-
+    pool(pool const&)                    = delete;
+    pool(pool&&)                         = delete;
     auto operator=(pool const&) -> pool& = delete;
     auto operator=(pool&&) -> pool&      = delete;
 
-    /// @brief Stops the thread pool and joins all threads.
-    /// @details Sets the stop flag to signal the scheduler thread to exit, joins the scheduler
-    /// thread, and then stops and joins all executor threads to ensure all tasks are completed
-    /// before destruction.
+    /// @brief Destroys the pool, stopping all executors.
+    /// @details Sets the `activity_.abort` flag and signals `activity_.ready` to wake all
+    /// executors,
+    ///          ensuring clean shutdown. Executors are joined automatically via their `jthread`
+    ///          destructors.
     ~pool()
     {
-      stop_.store(true, std::memory_order_release);
-      if (scheduler_.joinable())
-      {
-        scheduler_.join();
-      }
-      for (auto& w : executors_)
-      {
-        w->stop();
-      }
+      activity_.abort.store(true, std::memory_order_release);
+      activity_.ready.store(1, std::memory_order_release);
+      activity_.ready.notify_all();
+      executors_.clear();
     }
 
-    /// @brief Creates and adds a new task queue to the pool with the specified execution policy.
-    /// @details Instantiates a new `ring_buffer<fast_func_t, Capacity>` and adds it to the pool's
-    /// list of queues. The execution policy determines how tasks in this queue are executed
-    /// (sequentially or in parallel).
-    /// @param policy The execution policy for the new queue. Defaults to `execution::par`.
-    /// @return A reference to the newly created `ring_buffer`.
+    /// @brief Creates a new task queue with the specified execution policy.
+    /// @details Adds a new `task_queue` to the pool’s managed queues, with the given policy
+    ///          (`seq` for sequential, `par` for parallel). Thread-safe for concurrent creation.
+    /// @param policy Execution policy for the new queue (defaults to `execution::par`).
+    /// @return Reference to the created `task_queue`.
     [[nodiscard]] auto
     create(execution policy = execution::par) noexcept -> queue_t&
     {
-      return add(queue_t{}, policy);
-    }
-
-    /// @brief Adds an existing queue to the pool's management.
-    /// @details Moves the provided `ring_buffer` into the pool's list of queues, allowing the
-    /// scheduler to distribute its tasks to the executors.
-    /// @param q The `ring_buffer` to add, moved into the pool.
-    /// @param policy The execution policy for the queue.
-    /// @return A reference to the added `ring_buffer`.
-    [[nodiscard]] auto
-    add(queue_t&& q, execution policy) -> queue_t&
-    {
-      task_queue* queue = nullptr;
+      auto queue = std::make_shared<queue_t>(policy, activity_);
       {
         auto _ = std::scoped_lock{queueMutex_};
-        queue  = queues_.emplace_back(std::make_unique<task_queue>(policy, std::move(q))).get();
+        queues_.push_back(queue);
       }
-
-      return queue->buffer;
+      return *queue;
     }
 
-    /// @brief Removes a specified queue from the pool.
-    /// @details Searches for the provided `ring_buffer` in the pool's list and removes it if found.
-    /// The queue is moved into the function to ensure ownership transfer.
-    /// @param queue The `ring_buffer` to remove, moved into the function.
-    /// @return True if the queue was successfully removed, false if not found.
+    /// @brief Adds an existing ring buffer as a task queue to the pool.
+    /// @details Moves the provided `ring_buffer<fast_func_t>` into a new `task_queue` with the
+    ///          specified policy, adding it to the pool’s managed queues. Thread-safe for
+    ///          concurrent addition.
+    /// @param q The `ring_buffer<fast_func_t>` to add, moved into the queue.
+    /// @param policy Execution policy for the queue (`seq` or `par`).
+    /// @return Reference to the created `task_queue`.
+    [[nodiscard]] auto
+    add(ring_buffer<fast_func_t>&& q, execution policy) -> queue_t&
+    {
+      queue_t* queue = nullptr;
+      {
+        auto _ = std::scoped_lock{queueMutex_};
+        queue =
+          queues_.emplace_back(std::make_unique<queue_t>(std::move(q), policy, activity_)).get();
+      }
+      return *queue;
+    }
+
+    /// @brief Removes a task queue from the pool.
+    /// @details Removes the specified `task_queue` from the pool’s managed queues if found.
+    ///          Thread-safe for concurrent removal. The queue is not cleared; users must ensure
+    ///          no further use after removal.
+    /// @param queue The `task_queue` to remove.
+    /// @return `true` if the queue was removed, `false` if not found.
     [[nodiscard]] auto
     remove(queue_t&& queue) noexcept -> bool // NOLINT
     {
       auto _ = std::scoped_lock{queueMutex_};
-      if (auto itr = std::find_if(std::begin(queues_), std::end(queues_),
-                                  [&queue](auto const& q)
-                                  {
-                                    return &q->buffer == &queue;
-                                  });
+      if (auto itr = std::ranges::find_if(queues_,
+                                          [&queue](auto const& q)
+                                          {
+                                            return q.get() == &queue;
+                                          });
           itr != std::end(queues_))
       {
+        // TODO: Clear queue, it can't be used after user explicitly "removed" it.
         queues_.erase(itr);
         return true;
       }
-      else
-      {
-        return false;
-      }
+      return false;
     }
 
-    /// @brief Counts the number of queues with pending tasks.
-    /// @details Iterates through the pool's queues and counts how many have at least one task
-    /// (i.e., `queue.size() > 0`).
-    /// @return The number of queues containing tasks.
+    /// @brief Returns the number of managed task queues.
+    /// @details Counts the current number of queues in the pool. Thread-safe.
+    /// @return Number of task queues.
     [[nodiscard]] auto
     size() const noexcept -> std::size_t
     {
-      return std::ranges::count(queues_,
-                                [](auto const& queue)
-                                {
-                                  return !queue.empty();
-                                });
+      auto _ = std::scoped_lock{queueMutex_};
+      return queues_.size();
     }
 
-    /// @brief Returns the maximum capacity of each queue.
-    /// @details Each queue is a `ring_buffer<fast_func_t, Capacity>`, so this returns `Capacity`,
-    /// the maximum number of tasks each queue can hold.
-    /// @return The capacity of each queue.
+    /// @brief Returns the maximum capacity of each task queue.
+    /// @details Returns the capacity of the underlying `task_queue` (same as
+    /// `ring_buffer::max_size()`).
+    /// @return Maximum number of tasks per queue.
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
@@ -467,17 +252,40 @@ namespace fho
     }
 
   private:
+    /// @brief Attempts to steal a task from a random queue.
+    /// @details Selects a random queue using a thread-local random number generator and tries to
+    ///          pop a task via `task_queue::try_pop()`. Returns `nullptr` if no task is available
+    ///          or the queue is empty. Thread-safe for concurrent stealing.
+    /// @return A `claimed_slot<fast_func_t>` if a task is stolen, or `nullptr` if none available.
+    [[nodiscard]] auto
+    steal() noexcept -> ring_buffer<>::claimed_type
+    {
+      thread_local static auto gen = std::mt19937{std::random_device{}()};
+
+      queues_t queues;
+      {
+        auto _ = std::scoped_lock{queueMutex_};
+        queues = queues_;
+      }
+
+      if (queues.empty()) [[unlikely]]
+      {
+        return nullptr;
+      }
+      auto distr = std::uniform_int_distribution<std::size_t>{0, queues.size() - 1};
+      auto idx   = distr(gen);
+      return queues[idx]->try_pop();
+    }
+
     alignas(details::cache_line_size) schedulers::stealing::activity_stats activity_;
     alignas(details::cache_line_size) mutable std::mutex queueMutex_;
-    alignas(details::cache_line_size) std::atomic_bool stop_{false};
     alignas(details::cache_line_size) queues_t queues_;
-    alignas(details::cache_line_size) std::thread scheduler_;
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
   };
 
   namespace details
   {
-    using pool_t  = fho::pool<>;
+    using pool_t  = fho::pool;
     using queue_t = typename pool_t::queue_t;
 
     /// @brief Returns a reference to the default thread pool instance.

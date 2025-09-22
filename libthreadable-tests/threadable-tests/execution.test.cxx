@@ -5,7 +5,7 @@
 
 #include <atomic>
 
-SCENARIO("executor v2: Submit callables")
+SCENARIO("executor: Submit callables")
 {
   namespace sched = fho::schedulers::stealing;
 
@@ -18,10 +18,10 @@ SCENARIO("executor v2: Submit callables")
     return master.try_pop_back();
   };
 
-  auto exec1 = fho::v2::executor(activity, stealer);
-  auto exec2 = fho::v2::executor(activity, stealer);
-  auto exec3 = fho::v2::executor(activity, stealer);
-  auto exec4 = fho::v2::executor(activity, stealer);
+  auto exec1 = fho::executor(activity, stealer);
+  auto exec2 = fho::executor(activity, stealer);
+  auto exec3 = fho::executor(activity, stealer);
+  auto exec4 = fho::executor(activity, stealer);
   GIVEN("a range of callables")
   {
     static constexpr auto size = std::size_t{1024};
