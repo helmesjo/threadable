@@ -38,7 +38,7 @@ namespace fho
       template<typename U>
         requires std::constructible_from<fast_func_t, U>
       auto
-      push(slot_token& token, U&& val) noexcept -> slot_token&
+      push(slot_token& token, U&& val) noexcept -> decltype(auto)
       {
         emplace_back(token, FWD(val));
         activity_.ready.fetch_add(1, std::memory_order_release);
@@ -48,7 +48,7 @@ namespace fho
       template<typename U>
         requires std::constructible_from<fast_func_t, U>
       auto
-      push(U&& val) noexcept -> slot_token
+      push(U&& val) noexcept -> decltype(auto)
       {
         auto token = emplace_back(FWD(val));
         activity_.ready.fetch_add(1, std::memory_order_release);
@@ -57,9 +57,16 @@ namespace fho
       }
 
       [[nodiscard]] auto
-      try_pop() noexcept
+      try_pop() noexcept -> decltype(auto)
       {
-        return base_t::try_pop_front();
+        if (policy_ != execution::seq) [[likely]]
+        {
+          return base_t::try_pop_front(false);
+        }
+        else
+        {
+          return base_t::try_pop_front(true);
+        }
       }
 
       [[nodiscard]] static constexpr auto

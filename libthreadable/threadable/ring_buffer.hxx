@@ -441,22 +441,40 @@ namespace fho
       return subrange_type(std::ranges::subrange(b, e), slot_value_accessor<value_type>);
     }
 
-    /// @brief Claim the first element from the ring buffer.
-    /// @details Attempts to claims the item at `front()` and advances `tail_`.
-    /// The claimed slot is released when it goes out of scope.
-    /// Thread-safe for multiple consumers.
-    /// @note: Makes only a single attempt to claim next item in line.
+    /// @brief Attempts to claim the first element from the ring buffer.
+    /// @details Tries to lock and claim the item at `front()` and advances `tail_` if successful.
+    ///          If `prevReady` is `true`, ensures the previous slot is `empty` before claiming,
+    ///          enforcing sequential execution for single-edge DAG tasks within the queue.
+    ///          The claimed slot is automatically released when the returned `claimed_type` goes
+    ///          out of scope. Thread-safe for multiple consumers.
+    /// @param prevReady If `true`, checks that the previous slot is `empty` before claiming the
+    ///                  current slot, ensuring the prior task has completed (used for
+    ///                  `execution::seq`). If `false`, no dependency check is performed.
+    /// @return A `claimed_type` (e.g., `claimed_slot<T>`) containing the claimed slot, or `nullptr`
+    ///         if the claim fails due to contention, an empty buffer, or an uncompleted previous
+    ///         task when `prevReady` is `true`.
+    /// @note Makes a single attempt to claim the next item in line.
     auto
-    try_pop_front() noexcept -> claimed_type
+    try_pop_front(bool prevReady = false) noexcept -> claimed_type
     {
       auto  tail = tail_.load(std::memory_order_acquire);
       auto& elem = elems_[ring_iterator_t::mask(tail)];
       // 1. If element exists, try to claim it & advance tail.
       if (elem.template try_lock<slot_state::ready>()) [[likely]]
       {
+        if (prevReady) [[unlikely]]
+        {
+          auto& prev = elems_[ring_iterator_t::mask(tail - 1)];
+          if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]
+          {
+            // Fail: requires previous slot to be empty.
+            elem.template unlock<slot_state::locked_ready>();
+            return nullptr;
+          }
+        }
         if (tail_.compare_exchange_strong(tail, tail + 1, std::memory_order_acq_rel)) [[likely]]
         {
-          // Success: own the slot, safe to lend (read value)
+          // 2. Success: own the slot, safe to lend (read value)
           return claimed_type{&elem};
         }
         else [[unlikely]]
