@@ -30,6 +30,13 @@ namespace fho
       using base_t = ring_buffer<fast_func_t>;
 
     public:
+      explicit task_queue(base_t&& base, execution policy,
+                          schedulers::stealing::activity_stats& activity)
+        : base_t(std::move(base))
+        , policy_(policy)
+        , activity_(activity)
+      {}
+
       explicit task_queue(execution policy, schedulers::stealing::activity_stats& activity)
         : policy_(policy)
         , activity_(activity)
@@ -119,6 +126,25 @@ namespace fho
           auto _ = std::scoped_lock{queueMutex_};
           queues_.push_back(queue);
         }
+        return *queue;
+      }
+
+      /// @brief Adds an existing queue to the pool's management.
+      /// @details Moves the provided `ring_buffer` into the pool's list of queues, allowing the
+      /// scheduler to distribute its tasks to the executors.
+      /// @param q The `ring_buffer` to add, moved into the pool.
+      /// @param policy The execution policy for the queue.
+      /// @return A reference to the added `ring_buffer`.
+      [[nodiscard]] auto
+      add(ring_buffer<fast_func_t>&& q, execution policy) -> queue_t&
+      {
+        queue_t* queue = nullptr;
+        {
+          auto _ = std::scoped_lock{queueMutex_};
+          queue =
+            queues_.emplace_back(std::make_unique<queue_t>(std::move(q), policy, activity_)).get();
+        }
+
         return *queue;
       }
 
