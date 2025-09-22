@@ -81,7 +81,7 @@ SCENARIO("executor v2: Submit callables")
           executed[i] = counter++;
         });
       // simulate interruptions
-      activity.ready.store(true, std::memory_order_release);
+      activity.ready.fetch_add(1, std::memory_order_release);
       activity.ready.notify_one();
       if (i % 2 == 0)
       {
@@ -98,4 +98,7 @@ SCENARIO("executor v2: Submit callables")
       }
     }
   }
+  activity.abort = true;
+  activity.ready = 1;
+  activity.ready.notify_all();
 }

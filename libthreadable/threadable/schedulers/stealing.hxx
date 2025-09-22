@@ -1,5 +1,6 @@
 #pragma once
 
+#include <threadable/function.hxx>
 #include <threadable/ring_buffer.hxx>
 
 #include <atomic>
@@ -24,10 +25,14 @@ namespace fho::schedulers::stealing
   // Global shared atomics (accessed by all workers).
   struct activity_stats
   {
-    std::atomic_bool   ready{false}; // Workers should process tasks.
-    std::atomic_bool   abort{false}; // Workers should stop.
-    std::atomic_size_t actives{0};   // Workers currently exploiting/executing tasks.
-    std::atomic_size_t thieves{0};   // Workers currently in stealing mode.
+    // Tasks ready to process.
+    alignas(details::cache_line_size) std::atomic_size_t ready{0};
+    // Workers should stop.
+    alignas(details::cache_line_size) std::atomic_bool abort{false};
+    // Workers currently exploiting/executing tasks.
+    alignas(details::cache_line_size) std::atomic_size_t actives{0};
+    // Workers currently in stealing mode.
+    alignas(details::cache_line_size) std::atomic_size_t thieves{0};
   };
 
   // Per-worker non-atomic counters (thread-local, reset per idle cycle).
@@ -52,15 +57,14 @@ namespace fho::schedulers::stealing
     yield_reset_yields, // Yield due to exceeding yield_bound with actives > 0; caller yields,
                         // resets yields to 0, then proceeds to next state (exploit).
     suspend             // Suspend due to exceeding yield_bound with actives == 0; caller
-                        // suspends (e.g., activity.ready.wait(false,
-                        // std::memory_order_acquire)), resets yields to 0, then proceeds to next
-                        // state (exploit).
+                        // suspends (e.g., activity.ready.wait(0, std::memory_order_acquire)),
+                        // resets yields to 0, then proceeds to next state (exploit).
   };
 
   inline auto
-  process_state(activity_stats const& activity, exec_stats const& exec, action previous) -> action
+  process_state(activity_stats const& activity, exec_stats const& exec, action prev) -> action
   {
-    switch (previous)
+    switch (prev)
     {
       case action::abort:
         return action::abort;
@@ -153,10 +157,10 @@ namespace fho::schedulers::stealing
   }
 
   inline void
-  process_action(action prev, activity_stats& activity, exec_stats& exec, cas_deque auto& self,
+  process_action(action act, activity_stats& activity, exec_stats& exec, cas_deque auto& self,
                  invocable_return auto&& stealer)
   {
-    switch (prev)
+    switch (act)
     {
       case action::exploit:
       { /// @brief Exhaust own queue.
@@ -174,6 +178,7 @@ namespace fho::schedulers::stealing
         while (auto t = self.try_pop_back())
         {
           (*t)();
+          activity.ready.fetch_sub(1, std::memory_order_release);
           executed = true;
         }
         if (executed)
@@ -206,7 +211,8 @@ namespace fho::schedulers::stealing
             break;
           }
         }
-        if (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        if (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1 &&
+            activity.ready.load(std::memory_order_acquire) > 0)
         {
           activity.ready.notify_one();
         }
@@ -261,7 +267,7 @@ namespace fho::schedulers::stealing
         /// counters post-wake. Aborts if signalled, notifies all. Waits, resets counters post-wake.
         if (activity.abort.load(std::memory_order_acquire))
         {
-          activity.ready.store(true, std::memory_order_release);
+          activity.ready.store(1, std::memory_order_release);
           activity.ready.notify_all();
           break;
         }

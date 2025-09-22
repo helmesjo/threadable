@@ -380,7 +380,7 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
         });
       l.arrive_and_wait();
       std::this_thread::yield();
-      activity.ready.store(true, std::memory_order_release);
+      activity.ready.store(1, std::memory_order_release);
       activity.ready.notify_one();
       th.join();
 

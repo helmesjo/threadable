@@ -41,7 +41,7 @@ namespace fho
       push(slot_token& token, U&& val) noexcept -> slot_token&
       {
         emplace_back(token, FWD(val));
-        activity_.ready.store(true, std::memory_order_release);
+        activity_.ready.fetch_add(1, std::memory_order_release);
         activity_.ready.notify_one();
       }
 
@@ -97,8 +97,12 @@ namespace fho
       auto operator=(pool const&) -> pool& = delete;
       auto operator=(pool&&) -> pool&      = delete;
 
-      ~pool() = default; // TODO: Signal activity.ready = true & notify all (until all execs have
-                         //       stopped).
+      ~pool()
+      {
+        activity_.abort.store(true, std::memory_order_release);
+        activity_.ready.store(1, std::memory_order_release);
+        activity_.ready.notify_all();
+      }
 
       [[nodiscard]] auto
       create(execution policy = execution::par) noexcept -> queue_t&
