@@ -276,14 +276,4 @@ namespace fho::schedulers::stealing
       break;
     }
   }
-
-  class adaptive_stealing
-  {
-    void
-    operator()() noexcept
-    {
-      while (true)
-      {}
-    }
-  };
 }
