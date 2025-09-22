@@ -51,7 +51,7 @@ namespace fho
       push(U&& val) noexcept -> slot_token
       {
         auto token = emplace_back(FWD(val));
-        activity_.ready.store(true, std::memory_order_release);
+        activity_.ready.fetch_add(1, std::memory_order_release);
         activity_.ready.notify_one();
         return token;
       }
