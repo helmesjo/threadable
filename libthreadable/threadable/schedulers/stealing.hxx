@@ -198,8 +198,6 @@ namespace fho::schedulers::stealing
         /// and increments yields if bound exceeded. Fails all steals, yields post-bound, increments
         /// yields. Succeeds a steal, moves task to own queue (self={}, victim={?} becomes
         /// self={stolen}, victim={}), resets counters, notifies if thieves zero.
-        exec.failed_steals = 0;
-        exec.yields        = 0;
         activity.thieves.fetch_add(1, std::memory_order_acq_rel);
         for (; exec.failed_steals < exec.steal_bound; ++exec.failed_steals)
         {
