@@ -180,11 +180,21 @@ namespace fho
     [[nodiscard]] auto
     create(execution policy = execution::par) noexcept -> queue_t&
     {
-      auto queue = std::make_shared<queue_t>(policy, activity_);
+      using q_t = decltype(queues_.load());
+
+      auto queue    = std::make_shared<queue_t>(policy, activity_);
+      auto expected = queues_.load();
+
+      auto local   = q_t{};
+      auto desired = q_t{};
+      do
       {
-        auto _ = std::scoped_lock{queueMutex_};
-        queues_.push_back(queue);
+        local = std::make_shared<std::vector<std::shared_ptr<queue_t>>>(*expected);
+        local->push_back(queue);
+        desired = std::move(local);
       }
+      while (!queues_.compare_exchange_weak(expected, desired));
+
       return *queue;
     }
 
@@ -198,12 +208,22 @@ namespace fho
     [[nodiscard]] auto
     add(ring_buffer<fast_func_t>&& q, execution policy) -> queue_t&
     {
-      queue_t* queue = nullptr;
+      using q_t = decltype(queues_.load());
+
+      auto queue    = std::make_shared<task_queue>(std::move(q), policy, activity_);
+      auto expected = queues_.load();
+
+      auto local   = q_t{};
+      auto desired = q_t{};
+
+      do
       {
-        auto _ = std::scoped_lock{queueMutex_};
-        queue =
-          queues_.emplace_back(std::make_unique<queue_t>(std::move(q), policy, activity_)).get();
+        local = std::make_shared<std::vector<std::shared_ptr<queue_t>>>(*expected);
+        local->push_back(queue);
+        desired = std::move(local);
       }
+      while (!queues_.compare_exchange_weak(expected, desired));
+
       return *queue;
     }
 
@@ -216,19 +236,35 @@ namespace fho
     [[nodiscard]] auto
     remove(queue_t&& queue) noexcept -> bool // NOLINT
     {
-      auto _ = std::scoped_lock{queueMutex_};
-      if (auto itr = std::ranges::find_if(queues_,
-                                          [&queue](auto const& q)
-                                          {
-                                            return q.get() == &queue;
-                                          });
-          itr != std::end(queues_))
+      using q_t = decltype(queues_.load());
+
+      auto expected = queues_.load();
+
+      auto local   = q_t{};
+      auto desired = q_t{};
+
+      do
       {
-        // TODO: Clear queue, it can't be used after user explicitly "removed" it.
-        queues_.erase(itr);
-        return true;
+        local = std::make_shared<std::vector<std::shared_ptr<queue_t>>>(*expected);
+        if (auto itr = std::ranges::find_if(*local,
+                                            [&queue](auto const& q)
+                                            {
+                                              return q.get() == &queue;
+                                            });
+            itr != std::end(*local))
+        {
+          // TODO: Clear queue, it can't be used after user explicitly "removed" it.
+          local->erase(itr);
+          desired = std::move(local);
+        }
+        else
+        {
+          return false;
+        }
       }
-      return false;
+      while (!queues_.compare_exchange_weak(expected, desired));
+
+      return true;
     }
 
     /// @brief Returns the number of managed task queues.
@@ -237,8 +273,8 @@ namespace fho
     [[nodiscard]] auto
     size() const noexcept -> std::size_t
     {
-      auto _ = std::scoped_lock{queueMutex_};
-      return queues_.size();
+      auto queues = queues_.load();
+      return queues->size();
     }
 
     /// @brief Returns the maximum capacity of each task queue.
@@ -262,24 +298,20 @@ namespace fho
     {
       thread_local static auto gen = std::mt19937{std::random_device{}()};
 
-      queues_t queues;
-      {
-        auto _ = std::scoped_lock{queueMutex_};
-        queues = queues_;
-      }
+      auto queues = queues_.load();
 
-      if (queues.empty()) [[unlikely]]
+      if (queues->empty()) [[unlikely]]
       {
         return nullptr;
       }
-      auto distr = std::uniform_int_distribution<std::size_t>{0, queues.size() - 1};
+      auto distr = std::uniform_int_distribution<std::size_t>{0, queues->size() - 1};
       auto idx   = distr(gen);
-      return queues[idx]->try_pop();
+      return (*queues)[idx]->try_pop();
     }
 
     alignas(details::cache_line_size) schedulers::stealing::activity_stats activity_;
-    alignas(details::cache_line_size) mutable std::mutex queueMutex_;
-    alignas(details::cache_line_size) queues_t queues_;
+    alignas(details::cache_line_size) std::atomic<std::shared_ptr<queues_t>> queues_ =
+      std::make_shared<queues_t>();
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
   };
 
