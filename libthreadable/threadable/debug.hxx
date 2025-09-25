@@ -9,46 +9,27 @@
 namespace fho::dbg
 {
   auto is_tty_color() noexcept -> bool;
+  auto to_str(slot_state s) noexcept -> std::string;
 
   inline void
   log(char const* pref, slot_state current, slot_state expected, // NOLINT
       std::source_location l = std::source_location::current())
   {
-    static constexpr auto to_cstr = [](slot_state s)
-    {
-      switch (s)
-      {
-        case fho::invalid:
-          return "invalid";
-        case fho::empty:
-          return "empty";
-        case fho::ready:
-          return "ready";
-        case fho::locked:
-          return "locked";
-        case fho::locked_empty:
-          return "locked_empty";
-        case fho::locked_ready:
-          return "locked_ready";
-        case all:
-          return "all";
-      }
-      return "unknown";
-    };
-
     static bool        color = is_tty_color();
     static char const* red   = color ? "\033[0;31m" : "";
     static char const* bred  = color ? "\033[1;31m" : "";
     static char const* reset = color ? "\033[0m" : "";
 
-    static auto mut = std::mutex{};
-    auto        _   = std::scoped_lock{mut};
+    static auto mut  = std::mutex{};
+    auto        _    = std::scoped_lock{mut};
+    auto        curr = to_str(current);
+    auto        exp  = to_str(expected);
     std::fprintf( // NOLINT
       stderr,
       "%s%s(%s) %sstate == expected%s (%s)%s, file %s, line %d:%d, function "
       "%s%s\n",
-      pref, red, to_cstr(current), bred, red, to_cstr(expected), reset, l.file_name(), l.line(),
-      l.column(), l.function_name(), reset);
+      pref, red, curr.c_str(), bred, red, exp.c_str(), reset, l.file_name(), l.line(), l.column(),
+      l.function_name(), reset);
     std::fflush(stderr);
   }
 

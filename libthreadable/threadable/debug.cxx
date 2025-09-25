@@ -3,22 +3,10 @@
 
 #ifdef _WIN32
   #define WIN32_LEAN_AND_MEAN
-  #include <windows.h>
+  #include <io.h>
 #else
   #include <unistd.h>
 #endif
-
-// Macros for cross-platform function signature, file, and line
-#if defined(__GNUC__) || defined(__clang__)
-  #define FHO_FUNC __PRETTY_FUNCTION__
-#elif defined(_MSC_VER)
-  #define FHO_FUNC __FUNCSIG__
-#else
-  #define FHO_FUNC "unknown"
-#endif
-
-#define FHO_FILE __FILE__
-#define FHO_LINE __LINE__
 
 namespace fho::dbg
 {
@@ -29,22 +17,51 @@ namespace fho::dbg
     static bool const val = []() noexcept -> bool
     {
 #ifdef _WIN32
-      HANDLE hStderr = GetStdHandle(STD_ERROR_HANDLE);
-      if (hStderr == INVALID_HANDLE_VALUE)
-        return false;
-      DWORD mode = 0;
-      if (!GetConsoleMode(hStderr, &mode))
-        return false;
-      // Enable VT processing if not already
-      if (!SetConsoleMode(hStderr, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
-      {
-        return false;
-      }
-      return true;
+      return _isatty(_fileno(stderr)) != 0;
 #else
       return isatty(fileno(stderr)) != 0;
 #endif
     }();
     return val;
+  }
+
+  auto
+  to_str(slot_state s) noexcept -> std::string
+  {
+    std::string result;
+
+    bool first  = true;
+    auto append = [&](char const* str)
+    {
+      if (!first)
+      {
+        result += "|";
+      }
+      result += str;
+      first = false;
+    };
+
+    if (s == fho::invalid)
+    {
+      return "invalid";
+    }
+    if (s == fho::empty)
+    {
+      append("empty");
+    }
+    if (s & fho::ready)
+    {
+      append("ready");
+    }
+    if (s & fho::locked)
+    {
+      append("locked");
+    }
+    if (s & fho::tag_seq)
+    {
+      append("sequential");
+    }
+
+    return result.empty() ? "unknown" : result;
   }
 }
