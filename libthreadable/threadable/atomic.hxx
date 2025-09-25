@@ -81,7 +81,7 @@ namespace fho
     /// @param desired The desired value to set if comparison succeeds.
     /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
     /// @return `true` if the exchange succeeded, `false` otherwise.
-    inline auto
+    [[nodiscard]] inline auto
     compare_exchange_strong(T& expected, T const desired,
                             std::same_as<std::memory_order> auto... orders) noexcept -> bool
       requires (!std::is_same_v<T, underlying_type>)
@@ -96,7 +96,7 @@ namespace fho
     /// @param desired The desired value to set if comparison succeeds.
     /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
     /// @return `true` if the exchange succeeded, `false` otherwise.
-    inline auto
+    [[nodiscard]] inline auto
     compare_exchange_weak(T& expected, T const desired,
                           std::same_as<std::memory_order> auto... orders) noexcept -> bool
       requires (!std::is_same_v<T, underlying_type>)
@@ -105,7 +105,69 @@ namespace fho
       return atomic_t::compare_exchange_weak(exp, to_underlying(desired), orders...);
     }
 
+    /// @brief Atomically compares and exchanges bits specified by the mask (strong version).
+    /// @details Compares the bits in `Mask` with `expected`. If they match, sets them to the
+    /// corresponding bits in `desired`, preserving other bits. Updates `expected` with the current
+    /// bits if the operation fails.
+    /// @tparam Mask A constant expression representing the bitmask to operate on.
+    /// @param expected Reference to the expected bit values.
+    /// @param desired The desired bit values to set if comparison succeeds.
+    /// @param success Memory order for the operation.
+    /// @param failure Memory order for the operation.
+    /// @return `true` if the exchange succeeded, `false` otherwise.
+    template<T MaskExp, T MaskDes = MaskExp>
+    [[nodiscard]] inline auto
+    compare_exchange_strong(T& expected, T const desired,
+                            std::memory_order success = std::memory_order_seq_cst,
+                            std::memory_order failure = std::memory_order_seq_cst) noexcept -> bool
+    {
+      auto curr = from_underlying(atomic_t::load(failure));
+      for (;;)
+      {
+        if ((curr & MaskExp) != (expected & MaskExp))
+        {
+          expected = curr;
+          return false;
+        }
+        if (compare_exchange_weak<MaskExp, MaskDes>(curr, desired, success, failure))
+        {
+          return true;
+        }
+      }
+    }
+
+    /// @brief Atomically compares and exchanges bits specified by the mask (weak version).
+    /// @details Similar to `compare_exchange_strong`, but may spuriously fail. Compares the bits in
+    /// `Mask` with `expected` and, if they match, sets them to the corresponding bits in `desired`,
+    /// preserving other bits. Updates `expected` with the current bits if the operation fails.
+    /// @tparam Mask A constant expression representing the bitmask to operate on.
+    /// @param expected Reference to the expected bit values.
+    /// @param desired The desired bit values to set if comparison succeeds.
+    /// @param success Memory order for the operation.
+    /// @param failure Memory order for the operation.
+    /// @return `true` if the exchange succeeded, `false` otherwise.
+    template<T MaskExp, T MaskDes = MaskExp>
     inline auto
+    compare_exchange_weak(T& expected, T const desired,
+                          std::memory_order success = std::memory_order_seq_cst,
+                          std::memory_order failure = std::memory_order_seq_cst) noexcept -> bool
+    {
+      auto curr = atomic_t::load(failure);
+      if ((curr & MaskExp) != (expected & MaskExp))
+      {
+        expected = from_underlying(curr);
+        return false;
+      }
+      auto val = (curr & ~MaskDes) | (desired & MaskDes);
+      if (!atomic_t::compare_exchange_weak(curr, val, success, failure))
+      {
+        expected = from_underlying(curr);
+        return false;
+      }
+      return true;
+    }
+
+    [[nodiscard]] inline auto
     load(std::memory_order order = std::memory_order_seq_cst) const noexcept -> T
     {
       return from_underlying(atomic_t::load(order));
@@ -131,7 +193,7 @@ namespace fho
     /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
     /// @return True if any of the bits in `Mask` were set before the operation, false otherwise.
     template<T Mask, bool Value>
-    inline auto
+    [[nodiscard]] inline auto
     test_and_set(std::same_as<std::memory_order> auto... orders) noexcept -> bool
     {
       if constexpr (Value)
