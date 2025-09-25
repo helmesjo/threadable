@@ -54,7 +54,7 @@ TEST_CASE("pool: task execution")
   {
     auto pool = fho::pool();
 
-    auto& queue = pool.create(fho::execution::par);
+    // auto& queue = pool.create(fho::execution::par);
     b.batch(tasks_per_iteration)
       .run("fho::pool (queues: 1)",
            [&]
@@ -62,34 +62,34 @@ TEST_CASE("pool: task execution")
              auto group = fho::token_group(tasks_per_iteration);
              for (std::size_t i = 0; i < tasks_per_iteration; ++i)
              {
-               group += queue.push(task_t{});
+               group += pool.push(task_t{});
              }
              group.wait();
            });
   }
-  {
-    auto pool = fho::pool();
+  // {
+  //   auto pool = fho::pool();
 
-    auto queues = std::vector<std::reference_wrapper<typename decltype(pool)::queue_t>>{
-      pool.create(fho::execution::par), pool.create(fho::execution::par),
-      pool.create(fho::execution::par), pool.create(fho::execution::par)};
+  //   auto queues = std::vector<std::reference_wrapper<typename decltype(pool)::queue_t>>{
+  //     pool.create(fho::execution::par), pool.create(fho::execution::par),
+  //     pool.create(fho::execution::par), pool.create(fho::execution::par)};
 
-    auto const tasks_per_queue = (tasks_per_iteration / queues.size()); // NOLINT
+  //   auto const tasks_per_queue = (tasks_per_iteration / queues.size()); // NOLINT
 
-    auto title = std::format("fho::pool (queues: {})", queues.size());
-    b.batch(tasks_per_iteration)
-      .run(title.c_str(),
-           [&]
-           {
-             auto group = fho::token_group(tasks_per_iteration);
-             for (decltype(pool)::queue_t& queue : queues)
-             {
-               for (std::size_t i = 0; i < tasks_per_queue; ++i)
-               {
-                 group += queue.push(task_t{});
-               }
-             }
-             group.wait();
-           });
-  }
+  //   auto title = std::format("fho::pool (queues: {})", queues.size());
+  //   b.batch(tasks_per_iteration)
+  //     .run(title.c_str(),
+  //          [&]
+  //          {
+  //            auto group = fho::token_group(tasks_per_iteration);
+  //            for (decltype(pool)::queue_t& queue : queues)
+  //            {
+  //              for (std::size_t i = 0; i < tasks_per_queue; ++i)
+  //              {
+  //                group += queue.push(task_t{});
+  //              }
+  //            }
+  //            group.wait();
+  //          });
+  // }
 }

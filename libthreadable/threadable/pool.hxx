@@ -172,6 +172,56 @@ namespace fho
       executors_.clear();
     }
 
+    /// @brief Pushes a task with a reusable token and arguments.
+    /// @details Emplaces a task constructed from `val...` into the queue, binding it to the
+    ///          provided `slot_token` for tracking. Signals `activity_.ready` to wake sleeping
+    ///          executors. Thread-safe for multiple producers.
+    /// @tparam U Types of the arguments to construct the task.
+    /// @param token Reference to a `slot_token` to track the task's state.
+    /// @param val Arguments to construct a `fast_func_t` task.
+    /// @return Reference to the provided `slot_token`.
+    /// @requires `fast_func_t` must be constructible from `U...`.
+    template<typename... U>
+      requires std::constructible_from<fast_func_t, U...>
+    auto
+    push(slot_token& token, U&&... val) noexcept -> decltype(auto)
+    {
+      master_.emplace_back(token, FWD(val)...);
+      activity_.ready.fetch_add(1, std::memory_order_release);
+      activity_.ready.notify_one();
+      return token;
+    }
+
+    /// @brief Pushes a task with arguments and returns a new token.
+    /// @details Emplaces a task constructed from `val...` into the queue, creating a new
+    ///          `slot_token` for tracking. Signals `activity_.ready` to wake sleeping executors.
+    ///          Thread-safe for multiple producers.
+    /// @tparam U Types of the arguments to construct the task.
+    /// @param val Arguments to construct a `fast_func_t` task.
+    /// @return A `slot_token` for tracking the task's state.
+    /// @requires `fast_func_t` must be constructible from `U...`.
+    template<typename... U>
+      requires std::constructible_from<fast_func_t, U...>
+    auto
+    push(U&&... val) noexcept -> decltype(auto)
+    {
+      auto token = master_.emplace_back(FWD(val)...);
+      activity_.ready.fetch_add(1, std::memory_order_release);
+      activity_.ready.notify_one();
+      return token;
+    }
+
+    /// @brief Attempts to steal a task from a random queue.
+    /// @details Selects a random queue using a thread-local random number generator and tries to
+    ///          pop a task via `task_queue::try_pop()`. Returns `nullptr` if no task is available
+    ///          or the queue is empty. Thread-safe for concurrent stealing.
+    /// @return A `claimed_slot<fast_func_t>` if a task is stolen, or `nullptr` if none available.
+    [[nodiscard]] auto
+    steal() noexcept -> ring_buffer<>::claimed_type
+    {
+      return master_.try_pop_front();
+    }
+
     /// @brief Creates a new task queue with the specified execution policy.
     /// @details Adds a new `task_queue` to the pool’s managed queues, with the given policy
     ///          (`seq` for sequential, `par` for parallel). Thread-safe for concurrent creation.
@@ -288,28 +338,8 @@ namespace fho
     }
 
   private:
-    /// @brief Attempts to steal a task from a random queue.
-    /// @details Selects a random queue using a thread-local random number generator and tries to
-    ///          pop a task via `task_queue::try_pop()`. Returns `nullptr` if no task is available
-    ///          or the queue is empty. Thread-safe for concurrent stealing.
-    /// @return A `claimed_slot<fast_func_t>` if a task is stolen, or `nullptr` if none available.
-    [[nodiscard]] auto
-    steal() noexcept -> ring_buffer<>::claimed_type
-    {
-      thread_local static auto gen = std::mt19937{std::random_device{}()};
-
-      auto queues = queues_.load();
-
-      if (queues->empty()) [[unlikely]]
-      {
-        return nullptr;
-      }
-      auto distr = std::uniform_int_distribution<std::size_t>{0, queues->size() - 1};
-      auto idx   = distr(gen);
-      return (*queues)[idx]->try_pop();
-    }
-
     alignas(details::cache_line_size) schedulers::stealing::activity_stats activity_;
+    alignas(details::cache_line_size) ring_buffer<fast_func_t> master_;
     alignas(details::cache_line_size) std::atomic<std::shared_ptr<queues_t>> queues_ =
       std::make_shared<queues_t>();
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
