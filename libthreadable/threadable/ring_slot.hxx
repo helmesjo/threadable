@@ -148,8 +148,9 @@ namespace fho
         State == slot_state::empty ? slot_state::locked_empty : slot_state::locked_ready;
 
       auto exp = State;
-      while (!state_.compare_exchange_weak(exp, desired, std::memory_order_acq_rel,
-                                           std::memory_order_acquire))
+      while (!state_.compare_exchange_weak<slot_state::state_mask>(exp, desired,
+                                                                   std::memory_order_acq_rel,
+                                                                   std::memory_order_acquire))
       {
         exp = State;
       }
@@ -164,8 +165,9 @@ namespace fho
         State == slot_state::empty ? slot_state::locked_empty : slot_state::locked_ready;
 
       auto exp = State;
-      if (state_.compare_exchange_weak(exp, desired, std::memory_order_acq_rel,
-                                       std::memory_order_acquire))
+      if (state_.compare_exchange_weak<slot_state::state_mask>(exp, desired,
+                                                               std::memory_order_acq_rel,
+                                                               std::memory_order_acquire))
       {
         return true;
       }
@@ -180,10 +182,11 @@ namespace fho
       constexpr auto desired =
         State == slot_state::locked_empty ? slot_state::empty : slot_state::ready;
 
-      dbg::verify(state_, State);
+      dbg::verify<slot_state::state_mask>(state_, State);
       auto exp = State;
-      while (!state_.compare_exchange_weak(exp, desired, std::memory_order_acq_rel,
-                                           std::memory_order_acquire))
+      while (!state_.compare_exchange_weak<slot_state::state_mask>(exp, desired,
+                                                                   std::memory_order_acq_rel,
+                                                                   std::memory_order_acquire))
       {
         exp = State;
       }
@@ -197,7 +200,7 @@ namespace fho
     inline void
     emplace(auto&&... args) noexcept
     {
-      dbg::verify(state_, slot_state::locked_empty);
+      dbg::verify<slot_state::state_mask>(state_, slot_state::locked_empty);
 #ifndef NDEBUG
       if constexpr (requires {
                       { value() } -> std::convertible_to<bool>;
@@ -214,14 +217,15 @@ namespace fho
 
       std::construct_at<T>(data(), FWD(args)...);
       auto exp = slot_state::locked_empty;
-      if (!state_.compare_exchange_strong(exp, slot_state::ready, std::memory_order_acq_rel,
-                                          std::memory_order_acquire))
+      if (!state_.compare_exchange_strong<slot_state::state_mask>(exp, slot_state::ready,
+                                                                  std::memory_order_acq_rel,
+                                                                  std::memory_order_acquire))
       {
         dbg::log("Prerequisite violation: ", exp, slot_state::locked_empty);
-        std::terminate();
+        std::abort();
       }
       // @NOTE: Intentionally not notifying here since it's redundant (and costly),
-      //        it is designed to be waited on by checking state `ready` -> `empty`.
+      //        it is designed to be waited on by checking state `ready | ready_locked` -> `empty`.
     }
 
     /// @brief Releases the slot.
@@ -234,7 +238,7 @@ namespace fho
     inline void
     release() noexcept
     {
-      dbg::verify(state_, State);
+      dbg::verify<slot_state::state_mask>(state_, State);
       // Free up slot for re-use.
       if constexpr (!std::is_trivially_destructible_v<T>)
       {
@@ -244,10 +248,13 @@ namespace fho
       value_ = {};
 #endif
       auto expected = State;
-      while (!state_.compare_exchange_weak(expected, slot_state::empty, std::memory_order_acq_rel,
-                                           std::memory_order_acquire)) [[likely]]
+      // @NOTE: Ownership is dropped, so we reset all bits.
+      if (!state_.compare_exchange_strong<slot_state::state_mask, slot_state::all_mask>(
+            expected, slot_state::empty, std::memory_order_acq_rel, std::memory_order_acquire))
+        [[likely]]
       {
-        expected = State;
+        dbg::log("Prerequisite violation: ", expected, slot_state::locked_ready);
+        std::abort();
       }
       state_.notify_all();
     }
@@ -277,6 +284,19 @@ namespace fho
       return state_.test<State>(orders...);
     }
 
+    /// @brief Atomically sets or clears the bits specified by the mask.
+    /// @details Sets the bits if `Value` is true, or clears them if `Value` is false, without
+    /// returning the previous state.
+    /// @tparam Mask A constant expression representing the bitmask to operate on.
+    /// @tparam Value If true, sets the bits; if false, clears the bits.
+    /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
+    template<slot_state Mask, bool Value>
+    inline void
+    set(std::same_as<std::memory_order> auto... orders) noexcept
+    {
+      state_.set<Mask, Value>(orders...);
+    }
+
     [[nodiscard]] inline auto
     load(std::memory_order order) const noexcept -> slot_state
     {
@@ -299,7 +319,7 @@ namespace fho
     inline constexpr auto
     value() noexcept -> T&
     {
-      dbg::verify(state_, slot_state::locked_ready);
+      dbg::verify<slot_state::state_mask>(state_, slot_state::locked_ready);
       return *data(); // NOLINT
     }
 
@@ -375,7 +395,7 @@ namespace fho
 #ifndef NDEBUG
       if (slot_)
       {
-        dbg::verify(*slot_, slot_state::locked_ready);
+        dbg::verify<slot_state::state_mask>(*slot_, slot_state::locked_ready);
       }
 #endif
     }
@@ -386,7 +406,7 @@ namespace fho
 #ifndef NDEBUG
       if (slot_)
       {
-        dbg::verify(*slot_, slot_state::locked_ready);
+        dbg::verify<slot_state::state_mask>(*slot_, slot_state::locked_ready);
       }
 #endif
     }

@@ -15,39 +15,35 @@
 namespace fho
 {
   /// @brief Submits a task to a queue with the specified policy in the default thread pool.
-  /// @details Uses a static `ring_buffer` instance for each unique `Policy`, creating it if
-  /// necessary, and emplaces the callable with its arguments into that queue.
-  /// @tparam Policy The execution policy for the queue, defaults to `execution::par`.
+  /// @details Submits a task to the global thread pool and emplaces the callable with its arguments
+  /// into that queue.
   /// @tparam Func The type of the callable, must be invocable with `args`.
   /// @tparam Args The types of the arguments.
   /// @param func The callable to submit.
   /// @param args The arguments to pass to the callable.
   /// @return A `slot_token` representing the submitted task.
-  template<execution Policy = execution::par, typename... Args>
+  template<typename... Args>
   [[nodiscard]] inline auto
   async(std::invocable<Args...> auto&& func, Args&&... args) noexcept -> decltype(auto)
   {
-    static auto& queue = create(Policy);
-    return queue.push(FWD(func), FWD(args)...);
+    return details::default_pool().push(FWD(func), FWD(args)...);
   }
 
   /// @brief Submits a task to a queue with the specified policy, reusing a token.
   /// @details Similar to the other `async` overload but reuses an existing `slot_token`, which is
   /// (optionally) passed by reference as the first argument to the callable.
-  /// @tparam Policy The execution policy for the queue, defaults to `execution::par`.
   /// @tparam Func The type of the callable, must be invocable with `args`.
   /// @tparam Args The types of the arguments.
   /// @param func The callable to submit.
   /// @param token Reference to a reusable `slot_token`.
   /// @param args Additional arguments to pass to the callable.
   /// @return Reference to the reused `token`.
-  template<execution Policy = execution::par, typename... Args>
+  template<typename... Args>
   inline auto
   async(slot_token& token, std::invocable<Args...> auto&& func, Args&&... args) noexcept
     -> decltype(auto)
   {
-    static auto& queue = create(Policy);
-    return queue.push(token, FWD(func), FWD(args)...);
+    return details::default_pool().push(token, FWD(func), FWD(args)...);
   }
 
   /// @brief Submits a task to a queue with the specified policy, reusing a token, and re-submits it
@@ -58,7 +54,6 @@ namespace fho
   /// user).
   /// @note The token will be rebound before the active task (that indirectly requeues itself)
   /// completes. This is important to make `slot_token::wait()` reliable.
-  /// @tparam Policy The execution policy for the queue, defaults to `execution::par`.
   /// @tparam Args The types of the arguments.
   /// @param token Reference to a reusable `slot_token` for tracking and cancellation.
   /// @param func The callable to submit, invocable `args`.
@@ -73,22 +68,22 @@ namespace fho
   /// token.wait(); // Runs 5 times
   /// // count == 5
   /// ```
-  template<execution Policy = execution::par, typename... Args>
+  template<typename... Args>
   inline void
   repeat_async(slot_token& token, std::invocable<Args...> auto&& func, Args&&... args) noexcept
   {
-    static auto& queue = create(Policy);
-
     auto lambda = [](int counter, auto&& self, fho::slot_token& token, decltype(func) func,
                      decltype(args)... args) -> void
     {
       if (!token.cancelled())
       {
         FWD(func)(FWD(args)...);
-        queue.push(token, self, ++counter, self, std::ref(token), FWD(func), FWD(args)...);
+        details::default_pool().push(token, self, ++counter, self, std::ref(token), FWD(func),
+                                     FWD(args)...);
       }
     };
-    queue.push(token, lambda, 0, lambda, std::ref(token), FWD(func), FWD(args)...);
+    details::default_pool().push(token, lambda, 0, lambda, std::ref(token), FWD(func),
+                                 FWD(args)...);
   }
 
   /// @brief Executes a range of callables with specified execution policy.
@@ -105,11 +100,17 @@ namespace fho
   execute(execution exPo, R&& r, Args&&... args)
     requires std::invocable<std::ranges::range_value_t<R>, Args...>
   {
-    auto  tokens = token_group{};
-    auto& queue  = create(exPo);
+    auto tokens = token_group{};
     for (auto&& c : FWD(r))
     {
-      tokens += queue.push(FWD(c), FWD(args)...);
+      if (exPo != execution::seq)
+      {
+        tokens += details::default_pool().push(FWD(c), FWD(args)...);
+      }
+      else
+      {
+        tokens += details::default_pool().template push<execution::seq>(FWD(c), FWD(args)...);
+      }
     }
     tokens.wait();
     return r.size();

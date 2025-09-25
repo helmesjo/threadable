@@ -252,7 +252,7 @@ namespace fho
     /// fho::slot_token token;
     /// buffer.emplace_back(token, []() { std::cout << "Task\n"; });
     /// ```
-    template<typename... Args>
+    template<slot_state Tags = slot_state::invalid, typename... Args>
       requires std::constructible_from<T, Args...>
     auto
     emplace_back(slot_token& token, Args&&... args) noexcept -> slot_token&
@@ -264,6 +264,7 @@ namespace fho
       slot_type& elem = elems_[ring_iterator_t::mask(slot)];
       elem.template lock<slot_state::empty>();
       dbg::verify(elem, slot_state::locked_empty);
+      elem.template set<Tags, true>(std::memory_order_relaxed);
 
       // 2. Assign & Commit.
       elem.emplace(FWD(args)...);
@@ -285,13 +286,13 @@ namespace fho
     /// ```cpp
     /// auto token = buffer.emplace_back([]() { std::cout << "Task\n"; });
     /// ```
-    template<typename... Args>
+    template<slot_state Tags = slot_state::invalid, typename... Args>
       requires std::constructible_from<T, Args...>
     auto
     emplace_back(Args&&... args) noexcept -> slot_token
     {
       slot_token token;
-      (void)emplace_back(token, FWD(args)...);
+      (void)emplace_back<Tags>(token, FWD(args)...);
       return token;
     }
 
@@ -306,12 +307,12 @@ namespace fho
     /// fho::slot_token token;
     /// buffer.push_back(token, []() { std::cout << "Task\n"; });
     /// ```
-    template<typename U>
+    template<slot_state Tags = slot_state::invalid, typename U>
       requires std::constructible_from<T, U>
     auto
     push_back(slot_token& token, U&& val) noexcept -> slot_token&
     {
-      return emplace_back(token, FWD(val));
+      return emplace_back<Tags>(token, FWD(val));
     }
 
     /// @brief Pushes a value into the buffer and returns a new token.
@@ -324,12 +325,12 @@ namespace fho
     /// ```cpp
     /// auto token = buffer.push_back([]() { std::cout << "Task\n"; });
     /// ```
-    template<typename U>
+    template<slot_state Tags = slot_state::invalid, typename U>
       requires std::constructible_from<T, U>
     auto
     push_back(U&& val) noexcept -> slot_token
     {
-      return emplace_back(FWD(val));
+      return emplace_back<Tags>(FWD(val));
     }
 
     /// @brief Accesses the first element in the ring buffer.
@@ -455,14 +456,14 @@ namespace fho
     ///         task when `prevReady` is `true`.
     /// @note Makes a single attempt to claim the next item in line.
     auto
-    try_pop_front(bool prevReady = false) noexcept -> claimed_type
+    try_pop_front() noexcept -> claimed_type
     {
       auto  tail = tail_.load(std::memory_order_acquire);
       auto& elem = elems_[ring_iterator_t::mask(tail)];
       // 1. If element exists, try to claim it & advance tail.
       if (elem.template try_lock<slot_state::ready>()) [[likely]]
       {
-        if (prevReady) [[unlikely]]
+        if (elem.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
         {
           auto& prev = elems_[ring_iterator_t::mask(tail - 1)];
           if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]

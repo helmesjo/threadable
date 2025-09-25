@@ -22,9 +22,16 @@ namespace fho
     locked = 1 << 2,
     /// @brief Owned & empty = Assign.
     locked_empty = locked | empty,
-    /// @brief Owned & ready = Read/Modify
+    /// @brief Owned & ready = Read/Modify.
     locked_ready = locked | ready,
-    all          = static_cast<std::underlying_type_t<slot_state>>(-1)
+    /// @brief Depends on previous task.
+    tag_seq = 1 << 3,
+    /// @brief Mask for state bits.
+    state_mask = empty | ready | locked,
+    /// @brief Mask for tag bits.
+    tag_mask = tag_seq,
+    /// @brief Mask for all bits.
+    all_mask = static_cast<std::underlying_type_t<slot_state>>(-1)
   };
 
   inline constexpr auto
@@ -32,6 +39,13 @@ namespace fho
   {
     using ut_t = std::underlying_type_t<slot_state>;
     return static_cast<slot_state>(static_cast<ut_t>(lhs) | static_cast<ut_t>(rhs));
+  }
+
+  inline constexpr auto
+  operator&(slot_state lhs, slot_state rhs) noexcept -> slot_state
+  {
+    using ut_t = std::underlying_type_t<slot_state>;
+    return static_cast<slot_state>(static_cast<ut_t>(lhs) & static_cast<ut_t>(rhs));
   }
 
   inline constexpr auto
@@ -167,7 +181,8 @@ namespace fho
       auto state = state_.load(std::memory_order_acquire);
       while (state)
       {
-        assert(state != nullptr and "state must never be assigned null while owned");
+        assert(state != nullptr and
+               "token::wait() - state must never be assigned null while owned");
         state->wait<slot_state::ready, true>(std::memory_order_acquire);
         // Re-fetch to handle rebinding. If it
         // stayed same, then it wasn't rebound.
