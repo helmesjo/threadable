@@ -5,6 +5,7 @@
 #include <threadable/function.hxx>
 #include <threadable/token.hxx>
 
+#include <atomic>
 #include <memory>
 #include <type_traits>
 
@@ -259,6 +260,17 @@ namespace fho
       state_.notify_all();
     }
 
+    template<slot_state State>
+      requires (State == slot_state::locked_ready)
+    inline void
+    try_release() noexcept
+    {
+      if (test<slot_state::locked_ready>(std::memory_order_acquire))
+      {
+        release<slot_state::locked_ready>();
+      }
+    }
+
     /// @brief Waits for the slot to leave a state.
     /// @details Blocks until the slot's state changes to/from `State`, typically indicating that
     /// the stored value (e.g., a task) has been processed and released.
@@ -434,6 +446,13 @@ namespace fho
       {
         slot_->template release<slot_state::locked_ready>();
       }
+    }
+
+    auto
+    release() noexcept -> decltype(auto)
+    {
+      assert(slot_ and "claimed_slot<T>::slot()");
+      return std::exchange(slot_, nullptr);
     }
 
     [[nodiscard]] inline constexpr explicit

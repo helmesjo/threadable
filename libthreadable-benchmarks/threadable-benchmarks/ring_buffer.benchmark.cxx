@@ -196,13 +196,13 @@ TEST_CASE("ring: execute (sequential)")
     {
       ring.emplace_back(task_t{});
     }
-    auto range = ring.pop_front_range();
+    auto range = ring.try_pop_front(ring.max_size());
 
     b.run("fho::ring_buffer<function>",
           [&]
           {
             std::ranges::for_each(range,
-                                  [](auto& task)
+                                  [](auto&& task)
                                   {
                                     task();
                                     bench::doNotOptimizeAway(task);
@@ -246,7 +246,7 @@ TEST_CASE("ring: execute (parallel)")
     {
       ring.emplace_back(task_t{});
     }
-    auto range = ring.pop_front_range();
+    auto range = ring.try_pop_front(ring.max_size());
 
     b.run("fho::ring_buffer<function>",
           [&]

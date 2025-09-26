@@ -39,7 +39,7 @@ SCENARIO("ring_buffer: emplace & pop range")
       {
         REQUIRE_NOTHROW(ring.begin());
         REQUIRE_NOTHROW(ring.end());
-        REQUIRE_NOTHROW(ring.pop_front_range());
+        REQUIRE_NOTHROW(ring.try_pop_front(ring.size()));
       }
       THEN("clear() does not throw/crash")
       {
@@ -52,10 +52,10 @@ SCENARIO("ring_buffer: emplace & pop range")
         {
           REQUIRE_NOTHROW(ring.begin());
           REQUIRE_NOTHROW(ring.end());
-          REQUIRE_NOTHROW(ring.pop_front_range());
+          REQUIRE_NOTHROW(ring.try_pop_front(ring.size()));
           REQUIRE(ring.size() == 0);
           REQUIRE(ring.empty());
-          REQUIRE(ring.pop_front_range().empty());
+          REQUIRE(ring.try_pop_front(ring.size()).empty());
           REQUIRE_NOTHROW(ring.clear());
         }
       }
@@ -132,10 +132,10 @@ SCENARIO("ring_buffer: emplace & pop range")
       }
       AND_WHEN("pop range and execute tasks")
       {
-        auto r = ring.pop_front_range();
+        auto r = ring.try_pop_front(ring.size());
         REQUIRE(r.begin() != r.end());
         REQUIRE(ring.size() == 0);
-        for (auto& task : r)
+        for (auto&& task : r)
         {
           task();
         }
@@ -164,7 +164,7 @@ SCENARIO("ring_buffer: emplace & pop range")
         // NOLINTEND
 
         REQUIRE(ring.size() == 1);
-        for (auto& task : ring.pop_front_range())
+        for (auto&& task : ring.try_pop_front(ring.size()))
         {
           task();
         }
@@ -192,7 +192,7 @@ SCENARIO("ring_buffer: emplace & pop range")
 
       AND_WHEN("pop range and execute tasks")
       {
-        for (auto& task : ring.pop_front_range())
+        for (auto&& task : ring.try_pop_front(ring.size()))
         {
           REQUIRE(task);
           task();
@@ -386,7 +386,7 @@ SCENARIO("ring_buffer: completion token")
     }
     THEN("token is done after task was invoked")
     {
-      for (auto& task : ring.pop_front_range())
+      for (auto&& task : ring.try_pop_front(ring.size()))
       {
         task();
       }
@@ -405,7 +405,7 @@ SCENARIO("ring_buffer: completion token")
         // meant to be reacted upon by used code -
         // the task will still be executed if
         // processed by a background thread.
-        for (auto& task : ring.pop_front_range())
+        for (auto&& task : ring.try_pop_front(ring.size()))
         {
           task();
         }
@@ -642,7 +642,7 @@ SCENARIO("ring_buffer: stress-test")
               }
               else
               {
-                for (auto e : ring.pop_front_range())
+                for (auto e : ring.try_pop_front(ring.size()))
                 {
                   e();
                 }
@@ -715,7 +715,7 @@ SCENARIO("ring_buffer: stress-test")
               }
               else
               {
-                for (auto e : ring.pop_front_range())
+                for (auto e : ring.try_pop_front(ring.size()))
                 {
                   e();
                 }
@@ -789,7 +789,7 @@ SCENARIO("ring_buffer: stress-test")
               }
               else
               {
-                for (auto e : ring.pop_front_range())
+                for (auto e : ring.try_pop_front(ring.size()))
                 {
                   e();
                 }
@@ -855,11 +855,11 @@ SCENARIO("ring_buffer: standard algorithms")
             ++executed;
           });
       }
-      auto r = ring.pop_front_range();
+      auto r = ring.try_pop_front(ring.size());
       AND_WHEN("std::for_each")
       {
         std::ranges::for_each(r,
-                              [](auto& task)
+                              [](auto&& task)
                               {
                                 task();
                               });

@@ -5,14 +5,17 @@
 
 #include <atomic>
 #include <concepts>
+#include <format>
+#include <iostream>
 #include <thread>
 
 namespace fho::schedulers::stealing
 {
   template<typename T>
   concept invocable_return = requires (T t) {
-                               { std::invoke(t) } -> std::invocable;
-                               { !std::invoke(t) } -> std::same_as<bool>;
+                               {
+                                 std::invoke(t, ring_buffer<fast_func_t>{})
+                               } -> std::same_as<std::size_t>;
                              };
 
   template<typename T>
@@ -201,9 +204,8 @@ namespace fho::schedulers::stealing
         activity.thieves.fetch_add(1, std::memory_order_acq_rel);
         for (; exec.failed_steals < exec.steal_bound; ++exec.failed_steals)
         {
-          if (auto t = stealer(); t)
+          if (stealer(self))
           {
-            (void)self.emplace_back(std::move(t));
             exec.yields        = 0;
             exec.failed_steals = 0;
             break;

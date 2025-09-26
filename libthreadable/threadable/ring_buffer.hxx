@@ -96,6 +96,36 @@ namespace fho
                             });
   };
 
+  template<std::ranges::range Range>
+  class claimed_range final : public Range
+  {
+  public:
+    using base_t = Range;
+
+    using Range::begin;
+    using Range::end;
+    using Range::Range;
+    using Range::size;
+
+    claimed_range(claimed_range const&) noexcept = delete;
+    claimed_range(claimed_range&& that) noexcept = default;
+
+    ~claimed_range()
+    {
+      for (auto& e : Range::base())
+      {
+        e.template try_release<slot_state::locked_ready>();
+      }
+    }
+
+    claimed_range(Range&& that) noexcept
+      : base_t(std::move(that))
+    {}
+
+    auto operator=(claimed_range const&) noexcept -> claimed_range& = delete;
+    auto operator=(claimed_range&& that) noexcept -> claimed_range& = default;
+  };
+
   /// @brief A `fho::function` alias optimized to cache line size for use within a `ring_buffer`.
   /// @details The size of the function object is exactly that of the target system's (deduced)
   ///          cache line size minus `1` byte reserved for the `ring_slot` state handling.
@@ -202,7 +232,7 @@ namespace fho
     /// @details Consumes all remaining items to ensure proper cleanup.
     ~ring_buffer()
     {
-      (void)pop_front_range();
+      clear();
     }
 
     /// @brief Move constructor.
@@ -406,7 +436,7 @@ namespace fho
     /// for (auto& value : range) { /* Process value */ }
     /// ```
     auto
-    pop_front_range(index_t max = max_size()) noexcept
+    try_pop_front(index_t max) noexcept
     {
       auto       tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
@@ -437,9 +467,14 @@ namespace fho
       while (!tail_.compare_exchange_weak(tail, cap, std::memory_order_acq_rel,
                                           std::memory_order_acquire));
       tail_.notify_all();
-      auto b = ring_iterator_t(elems_.data(), tail);
-      auto e = ring_iterator_t(elems_.data(), cap);
-      return subrange_type(std::ranges::subrange(b, e), slot_value_accessor<value_type>);
+      auto b   = ring_iterator_t(elems_.data(), tail);
+      auto e   = ring_iterator_t(elems_.data(), cap);
+      auto rng = std::ranges::subrange(b, e) | std::ranges::views::transform(
+                                                 [](auto& s)
+                                                 {
+                                                   return claimed_type{&s};
+                                                 });
+      return claimed_range(std::move(rng));
     }
 
     /// @brief Attempts to claim the first element from the ring buffer.
@@ -532,7 +567,7 @@ namespace fho
     void
     clear() noexcept
     {
-      (void)pop_front_range();
+      (void)try_pop_front(max_size());
     }
 
     /// @brief Returns a const iterator to the buffer's start.

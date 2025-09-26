@@ -132,11 +132,12 @@ namespace fho
       executors_.reserve(threads);
       for (unsigned int i = 0; i < threads; ++i)
       {
-        executors_.emplace_back(std::make_unique<executor>(activity_,
-                                                           [this]
-                                                           {
-                                                             return steal();
-                                                           }));
+        executors_.emplace_back(
+          std::make_unique<executor>(activity_,
+                                     [this](std::ranges::range auto&& r) -> std::size_t
+                                     {
+                                       return steal(FWD(r));
+                                     }));
       }
     }
 
@@ -207,9 +208,25 @@ namespace fho
     ///          or the queue is empty. Thread-safe for concurrent stealing.
     /// @return A `claimed_slot<fast_func_t>` if a task is stolen, or `nullptr` if none available.
     [[nodiscard]] auto
-    steal() noexcept -> ring_buffer<>::claimed_type
+    steal(std::ranges::range auto&& r) noexcept -> std::size_t
     {
-      return master_.try_pop_front();
+      thread_local auto rng = std::mt19937{std::random_device{}()};
+
+      auto  dist   = std::uniform_int_distribution<std::size_t>(0, executors_.size() - 1);
+      auto  idx    = dist(rng);
+      auto& victim = executors_[idx];
+
+      auto s = victim->steal(FWD(r));
+      if (s == 0)
+      {
+        auto s = std::size_t{0};
+        for (auto t : master_.try_pop_front(1))
+        {
+          r.emplace_back(std::move(t));
+          ++s;
+        }
+      }
+      return s;
     }
 
     /// @brief Returns the number of pending tasks.

@@ -157,9 +157,14 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
   {
     order.push_back(false);
   };
-  auto stealer = [&victim]() -> auto
+  auto stealer = [&victim](std::ranges::range auto&& r) -> std::size_t
   {
-    return victim.try_pop_front();
+    if (auto t = victim.try_pop_back())
+    {
+      r.emplace_back(std::move(t));
+      return 1;
+    }
+    return 0;
   };
 
   /// @brief Tests exploit action with empty self queue.

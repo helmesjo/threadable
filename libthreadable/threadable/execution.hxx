@@ -41,6 +41,22 @@ namespace fho
       thread_.request_stop();
     }
 
+    [[nodiscard]] auto
+    steal(std::ranges::range auto&& r) noexcept -> std::size_t
+    {
+      if (&r == &tasks_) [[unlikely]]
+      {
+        return 0;
+      }
+
+      if (auto t = tasks_.try_pop_front(); t)
+      {
+        r.emplace_back(std::move(*t));
+        return 1;
+      }
+      return 0;
+    }
+
     void
     operator()(std::stop_token const& t, scheduler::activity_stats& activity,
                scheduler::invocable_return auto& stealer) noexcept
@@ -48,18 +64,18 @@ namespace fho
       using claimed_t = claimed_slot<fast_func_t>;
 
       auto exec   = scheduler::exec_stats{};
-      auto self   = fho::ring_buffer<claimed_t>{};
       auto order  = std::vector<bool>{};
       auto action = scheduler::action::exploit;
       while (!t.stop_requested())
       {
-        scheduler::process_action(action, activity, exec, self, stealer);
+        scheduler::process_action(action, activity, exec, tasks_, stealer);
         action = scheduler::process_state(activity, exec, action);
       }
     }
 
   private:
-    std::jthread thread_;
+    fho::ring_buffer<ring_buffer<fast_func_t>::claimed_type> tasks_;
+    std::jthread                                             thread_;
   };
 }
 

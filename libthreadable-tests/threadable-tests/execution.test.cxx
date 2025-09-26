@@ -13,9 +13,14 @@ SCENARIO("executor: Submit callables")
   auto master   = fho::ring_buffer<>{};
   auto order    = std::vector<bool>{};
 
-  auto stealer = [&master]() -> auto
+  auto stealer = [&master](std::ranges::range auto&& r) -> std::size_t
   {
-    return master.try_pop_back();
+    if (auto t = master.try_pop_back())
+    {
+      r.emplace_back(std::move(t));
+      return 1;
+    }
+    return 0;
   };
 
   auto exec1 = fho::executor(activity, stealer);
