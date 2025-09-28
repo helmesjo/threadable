@@ -252,7 +252,7 @@ TEST_CASE("ring: execute (parallel)")
           [&]
           {
             std::for_each(std::execution::par, std::begin(range), std::end(range),
-                          [](auto& task)
+                          [](auto task)
                           {
                             task();
                             bench::doNotOptimizeAway(task);
