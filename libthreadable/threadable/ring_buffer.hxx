@@ -405,31 +405,9 @@ namespace fho
     auto
     try_pop_front() noexcept -> claimed_type
     {
-      auto  tail = tail_.load(std::memory_order_acquire);
-      auto& elem = elems_[ring_iterator_t::mask(tail)];
-      // 1. If element exists, try to claim it & advance tail.
-      if (elem.template try_lock<slot_state::ready>()) [[likely]]
+      if (auto r = try_pop_front(1); !r.empty())
       {
-        if (elem.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
-        {
-          auto& prev = elems_[ring_iterator_t::mask(tail - 1)];
-          if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]
-          {
-            // Fail: requires previous slot to be empty.
-            elem.template unlock<slot_state::locked_ready>();
-            return nullptr;
-          }
-        }
-        if (tail_.compare_exchange_strong(tail, tail + 1, std::memory_order_acq_rel)) [[likely]]
-        {
-          // 2. Success: own the slot, safe to lend (read value)
-          return claimed_type{&elem};
-        }
-        else [[unlikely]]
-        {
-          // Fail: contention lost, return slot
-          elem.template unlock<slot_state::locked_ready>();
-        }
+        return *r.begin();
       }
       return nullptr;
     }
@@ -489,7 +467,13 @@ namespace fho
     void
     clear() noexcept
     {
-      (void)try_pop_front(max_size());
+      while (!empty())
+      {
+        for (auto elem : try_pop_front(max_size()))
+        {
+          (void)elem; // iterate to auto-release slots.
+        }
+      }
     }
 
     /// @brief Returns a const iterator to the buffer's start.
