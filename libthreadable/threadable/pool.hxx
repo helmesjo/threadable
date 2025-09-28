@@ -156,7 +156,10 @@ namespace fho
       activity_.abort.store(true, std::memory_order_release);
       activity_.ready.store(1, std::memory_order_release);
       activity_.ready.notify_all();
-      executors_.clear();
+      for (auto& e : executors_)
+      {
+        e->stop();
+      }
     }
 
     /// @brief Pushes a task with a reusable token and arguments.
@@ -219,7 +222,6 @@ namespace fho
       auto s = victim->steal(FWD(r));
       if (s == 0)
       {
-        auto s = std::size_t{0};
         for (auto t : master_.try_pop_front(1))
         {
           r.emplace_back(std::move(t));
