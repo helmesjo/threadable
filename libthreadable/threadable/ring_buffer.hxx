@@ -448,6 +448,16 @@ namespace fho
       // 1. If element exists, try to claim it & recede head.
       if (elem.template try_lock<slot_state::ready>()) [[likely]]
       {
+        if (elem.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
+        {
+          auto& prev = elems_[ring_iterator_t::mask(head)];
+          if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]
+          {
+            // Fail: requires previous slot to be empty.
+            elem.template unlock<slot_state::locked_ready>();
+            return nullptr;
+          }
+        }
         if (head_.compare_exchange_strong(head, head - 1, std::memory_order_acq_rel)) [[likely]]
         {
           // Success: own the slot, safe to access (read value)
