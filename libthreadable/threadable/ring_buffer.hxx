@@ -354,6 +354,16 @@ namespace fho
         {
           break;
         }
+        if (elem.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
+        {
+          auto& prev = elems_[ring_iterator_t::mask(cap - 1)];
+          if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]
+          {
+            // Fail: requires previous slot to be empty.
+            elem.template unlock<slot_state::locked_ready>();
+            break;
+          }
+        }
         ++cap;
       }
 
