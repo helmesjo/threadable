@@ -32,100 +32,6 @@ namespace fho
     inline constexpr std::size_t default_capacity = 1 << 16;
   }
 
-  /// @brief A subrange of slots `ready` in the buffer.
-  /// @details Represents a range of slots ready for processing. It manages the lifetime of these
-  ///          slots, releasing them when the subrange is destroyed to prevent reuse before
-  ///          processing is complete. Uses a `shared_ptr` with a static dummy object to handle
-  ///          cleanup without extra allocation.
-  /// @tparam `Iterator` The iterator type (`ring_iterator_t` or `const_ring_iterator_t`).
-  template<typename Iterator, typename Slot>
-  class active_subrange final : public std::ranges::subrange<Iterator>
-  {
-  public:
-    using base_t = std::ranges::subrange<Iterator>;
-
-    using iterator        = Iterator; // NOLINT
-    using value_type      = typename iterator::value_type;
-    using difference_type = typename iterator::difference_type;
-
-    using base_t::base_t;
-
-    using base_t::advance;
-    using base_t::back;
-    using base_t::begin;
-    using base_t::empty;
-    using base_t::end;
-    using base_t::front;
-    using base_t::next;
-    using base_t::prev;
-    using base_t::size;
-
-    active_subrange(active_subrange const&) noexcept = delete;
-    active_subrange(active_subrange&& that) noexcept = default;
-    ~active_subrange()                               = default;
-
-    active_subrange(base_t&& that) noexcept
-      : base_t(std::move(that))
-    {}
-
-    auto operator=(active_subrange const&) noexcept -> active_subrange& = delete;
-    auto operator=(active_subrange&& that) noexcept -> active_subrange& = default;
-
-  private:
-    /// @brief Static dummy object and `shared_ptr` for reference counting to trigger cleanup.
-    /// @details Uses a static `dummy` char as a placeholder to avoid memory allocation. The
-    ///          `shared_ptr` tracks references, and its custom deleter releases all slots in
-    ///          the range when the last reference is destroyed.
-    inline static char    dummy = 1;
-    std::shared_ptr<void> resetter_ =
-      std::shared_ptr<void>(&dummy,
-                            [b = base_t::begin().index(), e = base_t::end().index(),
-                             d = base_t::begin().data()](void*)
-                            {
-                              if constexpr (!std::is_const_v<value_type>)
-                              {
-                                if (b < e)
-                                {
-                                  for (auto i = b; i < e; ++i)
-                                  {
-                                    Slot& elem = d[Iterator::mask(i)];
-                                    elem.template release<slot_state::locked_ready>();
-                                  }
-                                }
-                              }
-                            });
-  };
-
-  template<std::ranges::range Range>
-  class claimed_range final : public Range
-  {
-  public:
-    using base_t = Range;
-
-    using Range::begin;
-    using Range::end;
-    using Range::Range;
-    using Range::size;
-
-    claimed_range(claimed_range const&) noexcept = delete;
-    claimed_range(claimed_range&& that) noexcept = default;
-
-    ~claimed_range()
-    {
-      for (auto& e : Range::base())
-      {
-        e.template try_release<slot_state::locked_ready>();
-      }
-    }
-
-    claimed_range(Range&& that) noexcept
-      : base_t(std::move(that))
-    {}
-
-    auto operator=(claimed_range const&) noexcept -> claimed_range& = delete;
-    auto operator=(claimed_range&& that) noexcept -> claimed_range& = default;
-  };
-
   /// @brief A `fho::function` alias optimized to cache line size for use within a `ring_buffer`.
   /// @details The size of the function object is exactly that of the target system's (deduced)
   ///          cache line size minus `1` byte reserved for the `ring_slot` state handling.
@@ -197,9 +103,6 @@ namespace fho
     using const_ring_iterator_t = ring_iterator<slot_type const, index_mask>;
 
   public:
-    using subrange_type = decltype(active_subrange<ring_iterator_t, slot_type>() |
-                                   std::views::transform(slot_value_accessor<value_type>));
-
     using transform_type =
       ring_transform_view<ring_iterator_t, decltype(slot_value_accessor<value_type>)>;
     using const_transform_type =
