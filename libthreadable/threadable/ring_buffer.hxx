@@ -380,14 +380,13 @@ namespace fho
       while (!tail_.compare_exchange_weak(tail, cap, std::memory_order_acq_rel,
                                           std::memory_order_acquire));
       tail_.notify_all();
-      auto b   = ring_iterator_t(elems_.data(), tail);
-      auto e   = ring_iterator_t(elems_.data(), cap);
-      auto rng = std::ranges::subrange(b, e) | std::ranges::views::transform(
-                                                 [](auto& s)
-                                                 {
-                                                   return claimed_type{&s};
-                                                 });
-      return claimed_range(std::move(rng));
+      auto b = ring_iterator_t(elems_.data(), tail);
+      auto e = ring_iterator_t(elems_.data(), cap);
+      return std::ranges::subrange(b, e) | std::ranges::views::transform(
+                                             [](auto& s)
+                                             {
+                                               return claimed_type{&s};
+                                             });
     }
 
     /// @brief Attempts to claim the first element from the ring buffer.
