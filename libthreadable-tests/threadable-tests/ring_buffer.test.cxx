@@ -233,7 +233,7 @@ SCENARIO("ring_buffer: emplace & pop range")
   }
 }
 
-SCENARIO("ring_buffer: stealing")
+SCENARIO("ring_buffer: pop back")
 {
   auto ring = fho::ring_buffer<int, 8>{};
   GIVEN("an empty ring")
@@ -245,9 +245,9 @@ SCENARIO("ring_buffer: stealing")
   {
     ring.emplace_back(1);
     ring.emplace_back(2);
-    WHEN("stealing items")
+    WHEN("popping items from back")
     {
-      THEN("it steals from head")
+      THEN("it pops from head")
       {
         {
           auto e = ring.try_pop_back();
@@ -265,6 +265,19 @@ SCENARIO("ring_buffer: stealing")
           auto e = ring.try_pop_back();
           REQUIRE_FALSE(e);
         }
+      }
+    }
+  }
+  GIVEN("a ring with 2 sequential-tagged emplaced items")
+  {
+    ring.emplace_back<fho::slot_state::tag_seq>(1);
+    ring.emplace_back<fho::slot_state::tag_seq>(2);
+    WHEN("popping items from back")
+    {
+      THEN("it fails to pop back")
+      {
+        auto e = ring.try_pop_back();
+        REQUIRE_FALSE(e);
       }
     }
   }

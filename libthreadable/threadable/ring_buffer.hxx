@@ -427,7 +427,7 @@ namespace fho
       {
         if (elem.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
         {
-          auto& prev = elems_[ring_iterator_t::mask(head)];
+          auto& prev = elems_[ring_iterator_t::mask(head - 2)];
           if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]
           {
             // Fail: requires previous slot to be empty.
