@@ -367,18 +367,15 @@ namespace fho
         ++cap;
       }
 
-      auto const exp = tail;
-      do
+      while (tail < cap) [[unlikely]]
       {
-        if (tail >= cap) [[unlikely]]
+        if (tail_.compare_exchange_weak(tail, cap, std::memory_order_acq_rel,
+                                        std::memory_order_acquire))
         {
           // No luck, so bail.
           break;
         }
-        tail = exp;
       }
-      while (!tail_.compare_exchange_weak(tail, cap, std::memory_order_acq_rel,
-                                          std::memory_order_acquire));
       tail_.notify_all();
       auto b = ring_iterator_t(elems_.data(), tail);
       auto e = ring_iterator_t(elems_.data(), cap);
