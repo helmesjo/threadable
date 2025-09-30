@@ -313,11 +313,11 @@ namespace fho
         {
           // 3. Release tail slot.
           elem.template release<slot_state::locked_ready>();
-          auto expected = tail;
-          while (!tail_.compare_exchange_weak(expected, tail + 1, std::memory_order_acq_rel,
+          auto exp = tail;
+          while (!tail_.compare_exchange_weak(exp, tail + 1, std::memory_order_acq_rel,
                                               std::memory_order_acquire))
           {
-            expected = tail;
+            exp = tail;
           }
           tail_.notify_all();
           break;
@@ -367,16 +367,18 @@ namespace fho
         ++cap;
       }
 
-      while (tail < cap) [[unlikely]]
+      if (tail < cap) [[likely]]
       {
-        if (tail_.compare_exchange_weak(tail, cap, std::memory_order_acq_rel,
-                                        std::memory_order_acquire))
+        auto exp = tail;
+        while (!tail_.compare_exchange_strong(exp, cap, std::memory_order_acq_rel,
+                                              std::memory_order_acquire))
         {
-          // No luck, so bail.
-          break;
+          assert(exp <= tail and "ring_buffer::try_pop_front()");
+          exp = tail;
+          std::this_thread::yield();
         }
+        tail_.notify_all();
       }
-      tail_.notify_all();
       auto b = ring_iterator_t(elems_.data(), tail);
       auto e = ring_iterator_t(elems_.data(), cap);
       return std::ranges::subrange(b, e) | std::ranges::views::transform(
