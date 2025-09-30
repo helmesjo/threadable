@@ -49,11 +49,11 @@ SCENARIO("async: submit tasks")
 
     token.wait();
 
-    REQUIRE(token.done());
-    REQUIRE(token.cancelled());
     THEN("it re-submits automatically")
     {
       REQUIRE(counter == nr_of_tasks);
+      REQUIRE(token.done());
+      REQUIRE(token.cancelled());
     }
   }
   GIVEN("a repeated task is submitted with cancelled token")
