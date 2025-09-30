@@ -86,8 +86,7 @@ namespace fho
                             std::same_as<std::memory_order> auto... orders) noexcept -> bool
       requires (!std::is_same_v<T, underlying_type>)
     {
-      auto exp = to_underlying(expected);
-      return atomic_t::compare_exchange_strong(exp, to_underlying(desired), orders...);
+      return atomic_t::compare_exchange_strong(expected, desired, orders...);
     }
 
     /// @brief Weak version of compare_exchange_strong for enum types.
@@ -101,8 +100,7 @@ namespace fho
                           std::same_as<std::memory_order> auto... orders) noexcept -> bool
       requires (!std::is_same_v<T, underlying_type>)
     {
-      auto exp = to_underlying(expected);
-      return atomic_t::compare_exchange_weak(exp, to_underlying(desired), orders...);
+      return atomic_t::compare_exchange_weak(expected, desired, orders...);
     }
 
     /// @brief Atomically compares and exchanges bits specified by the mask (strong version).

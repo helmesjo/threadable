@@ -41,6 +41,19 @@ SCENARIO("atomic_bitfield")
       }
     }
   }
+  GIVEN("CAS fails")
+  {
+    auto field = bitfield_t{0};
+    THEN("'expected' is updated")
+    {
+      auto expected = static_cast<std::uint8_t>(-1);
+      REQUIRE_FALSE(field.compare_exchange_weak(expected, 0xbb));
+      REQUIRE(expected == 0);
+      expected = static_cast<std::uint8_t>(-1);
+      REQUIRE_FALSE(field.compare_exchange_strong(expected, 0xbb));
+      REQUIRE(expected == 0);
+    }
+  }
 }
 
 SCENARIO("atomic_bitfield: CAS")
