@@ -341,7 +341,7 @@ namespace fho
     auto
     try_pop_front(index_t max) noexcept
     {
-      auto       tail = tail_.load(std::memory_order_acquire);
+      auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
       max             = std::min(tail + max, head);
       auto cap        = tail;
@@ -367,16 +367,19 @@ namespace fho
         ++cap;
       }
 
-      if (tail < cap) [[likely]]
+      auto exp = tail;
+      while (exp < cap && !tail_.compare_exchange_weak(exp, cap, std::memory_order_acq_rel,
+                                                       std::memory_order_acquire)) [[unlikely]]
       {
-        auto exp = tail;
-        while (!tail_.compare_exchange_strong(exp, cap, std::memory_order_acq_rel,
-                                              std::memory_order_acquire))
+        if (exp >= cap) [[unlikely]]
         {
-          assert(exp <= tail and "ring_buffer::try_pop_front()");
-          exp = tail;
-          std::this_thread::yield();
+          // Okay: Someone else already published tail past our claimed range.
+          break;
         }
+        std::this_thread::yield();
+      }
+      if (exp < cap) [[likely]]
+      {
         tail_.notify_all();
       }
       auto b = ring_iterator_t(elems_.data(), tail);
