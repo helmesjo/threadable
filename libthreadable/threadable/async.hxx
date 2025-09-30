@@ -72,18 +72,16 @@ namespace fho
   inline void
   repeat_async(slot_token& token, std::invocable<Args...> auto&& func, Args&&... args) noexcept
   {
-    auto lambda = [](int counter, auto&& self, fho::slot_token& token, decltype(func) func,
+    auto lambda = [](auto&& self, fho::slot_token& token, decltype(func) func,
                      decltype(args)... args) -> void
     {
       if (!token.cancelled())
       {
         FWD(func)(FWD(args)...);
-        details::default_pool().push(token, self, ++counter, self, std::ref(token), FWD(func),
-                                     FWD(args)...);
+        details::default_pool().push(token, self, self, std::ref(token), FWD(func), FWD(args)...);
       }
     };
-    details::default_pool().push(token, lambda, 0, lambda, std::ref(token), FWD(func),
-                                 FWD(args)...);
+    details::default_pool().push(token, lambda, lambda, std::ref(token), FWD(func), FWD(args)...);
   }
 
   /// @brief Executes a range of callables with specified execution policy.
