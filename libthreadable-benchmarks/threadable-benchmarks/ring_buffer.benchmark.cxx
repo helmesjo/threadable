@@ -162,102 +162,101 @@ TEST_CASE("ring: iterate (parallel)")
 }
 #endif
 
-TEST_CASE("ring: execute (sequential)")
-{
-  bench::Bench b;
-  b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
+// @NOTE: Disable for now since `fho::function::operator()` isn't marked as const, in
+//        contrast to `std::function::operator()` (but that is a long debate in itself).
 
-  using task_t = decltype([](){
-    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
-  });
+// TEST_CASE("ring: execute (sequential)")
+// {
+//   bench::Bench b;
+//   b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
-  b.title("ring: execute - sequential");
-  {
-    auto ring = std::vector<std_func_t>();
-    for (std::size_t i = 0; i < tasks_per_iteration; ++i)
-    {
-      ring.emplace_back(task_t{});
-    }
+//   using task_t = decltype([](){
+//     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
+//   });
 
-    b.run("std::vector<function>",
-          [&]
-          {
-            std::ranges::for_each(ring,
-                                  [](auto& task)
-                                  {
-                                    task();
-                                    bench::doNotOptimizeAway(task);
-                                  });
-          });
-  }
-  {
-    auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
-    for (std::size_t i = 0; i < ring.max_size(); ++i)
-    {
-      ring.emplace_back(task_t{});
-    }
-    auto range = ring.try_pop_front(ring.max_size());
+//   b.title("ring: execute - sequential");
+//   {
+//     auto ring = std::vector<std_func_t>();
+//     for (std::size_t i = 0; i < tasks_per_iteration; ++i)
+//     {
+//       ring.emplace_back(task_t{});
+//     }
 
-    b.run("fho::ring_buffer<function>",
-          [&]
-          {
-            std::ranges::for_each(range,
-                                  [](auto&& task)
-                                  {
-                                    task();
-                                    bench::doNotOptimizeAway(task);
-                                  });
-          });
-  }
-}
+//     b.run("std::vector<function>",
+//           [&]
+//           {
+//             std::ranges::for_each(ring,
+//                                   [](auto& task)
+//                                   {
+//                                     task();
+//                                     bench::doNotOptimizeAway(task);
+//                                   });
+//           });
+//   }
+//   {
+//     auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
+//     for (std::size_t i = 0; i < ring.max_size(); ++i)
+//     {
+//       ring.emplace_back(task_t{});
+//     }
+//     b.run("fho::ring_buffer<function>",
+//           [&]
+//           {
+//             std::ranges::for_each(ring,
+//                                   [](auto&& task)
+//                                   {
+//                                     task();
+//                                     bench::doNotOptimizeAway(task);
+//                                   });
+//           });
+//   }
+// }
 
-#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
-TEST_CASE("ring: execute (parallel)")
-{
-  bench::Bench b;
-  b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
+// #if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
+// TEST_CASE("ring: execute (parallel)")
+// {
+//   bench::Bench b;
+//   b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
-  using task_t = decltype([](){
-    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
-  });
+//   using task_t = decltype([](){
+//     bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
+//   });
 
-  b.title("ring: execute - parallel");
-  {
-    auto ring = std::vector<std_func_t>();
-    for (std::size_t i = 0; i < tasks_per_iteration; ++i)
-    {
-      ring.emplace_back(task_t{});
-    }
+//   b.title("ring: execute - parallel");
+//   {
+//     auto ring = std::vector<std_func_t>();
+//     for (std::size_t i = 0; i < tasks_per_iteration; ++i)
+//     {
+//       ring.emplace_back(task_t{});
+//     }
 
-    b.run("std::vector<function>",
-          [&]
-          {
-            std::for_each(std::execution::par, std::begin(ring), std::end(ring),
-                          [](auto& task)
-                          {
-                            task();
-                            bench::doNotOptimizeAway(task);
-                          });
-          });
-  }
-  {
-    auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
-    for (std::size_t i = 0; i < ring.max_size(); ++i)
-    {
-      ring.emplace_back(task_t{});
-    }
-    auto range = ring.try_pop_front(ring.max_size());
-
-    b.run("fho::ring_buffer<function>",
-          [&]
-          {
-            std::for_each(std::execution::par, std::begin(range), std::end(range),
-                          [](auto task)
-                          {
-                            task();
-                            bench::doNotOptimizeAway(task);
-                          });
-          });
-  }
-}
-#endif
+//     b.run("std::vector<function>",
+//           [&]
+//           {
+//             std::for_each(std::execution::par, std::begin(ring), std::end(ring),
+//                           [](auto& task)
+//                           {
+//                             task();
+//                             bench::doNotOptimizeAway(task);
+//                           });
+//           });
+//   }
+//   {
+//     auto ring = fho::ring_buffer<fho_func_t, tasks_per_iteration>();
+//     for (std::size_t i = 0; i < ring.max_size(); ++i)
+//     {
+//       ring.emplace_back(task_t{});
+//     }
+//     b.run("fho::ring_buffer<function>",
+//           [&]
+//           {
+//             std::for_each(std::execution::par, std::begin(ring), std::end(ring),
+//                           [](auto&& task)
+//                           {
+//                             task();
+//                             bench::doNotOptimizeAway(task);
+//                           });
+//           });
+//   }
+// }
+// #endif
