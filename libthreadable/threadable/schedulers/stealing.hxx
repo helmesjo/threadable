@@ -291,8 +291,8 @@ namespace fho::schedulers::stealing
         {
           // Failure path: account for backoff (Alg.4 L13–18).
           exec.got_task_last = false;
-          exec.failed_steals += 1; ///< @EXPLAIN increase consecutive failed steals. (Alg.4 L13)
-                                   ///< :contentReference[oaicite:26]{index=26}
+          ++exec.failed_steals; ///< @EXPLAIN increase consecutive failed steals. (Alg.4 L13)
+                                ///< :contentReference[oaicite:26]{index=26}
         }
         return;
       }
@@ -315,8 +315,8 @@ namespace fho::schedulers::stealing
         exec.failed_steals =
           0; ///< @EXPLAIN reset steal counter once we enter yielding phase. (mirrors Alg.4
              ///< transition) :contentReference[oaicite:31]{index=31}
-        exec.yields += 1; ///< @EXPLAIN bounded yields before sleeping. (Alg.4 L17–18)
-                          ///< :contentReference[oaicite:32]{index=32}
+        ++exec.yields; ///< @EXPLAIN bounded yields before sleeping. (Alg.4 L17–18)
+                       ///< :contentReference[oaicite:32]{index=32}
         return;
       }
 
@@ -339,21 +339,6 @@ namespace fho::schedulers::stealing
 
         // PREPARE
         auto const epoch = activity.bell.load(std::memory_order_acquire);
-
-        // // LAST-CHANCE RECHECK (Alg. 5: check master/global queue before commit)
-        // if (activity.ready.load(std::memory_order_acquire) > 0)
-        // {
-        //   // CANCEL SLEEP
-        //   // Keep or restore thief presence and just retry exploring.
-        //   // If we already decremented thieves earlier, compensate:
-        //   activity.thieves.fetch_add(1, std::memory_order_acq_rel); ///< @EXPLAIN cancel wait
-        //                                                             ///< because work is
-        //                                                             available.
-        //   exec.failed_steals = 0;
-        //   exec.yields        = 0;
-        //   exec.got_task_last = false;
-        //   return;
-        // }
 
         // NOW COMMIT to sleeping: *after* confirming no immediate work.
         if (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1)
