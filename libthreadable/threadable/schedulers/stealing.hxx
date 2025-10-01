@@ -163,11 +163,6 @@ namespace fho::schedulers::stealing
           // Successful steal -> go execute. (Alg.5 L4-8,15-18)
           return action::exploit;
         }
-        // If there is global work visible, do not consider suspend; keep retrying.
-        else if (activity.ready.load(std::memory_order_acquire) > 0)
-        {
-          return action::retry; ///< @EXPLAIN prevents sleeping while ready>0.
-        }
         // Not yet successful: check backoff thresholds (Alg.4 L14-18).
         if (exec.failed_steals >= exec.steal_bound)
         {
