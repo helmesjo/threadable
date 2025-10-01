@@ -88,7 +88,7 @@ namespace fho
     ///          Defaults to `std::thread::hardware_concurrency()` for optimal parallelism.
     ///          Creates a shared `activity_stats` for task notifications.
     /// @param threads Number of worker threads (executors).
-    explicit pool(unsigned int threads = 2)
+    explicit pool(unsigned int threads = std::thread::hardware_concurrency())
     {
       executors_.reserve(threads);
       for (unsigned int i = 0; i < threads; ++i)
@@ -115,8 +115,7 @@ namespace fho
     ~pool()
     {
       activity_.abort.store(true, std::memory_order_release);
-      activity_.bell.fetch_add(1, std::memory_order_release);
-      activity_.bell.notify_all();
+      fho::schedulers::stealing::detail::notify_all(activity_.bell);
       for (auto& e : executors_)
       {
         e->stop();
@@ -142,8 +141,7 @@ namespace fho
       master_.template emplace_back<seq>(token, FWD(val)...);
       if (activity_.ready.fetch_add(1, std::memory_order_release) == 0) [[unlikely]]
       {
-        activity_.bell.fetch_add(1, std::memory_order_release);
-        activity_.bell.notify_one();
+        schedulers::stealing::detail::notify_one(activity_.bell);
       }
       return token;
     }
@@ -166,8 +164,7 @@ namespace fho
       auto token = master_.template emplace_back<seq>(FWD(val)...);
       if (activity_.ready.fetch_add(1, std::memory_order_release) == 0) [[unlikely]]
       {
-        activity_.bell.fetch_add(1, std::memory_order_release);
-        activity_.bell.notify_one();
+        schedulers::stealing::detail::notify_one(activity_.bell);
       }
       return token;
     }
@@ -190,8 +187,7 @@ namespace fho
       if (s == 0)
       {
         constexpr auto cap = std::size_t{64};
-        auto const     max = activity_.ready.load(std::memory_order_acquire) / executors_.size();
-        for (auto t : master_.try_pop_front(std::min(cap, max)))
+        for (auto t : master_.try_pop_front(cap))
         {
           r.emplace_back(std::move(t));
           ++s;

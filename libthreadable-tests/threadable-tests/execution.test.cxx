@@ -44,7 +44,6 @@ SCENARIO("executor: Submit callables")
         });
       // simulate interruptions
       activity.ready.fetch_add(1, std::memory_order_release);
-      activity.ready.notify_one();
       if (i % 2 == 0)
       {
         std::this_thread::yield();
@@ -61,6 +60,5 @@ SCENARIO("executor: Submit callables")
     }
   }
   activity.abort = true;
-  activity.ready = 1;
-  activity.ready.notify_all();
+  fho::scheduler::detail::notify_all(activity.bell);
 }

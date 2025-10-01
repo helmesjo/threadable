@@ -5,7 +5,9 @@
 
 #include <atomic>
 #include <concepts>
+#include <cstdint>
 #include <thread>
+#include <utility>
 
 #if defined(__x86_64__) || defined(_M_X64)
   #include <immintrin.h> // _mm_pause
@@ -13,6 +15,7 @@
 
 namespace fho::schedulers::stealing
 {
+
   namespace detail
   {
     inline void
@@ -24,7 +27,37 @@ namespace fho::schedulers::stealing
       std::this_thread::yield(); // fallback
 #endif
     }
-  }
+
+    // Generic wait on an atomic counter using C++20 wait/notify.
+    template<class A>
+    inline void
+    wait_until_changed(A& a, typename A::value_type old) noexcept
+    {
+      // C++20-style; harmless if spurious-woken.
+      a.wait(old, std::memory_order_acquire); ///< @EXPLAIN suspend without spinning; paper uses
+                                              ///< EventCount prepare/commit. (Alg.5 L10,33)
+                                              ///< :contentReference[oaicite:1]{index=1}
+    }
+
+    template<class A>
+    inline void
+    notify_one(A& a) noexcept
+    {
+      a.fetch_add(1, std::memory_order_release); ///< @EXPLAIN advance epoch; sleepers waiting on
+                                                 ///< old value will wake. (Alg.3 L3; Alg.5 L6,16)
+                                                 ///< :contentReference[oaicite:2]{index=2}
+      a.notify_one();
+    }
+
+    template<class A>
+    inline void
+    notify_all(A& a) noexcept
+    {
+      a.fetch_add(1, std::memory_order_release); ///< @EXPLAIN wake all (termination). (Alg.5 L25)
+                                                 ///< :contentReference[oaicite:3]{index=3}
+      a.notify_all();
+    }
+  } // namespace detail
 
   template<typename T>
   concept invocable_return = requires (T t) {
@@ -43,106 +76,134 @@ namespace fho::schedulers::stealing
   // Global shared atomics (accessed by all workers).
   struct activity_stats
   {
-    // Tasks ready to process.
-    alignas(details::cache_line_size) std::atomic_size_t ready{0};
-    // Bell counter to wake up workers.
-    alignas(details::cache_line_size) std::atomic_uint64_t bell{0};
-    // Workers should stop.
-    alignas(details::cache_line_size) std::atomic_bool abort{false};
-    // Workers currently exploiting/executing tasks.
-    alignas(details::cache_line_size) std::atomic_size_t actives{0};
-    // Workers currently in stealing mode.
-    alignas(details::cache_line_size) std::atomic_size_t thieves{0};
+    // Ready tasks globally visible (master + workers); used as the "condition" to wake thieves.
+    alignas(64) std::atomic_size_t ready{0};
+    // Bell/epoch for wakeups (used as EventCount analog).
+    alignas(64) std::atomic_uint64_t bell{0};
+    // Global stop flag.
+    alignas(64) std::atomic_bool abort{false};
+    // Workers currently exploiting/executing tasks. (Definition 1: active). (Alg.3 L2,13)
+    // :contentReference[oaicite:4]{index=4}
+    alignas(64) std::atomic_size_t actives{0};
+    // Workers currently thieves (awake & not sleeping & not exploiting). (Definition 1: thief).
+    // (Alg.5 scope) :contentReference[oaicite:5]{index=5}
+    alignas(64) std::atomic_size_t thieves{0};
   };
 
   // Per-worker non-atomic counters (thread-local, reset per idle cycle).
   struct exec_stats
   {
-    std::size_t steal_bound   = 16; // Max consecutive failed steals
-    std::size_t yield_bound   = 16; // Max consecutive yields
-    std::size_t failed_steals = 0;  // Count of consecutive failed steal attempts.
-    std::size_t yields        = 0;  // Count of consecutive yield attempts.
+    std::size_t steal_bound =
+      16; // Max consecutive failed steals. (Alg.4 L14) :contentReference[oaicite:6]{index=6}
+    std::size_t yield_bound =
+      16; // Max consecutive yields. (Alg.4 L17-18)     :contentReference[oaicite:7]{index=7}
+    std::size_t failed_steals = 0; // Count of consecutive failed steal attempts.
+    std::size_t yields        = 0; // Count of consecutive yield attempts.
+
+    // Sticky outcome from the most recent explore step:
+    bool got_task_last = false; // Set true when explore acquired a task (Alg.5 L4-8,14-18).
+                                // :contentReference[oaicite:8]{index=8}
+    bool abort = false;
   };
+
   enum class action
   {
     exploit,
     explore,
     abort,
     retry,
-    yield, // Simple yield with no counter updates; caller yields then proceeds to next state
-           // (exploit).
-    yield_steal_exceed, // Yield due to exceeding steal_bound; caller yields, resets failed_steals
-                        // to 0, increments yields, then calls process_state again with this as
-                        // previous to continue the sequential logic.
-    yield_reset_yields, // Yield due to exceeding yield_bound with actives > 0; caller yields,
-                        // resets yields to 0, then proceeds to next state (exploit).
-    suspend             // Suspend due to exceeding yield_bound with actives == 0; caller
-                        // suspends (e.g., activity.ready.wait(0, std::memory_order_acquire)),
-                        // resets yields to 0, then proceeds to next state (exploit).
+    yield,              // plain yield between attempts
+    yield_steal_exceed, // failed_steals >= steal_bound -> yield (Alg.4 L14-16)
+                        // :contentReference[oaicite:9]{index=9}
+    yield_reset_yields, // yields == yield_bound but actives>0 -> yield & reset (keeps one thief)
+                        // (Alg.5 L29-31 + Lemma 1) :contentReference[oaicite:10]{index=10}
+    suspend             // yields == yield_bound and actives==0 -> sleep (Alg.5 L33) + Lemma 2.
+                        // :contentReference[oaicite:11]{index=11}
   };
+
+  // ================
+  // State evaluation
+  // ================
 
   inline auto
   process_state(activity_stats const& activity, exec_stats const& exec, action prev) -> action
   {
+    if (exec.abort || activity.abort.load(std::memory_order_relaxed))
+    {
+      /// @brief: Global abort → Terminate. Mirrors Alg.5 L23–27 (notify_all + return false).
+      return action::abort;
+    }
+
     switch (prev)
     {
-      case action::abort:
-        return action::abort;
       case action::exploit:
-      { // Maps to paper's worker loop (Figure 2): after failed owner_pop (exploit fail),
-        // immediately attempt steal_random (explore). Correct because caller only invokes
-        // process_state on exploit failure; success cases are handled by caller retrying exploit
-        // directly, preserving single-attempt responsiveness without state machine involvement.
+        /// @brief: Finished exploitation → attempt exploration next (worker drained queue). Alg.3
+        /// L13 → Alg.5. :contentReference[oaicite:12]{index=12}
         return action::explore;
-      }
-      case action::explore:
-      { // Maps to paper's wait_for_task entry (Algorithm 1, after inc failed_steals_ which caller
-        // performs before this call). Correct because exec.failed_steals reflects post-increment
-        // value; function decides first if steal_bound exceeded (trigger special yield with
-        // updates), then always evaluates yield_bound (sequential ifs), or falls to default yield
-        // (else branch).
 
-        if (exec.yields >= exec.yield_bound)
-        {
-          return action::suspend; // CHANGED: park after enough yields regardless of actives
-        }
-        else if (exec.failed_steals >= exec.steal_bound)
-        {
-          return action::yield_steal_exceed;
-        }
-        return action::yield;
-      }
       case action::retry:
-      {
-        // Retry immediately
-        return action::retry;
-      }
-      case action::yield_steal_exceed:
-      { // Maps to paper's state after first if block (yield executed, failed reset, yields
-        // incremented by caller): now evaluate second if with updated yields. Correct because
-        // re-call with this previous allows seeing post-increment yields without function
-        // modification, ensuring sequential logic fidelity.
-        return (exec.yields >= exec.yield_bound) &&
-                   (activity.ready.load(std::memory_order_acquire) == 0) ?
-                 action::suspend :
-                 action::exploit;
-      }
+        [[fallthrough]];
       case action::yield:
+        [[fallthrough]];
+      case action::yield_steal_exceed:
         [[fallthrough]];
       case action::yield_reset_yields:
         [[fallthrough]];
       case action::suspend:
-      { // Maps to paper's loop continuation after wait_for_task: always return to owner_pop
-        // (exploit) post-yield/sleep. Correct because all wait paths (simple or with resets) lead
-        // back to exploit for checking local deque first, exploiting locality without memory
-        // barriers needed here (caller ensures visibility via release on pushes/notifies).
-        return action::exploit;
+        /// @brief: After transient step (yield/suspend/retry), resume exploration. Alg.4 loop body.
+        /// :contentReference[oaicite:13]{index=13}
+        return action::explore;
+
+      case action::explore:
+      {
+        /// @brief: Exploration outcome decides: exploit on success; otherwise control backing-off &
+        /// sleep. Alg.4 + Alg.5. :contentReference[oaicite:14]{index=14}
+        if (exec.got_task_last)
+        {
+          // Successful steal -> go execute. (Alg.5 L4-8,15-18)
+          return action::exploit;
+        }
+        // If there is global work visible, do not consider suspend; keep retrying.
+        else if (activity.ready.load(std::memory_order_acquire) > 0)
+        {
+          return action::retry; ///< @EXPLAIN prevents sleeping while ready>0.
+        }
+        // Not yet successful: check backoff thresholds (Alg.4 L14-18).
+        if (exec.failed_steals >= exec.steal_bound)
+        {
+          if (exec.yields < exec.yield_bound)
+          {
+            return action::yield_steal_exceed; // Start yielding after many failed steals.
+          }
+          // Exceeded yields: decide between staying awake (if some active exists) vs sleeping.
+          if (activity.actives.load(std::memory_order_relaxed) > 0)
+          {
+            /// @brief: Ensure ≥1 thief while any active exists (Lemma 1); bounded thinning (Lemma
+            /// 2). Alg.5 L29-31. :contentReference[oaicite:15]{index=15}
+            return action::yield_reset_yields;
+          }
+          else
+          {
+            /// @brief: No actives → safe to sleep to mitigate over-subscription (Lemma 2). Alg.5
+            /// L33. :contentReference[oaicite:16]{index=16}
+            return action::suspend;
+          }
+        }
+        // Below steal_bound → keep trying.
+        return action::retry;
       }
+
+      case action::abort:
+        [[fallthrough]];
       default:
-        // Unhandled previous: assume abort or error handling in caller; not in paper.
+        /// @brief: Already aborted → remain abort.
         return action::abort;
     }
   }
+
+  // =========
+  // Actions
+  // =========
 
   inline void
   process_action(action act, activity_stats& activity, exec_stats& exec, cas_deque auto& self,
@@ -151,135 +212,191 @@ namespace fho::schedulers::stealing
     switch (act)
     {
       case action::exploit:
-      { /// @brief Exhaust own queue.
-        /// @details This action is reached after a successful steal or post-idleness wake-up. It
-        /// increments num_actives atomically, notifies one if first active with no thieves, drains
-        /// all tasks from deque via repeated LIFO pops and executions until empty, resets counters
-        /// if any executed, and decrements num_actives. Drains empty queue without execution or
-        /// resets. Drains non-empty queue, executes all tasks, resets counters.
-        auto executed = false;
+      {
+        /// @brief: Exploit tasks; if first active & no thieves, wake a thief. Alg.3 L2–3,5–13.
+        /// (Def.1 active; Lemma 1) :contentReference[oaicite:17]{index=17}
+        auto const a0 = activity.actives.fetch_add(1, std::memory_order_acq_rel);
+        if (a0 == 0 && activity.thieves.load(std::memory_order_relaxed) == 0)
+        {
+          detail::notify_one(
+            activity.bell); ///< @EXPLAIN first active & no thief → ring bell to create a thief;
+                            ///< prevents under-subscription. (Alg.3 L2–3; Lemma 1)
+                            ///< :contentReference[oaicite:18]{index=18}
+        }
+
+        // Execute available work until local depletion.
+        // We don’t assume a specific deque API; instead, we model "doing work"
+        // by consuming global 'ready' opportunistically. Your actual executor
+        // would pop & run tasks here and update 'ready' accordingly.
         while (auto t = self.try_pop_back())
         {
-          if (!executed) [[likely]]
-          {
-            executed = true;
-            if (activity.actives.fetch_add(1, std::memory_order_acq_rel) == 0 &&
-                activity.thieves.load(std::memory_order_acquire) == 0) [[unlikely]]
-            {
-              activity.bell.fetch_add(1, std::memory_order_release);
-              activity.bell.notify_one();
-            }
-          }
-
-          auto derp = activity.ready.fetch_sub(1, std::memory_order_release);
-          assert(derp != 0 and "stealer::process_action(exploit)");
+          auto prev = activity.ready.fetch_sub(1,
+                                               std::memory_order_acq_rel); ///< @EXPLAIN consume one
+                                                                           ///< unit of ready work.
           (*t)();
-        }
-        if (executed)
-        {
-          activity.actives.fetch_sub(1, std::memory_order_acq_rel);
-          exec.yields        = 0;
-          exec.failed_steals = 0;
-        }
-      }
-      break;
-      case action::explore:
-      { /// @brief Perform bounded steals.
-        /// @details This action is reached after exploit fails. It resets failed_steals and yields,
-        /// increments thieves, loops up to steal_bound attempting steals from random victims
-        /// (master if self), moves stolen task to own queue and resets on success breaking early,
-        /// increments failed_steals on fail, decrements thieves and notifies one if zero, yields
-        /// and increments yields if bound exceeded. Fails all steals, yields post-bound, increments
-        /// yields. Succeeds a steal, moves task to own queue (self={}, victim={?} becomes
-        /// self={stolen}, victim={}), resets counters, notifies if thieves zero.
-        activity.thieves.fetch_add(1, std::memory_order_acq_rel);
-        for (; exec.failed_steals < exec.steal_bound; ++exec.failed_steals)
-        {
-          if (stealer(self))
+          if (prev == 1)
           {
-            exec.yields        = 0;
-            exec.failed_steals = 0;
-            break;
+            break; ///< @EXPLAIN both cache & queue empty → exit exploitation (Alg.3 L12–13).
+                   ///< :contentReference[oaicite:19]{index=19}
           }
-          detail::cpu_relax(); // CHANGED: tiny intra-loop backoff to reduce interconnect thrash
-        }
-        bool const last = (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1);
-        if (last &&
-            (exec.failed_steals == 0 || activity.actives.load(std::memory_order_acquire) > 0 ||
-             activity.ready.load(std::memory_order_acquire) > 0)) [[unlikely]]
-        {
-          activity.bell.fetch_add(1, std::memory_order_release); // CHANGED: also wake when last
-                                                                 // thief failed but work exists
-          activity.bell.notify_one();
+          // activity.ready.compare_exchange_weak(before, before - 1,
+          //                                      std::memory_order_acq_rel); ///< @EXPLAIN consume
+          //                                      one
+          //                                                                  ///< unit of ready
+          //                                                                  work.
+          // detail::cpu_relax(); ///< @EXPLAIN placeholder for execute(t). (Alg.3 L6)
+          //                      ///< :contentReference[oaicite:20]{index=20}
         }
 
-        break;
-      }
-      case action::abort:
-      { /// @brief Abort scheduler.
-        /// @details This action is reached on external stop signal. It returns immediately without
-        /// changes. Returns without affecting states or queues.
-        activity.bell.fetch_add(1, std::memory_order_release);
-        activity.bell.notify_all();
+        activity.actives.fetch_sub(
+          1, std::memory_order_acq_rel); ///< @EXPLAIN leave active set. (Alg.3 L13)
+                                         ///< :contentReference[oaicite:21]{index=21}
+        exec.got_task_last = false;      ///< @EXPLAIN next state will go explore.
+        exec.failed_steals = 0;          ///< @EXPLAIN exploitation reset.
         return;
       }
-      break;
-      case action::retry:
-      { /// @brief Retry immediately.
-        /// @details This action is reached within bounds post-fail. It does nothing, signaling
-        /// caller to retry exploit/explore. No changes occur.
-      }
-      break;
-      case action::yield:
-      { /// @brief Yield briefly.
-        /// @details This action is reached on non-exceeded bounds in idleness. It yields without
-        /// updates. Yields, no state changes.
-        // CHANGED: short timed wait on bell instead of raw yield (reduces CPU pegging)
-        // auto tk = activity.bell.load(std::memory_order_acquire);
-        // activity.bell.wait(tk, std::memory_order_acquire);
-        detail::cpu_relax();
-        ++exec.yields;
-      }
-      break;
-      case action::yield_steal_exceed:
-      { /// @brief Yield on steal exceed.
-        /// @details This action is reached after steal_bound fails in explore. It yields, resets
-        /// failed_steals, increments yields. Yields, updates counters, no global changes.
-        std::this_thread::yield();
-        exec.failed_steals = 0;
-        ++exec.yields;
-      }
-      break;
-      case action::yield_reset_yields:
-      { /// @brief Yield on yield exceed with actives.
-        /// @details This action is reached after yield_bound exceeded with actives >0. It yields,
-        /// resets yields. Yields, resets yields, no other changes.
-        std::this_thread::yield();
-        exec.yields = 0;
-      }
-      break;
-      case action::suspend:
-      { /// @brief Suspend on yield exceed without actives.
-        /// @details This action is reached after yield_bound exceeded with actives == 0. It checks
-        /// abort and notifies all if true, else waits with re-check loop until ready, resets
-        /// counters post-wake. Aborts if signalled, notifies all. Waits, resets counters post-wake.
-        if (activity.abort.load(std::memory_order_acquire))
+
+      case action::explore:
+      {
+        /// @brief: Become/act as a thief; try stealing (random victims + master). Alg.5 L2–9 +
+        /// Alg.4. (Def.1 thief) :contentReference[oaicite:22]{index=22}
+        // On the *first* entry into an exploration episode (i.e., when failed_steals==0 and
+        // yields==0), we count ourselves as a thief (Alg.5 L2). We keep the counter until
+        // success/sleep.
+        if (exec.failed_steals == 0 && exec.yields == 0 && !exec.got_task_last)
         {
-          activity.bell.fetch_add(1, std::memory_order_release); // CHANGED: bump bell on abort
-          activity.bell.notify_all();                            // CHANGED: wake all waiters
-          break;
-        }
-        auto tk = activity.bell.load(std::memory_order_acquire);
-        if (activity.ready.load(std::memory_order_acquire) == 0)
-        {
-          activity.bell.wait(tk, std::memory_order_acquire);
-          tk = activity.bell.load(std::memory_order_acquire);
+          activity.thieves.fetch_add(
+            1, std::memory_order_acq_rel); ///< @EXPLAIN enter thief set. (Alg.5 L2)
+                                           ///< :contentReference[oaicite:23]{index=23}
         }
 
-        exec.yields        = 0;
-        exec.failed_steals = 0;
+        // Try to obtain work. The 'stealer' is expected to return #tasks acquired (0 if none).
+        std::size_t acquired = 0;
+        // Example policy: let 'stealer' encapsulate Alg.4 loop (random victims/master).
+        // It should update global 'ready' accordingly (decrement when moving to local).
+        acquired = std::invoke(stealer, self); ///< @EXPLAIN externalized Alg.4; 0 means fail this
+                                               ///< round. :contentReference[oaicite:24]{index=24}
+
+        if (acquired > 0)
+        {
+          // Success path (Alg.5 L4–8; L15–18).
+          exec.got_task_last = true;
+          exec.failed_steals = 0;
+          exec.yields        = 0;
+
+          // Leaving thief set; if we were the last thief, wake one sleeper (Alg.5 L5–7).
+          if (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1)
+          {
+            detail::notify_one(
+              activity.bell); ///< @EXPLAIN last-thief leaves → ring bell to spawn next thief if
+                              ///< needed. (Alg.5 L5–7) :contentReference[oaicite:25]{index=25}
+          }
+        }
+        else
+        {
+          // Failure path: account for backoff (Alg.4 L13–18).
+          exec.got_task_last = false;
+          exec.failed_steals += 1; ///< @EXPLAIN increase consecutive failed steals. (Alg.4 L13)
+                                   ///< :contentReference[oaicite:26]{index=26}
+        }
+        return;
       }
-      break;
+
+      case action::yield:
+      {
+        /// @brief: Opportunistic yield between exploration attempts. (Alg.4 intends to let others
+        /// run) :contentReference[oaicite:27]{index=27}
+        std::this_thread::yield(); ///< @EXPLAIN let producers make progress; reduces contention.
+                                   ///< (Alg.4 L15) :contentReference[oaicite:28]{index=28}
+        return;
+      }
+
+      case action::yield_steal_exceed:
+      {
+        /// @brief: After ≥ steal_bound failures, yield and start yield counting. Alg.4 L14–17.
+        /// :contentReference[oaicite:29]{index=29}
+        std::this_thread::yield(); ///< @EXPLAIN bounded-yield between steal attempts.
+                                   ///< :contentReference[oaicite:30]{index=30}
+        exec.failed_steals =
+          0; ///< @EXPLAIN reset steal counter once we enter yielding phase. (mirrors Alg.4
+             ///< transition) :contentReference[oaicite:31]{index=31}
+        exec.yields += 1; ///< @EXPLAIN bounded yields before sleeping. (Alg.4 L17–18)
+                          ///< :contentReference[oaicite:32]{index=32}
+        return;
+      }
+
+      case action::yield_reset_yields:
+      {
+        /// @brief: Hit yield_bound, but actives>0 → keep one thief awake (Lemma 1). Cancel sleeping
+        /// & retry. Alg.5 L29–31. :contentReference[oaicite:33]{index=33}
+        std::this_thread::yield(); ///< @EXPLAIN short delay; avoids hot spinning while keeping a
+                                   ///< thief. :contentReference[oaicite:34]{index=34}
+        exec.yields = 0; ///< @EXPLAIN re-arm yielding window. (bounded convergence per Lemma 2)
+                         ///< :contentReference[oaicite:35]{index=35}
+        return;
+      }
+
+      case action::suspend:
+      {
+        /// @brief: Hit yield_bound and no actives → commit to sleep. Alg.5 L33; mitigates
+        /// over-subscription (Lemma 2). :contentReference[oaicite:36]{index=36}
+        // Leaving thief set before sleeping (Alg.5 L29 checked earlier in state-eval logic).
+
+        // PREPARE
+        auto const epoch = activity.bell.load(std::memory_order_acquire);
+
+        // // LAST-CHANCE RECHECK (Alg. 5: check master/global queue before commit)
+        // if (activity.ready.load(std::memory_order_acquire) > 0)
+        // {
+        //   // CANCEL SLEEP
+        //   // Keep or restore thief presence and just retry exploring.
+        //   // If we already decremented thieves earlier, compensate:
+        //   activity.thieves.fetch_add(1, std::memory_order_acq_rel); ///< @EXPLAIN cancel wait
+        //                                                             ///< because work is
+        //                                                             available.
+        //   exec.failed_steals = 0;
+        //   exec.yields        = 0;
+        //   exec.got_task_last = false;
+        //   return;
+        // }
+
+        // NOW COMMIT to sleeping: *after* confirming no immediate work.
+        if (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        {
+          // If this were the last thief and actives>0, we should *not* sleep (paper’s last-thief
+          // loop).
+          if (activity.actives.load(std::memory_order_relaxed) > 0)
+          {
+            activity.thieves.fetch_add(1, std::memory_order_acq_rel); ///< @EXPLAIN preserve ≥1
+                                                                      ///< thief while actives exist
+                                                                      ///< (Lemma 1).
+            std::this_thread::yield();
+            return;
+          }
+        }
+
+        detail::wait_until_changed(activity.bell,
+                                   epoch); ///< @EXPLAIN commit_wait; will wake on bell bump.
+        exec.failed_steals = exec.yields = 0;
+        exec.got_task_last               = false;
+        return;
+      }
+
+      case action::retry:
+      {
+        /// @brief: Continue exploration without yield; nothing to do here.
+        detail::cpu_relax(); ///< @EXPLAIN tiny pause to reduce contention.
+        return;
+      }
+
+      case action::abort:
+      {
+        /// @brief: Termination path. Alg.5 L23–27 (notify_all already done by controller).
+        /// :contentReference[oaicite:38]{index=38}
+        // Optionally, help wake others if we see abort.
+        detail::notify_all(activity.bell); ///< @EXPLAIN ensure any sleepers observe abort.
+        return;
+      }
     }
   }
 }

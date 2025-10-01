@@ -2,139 +2,123 @@
 #include <threadable/ring_buffer.hxx>
 #include <threadable/schedulers/stealing.hxx>
 
+#include <atomic>
 #include <latch>
 #include <thread>
+#include <vector>
 
 SCENARIO("schedulers: adaptive stealing (process states)")
 {
   namespace sched = fho::schedulers::stealing;
-  GIVEN("process_state with previous exploit")
+
+  GIVEN("prev = exploit")
   {
     sched::activity_stats activity{};
     sched::exec_stats     exec{};
-    THEN("returns explore (maps to failed owner_pop leading to steal_random)")
+    THEN("→ explore")
     {
       REQUIRE(sched::process_state(activity, exec, sched::action::exploit) ==
               sched::action::explore);
     }
   }
-  GIVEN(
-    "process_state with previous explore and failed_steals <= steal_bound, yields <= yield_bound")
+
+  GIVEN("prev = explore and got_task_last == true")
   {
     sched::activity_stats activity{};
-    sched::exec_stats     exec{.failed_steals = 1024,
-                               .yields        = 16}; // At bounds, but > checks strict exceedance.
-    THEN("returns yield (maps to else branch for simple yield on non-exceeded bounds)")
+    sched::exec_stats     exec{};
+    exec.got_task_last = true;
+    THEN("→ exploit")
     {
-      REQUIRE(sched::process_state(activity, exec, sched::action::explore) == sched::action::yield);
+      REQUIRE(sched::process_state(activity, exec, sched::action::explore) ==
+              sched::action::exploit);
     }
   }
-  GIVEN("process_state with previous explore and failed_steals > steal_bound")
+
+  GIVEN("prev = explore and ready > 0 (no success yet)")
   {
     sched::activity_stats activity{};
-    sched::exec_stats     exec{.failed_steals = 1025, .yields = 0}; // Exceed steal_bound.
-    THEN("returns yield_steal_exceed (maps to first if for special yield on steal exceedance)")
+    sched::exec_stats     exec{};
+    activity.ready.store(1, std::memory_order_relaxed);
+    THEN("→ retry (keep exploring, do not sleep)")
+    {
+      REQUIRE(sched::process_state(activity, exec, sched::action::explore) == sched::action::retry);
+    }
+  }
+
+  GIVEN("prev = explore, failed_steals >= steal_bound, yields < yield_bound")
+  {
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    exec.failed_steals = exec.steal_bound; // boundary triggers yield_steal_exceed
+    exec.yields        = 0;
+    THEN("→ yield_steal_exceed")
     {
       REQUIRE(sched::process_state(activity, exec, sched::action::explore) ==
               sched::action::yield_steal_exceed);
     }
   }
-  GIVEN("process_state with previous explore and yields > yield_bound, actives > 0")
+
+  GIVEN("prev = explore, failed_steals >= steal_bound, yields >= yield_bound, actives > 0")
   {
-    sched::activity_stats activity{.actives = 1}; // actives > 0.
-    sched::exec_stats     exec{.yields = 17};     // Exceed yield_bound.
-    THEN("returns yield_reset_yields (maps to second if with actives > 0 for yield post-reset)")
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    activity.actives.store(1, std::memory_order_relaxed);
+    exec.failed_steals = exec.steal_bound;
+    exec.yields        = exec.yield_bound; // boundary -> choose keep-one-thief path
+    THEN("→ yield_reset_yields")
     {
       REQUIRE(sched::process_state(activity, exec, sched::action::explore) ==
               sched::action::yield_reset_yields);
     }
   }
-  GIVEN("process_state with previous explore and yields > yield_bound, actives == 0")
+
+  GIVEN("prev = explore, failed_steals >= steal_bound, yields >= yield_bound, actives == 0")
   {
-    sched::activity_stats activity{.actives = 0}; // actives == 0.
-    sched::exec_stats     exec{.yields = 17};     // Exceed yield_bound.
-    THEN(
-      "returns suspend_reset_yields (maps to second if with actives == 0 for suspend post-reset)")
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    activity.actives.store(0, std::memory_order_relaxed);
+    exec.failed_steals = exec.steal_bound;
+    exec.yields        = exec.yield_bound;
+    THEN("→ suspend")
     {
       REQUIRE(sched::process_state(activity, exec, sched::action::explore) ==
               sched::action::suspend);
     }
   }
-  GIVEN("process_state with previous yield_steal_exceed and yields <= yield_bound")
-  {
-    sched::activity_stats activity{};
-    sched::exec_stats     exec{.yields = 16}; // Updated post-increment <= bound.
-    THEN("returns yield (maps to else after first if, for another yield on non-yield-exceed)")
-    {
-      REQUIRE(sched::process_state(activity, exec, sched::action::yield_steal_exceed) ==
-              sched::action::yield);
-    }
-  }
-  GIVEN("process_state with previous yield_steal_exceed and yields > yield_bound, actives > 0")
-  {
-    sched::activity_stats activity{.actives = 1}; // actives > 0.
-    sched::exec_stats     exec{.yields = 17};     // Exceed yield_bound post-increment.
-    THEN("returns yield_reset_yields (maps to second if from yield_steal_exceed path)")
-    {
-      REQUIRE(sched::process_state(activity, exec, sched::action::yield_steal_exceed) ==
-              sched::action::yield_reset_yields);
-    }
-  }
-  GIVEN("process_state with previous yield_steal_exceed and yields > yield_bound, actives == 0")
-  {
-    sched::activity_stats activity{.actives = 0}; // actives == 0.
-    sched::exec_stats     exec{.yields = 17};     // Exceed yield_bound post-increment.
-    THEN("returns suspend_reset_yields (maps to second if from yield_steal_exceed path)")
-    {
-      REQUIRE(sched::process_state(activity, exec, sched::action::yield_steal_exceed) ==
-              sched::action::suspend);
-    }
-  }
-  GIVEN("process_state with previous yield")
+
+  GIVEN("prev ∈ {retry, yield, yield_steal_exceed, yield_reset_yields, suspend}")
   {
     sched::activity_stats activity{};
     sched::exec_stats     exec{};
-    THEN("returns exploit (maps to loop continuation post-yield)")
+    THEN("→ explore (transient steps resume exploring)")
     {
-      REQUIRE(sched::process_state(activity, exec, sched::action::yield) == sched::action::exploit);
-    }
-  }
-  GIVEN("process_state with previous yield_reset_yields")
-  {
-    sched::activity_stats activity{};
-    sched::exec_stats     exec{};
-    THEN("returns exploit (maps to loop continuation post-yield with reset)")
-    {
+      REQUIRE(sched::process_state(activity, exec, sched::action::retry) == sched::action::explore);
+      REQUIRE(sched::process_state(activity, exec, sched::action::yield) == sched::action::explore);
+      REQUIRE(sched::process_state(activity, exec, sched::action::yield_steal_exceed) ==
+              sched::action::explore);
       REQUIRE(sched::process_state(activity, exec, sched::action::yield_reset_yields) ==
-              sched::action::exploit);
-    }
-  }
-  GIVEN("process_state with previous suspend_reset_yields")
-  {
-    sched::activity_stats activity{};
-    sched::exec_stats     exec{};
-    THEN("returns exploit (maps to loop continuation post-suspend with reset)")
-    {
+              sched::action::explore);
       REQUIRE(sched::process_state(activity, exec, sched::action::suspend) ==
-              sched::action::exploit);
+              sched::action::explore);
     }
   }
-  GIVEN("process_state with previous suspend")
+
+  GIVEN("abort requested (activity.abort or exec.abort)")
   {
     sched::activity_stats activity{};
     sched::exec_stats     exec{};
-    THEN("returns exploit (maps to loop continuation post-suspend; extend if distinct from reset "
-         "variant)")
+    activity.abort.store(true, std::memory_order_relaxed);
+    THEN("→ abort regardless of prev")
     {
-      REQUIRE(sched::process_state(activity, exec, sched::action::suspend) ==
-              sched::action::exploit);
+      REQUIRE(sched::process_state(activity, exec, sched::action::explore) == sched::action::abort);
     }
   }
-  GIVEN("process_state with previous abort")
+
+  GIVEN("prev = abort")
   {
     sched::activity_stats activity{};
     sched::exec_stats     exec{};
-    THEN("returns abort (no other action to perform)")
+    THEN("→ abort")
     {
       REQUIRE(sched::process_state(activity, exec, sched::action::abort) == sched::action::abort);
     }
@@ -144,20 +128,23 @@ SCENARIO("schedulers: adaptive stealing (process states)")
 SCENARIO("schedulers: adaptive stealing (process actions)")
 {
   namespace sched = fho::schedulers::stealing;
-  auto activity   = sched::activity_stats{};
-  auto exec       = sched::exec_stats{};
-  auto victim     = fho::ring_buffer<>{};
-  auto self       = fho::ring_buffer<decltype(victim)::claimed_type>{};
-  auto order      = std::vector<bool>{};
-  auto selfTask   = [&order]
+
+  // test fixtures
+  auto             victim = fho::ring_buffer<>{};
+  auto             self   = fho::ring_buffer<decltype(victim)::claimed_type>{};
+  std::vector<int> executed; // capture order: +1 from selfTask, +2 from victimTask
+
+  auto selfTask = [&]
   {
-    order.push_back(true);
+    executed.push_back(1);
   };
-  auto victimTask = [&order]
+  auto victimTask = [&]
   {
-    order.push_back(false);
+    executed.push_back(2);
   };
-  auto stealer = [&victim](std::ranges::range auto&& r) -> std::size_t
+
+  // A stealer that ONLY moves tasks; never touches activity.ready.
+  auto stealer = [&](std::ranges::range auto&& r) -> std::size_t
   {
     if (auto t = victim.try_pop_back())
     {
@@ -167,234 +154,176 @@ SCENARIO("schedulers: adaptive stealing (process actions)")
     return 0;
   };
 
-  /// @brief Tests exploit action with empty self queue.
-  /// @pre Self queue is empty; activity and exec are default-initialized.
-  /// @details Verifies actives toggles without lingering inc, no resets occur, self remains empty,
-  /// and no tasks execute.
-  GIVEN("action::exploit with empty self queue")
+  GIVEN("action::exploit with empty self")
   {
-    auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{};
-    auto action   = sched::action::exploit;
-    THEN("actives toggles but no execution, no resets, self remains empty")
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    // ready==0 and no tasks
+    THEN("actives toggles and returns; nothing executed")
     {
-      sched::process_action(action, activity, exec, self, stealer);
+      sched::process_action(sched::action::exploit, activity, exec, self, stealer);
       REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
-      REQUIRE(exec.yields == 0);
-      REQUIRE(exec.failed_steals == 0);
       REQUIRE(self.empty());
-      REQUIRE(order.empty());
+      REQUIRE(executed.empty());
     }
   }
 
-  /// @brief Tests exploit action with multiple tasks in self queue.
-  /// @pre Self queue has three tasks pushed; activity and exec are default-initialized.
-  /// @details Verifies full drain under single actives toggle, resets counters, self empties, and
-  /// tasks execute in FIFO order.
-  GIVEN("action::exploit with multiple tasks in self")
+  GIVEN("action::exploit with three tasks in self, ready=3")
   {
-    auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{};
-    auto action   = sched::action::exploit;
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    // Seed victim with 3 tasks and move them to self (preserve simple FIFO via front->self).
     victim.push_back(selfTask);
     victim.push_back(selfTask);
     victim.push_back(selfTask);
     self.push_back(victim.try_pop_front());
     self.push_back(victim.try_pop_front());
     self.push_back(victim.try_pop_front());
-    THEN("drains all, actives toggles once, resets counters, executes in order")
+    activity.ready.store(3, std::memory_order_release);
+
+    THEN("drains all tasks, executes all, leaves actives=0 and self empty")
     {
-      sched::process_action(action, activity, exec, self, stealer);
+      sched::process_action(sched::action::exploit, activity, exec, self, stealer);
       REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
-      REQUIRE(exec.yields == 0);
-      REQUIRE(exec.failed_steals == 0);
       REQUIRE(self.empty());
-      REQUIRE(order == std::vector<bool>{true, true, true});
+      REQUIRE(executed == std::vector<int>{1, 1, 1});
+      REQUIRE(activity.ready.load(std::memory_order_acquire) == 0);
+      REQUIRE(exec.failed_steals == 0);
+      REQUIRE(exec.yields == 0);
     }
   }
 
-  /// @brief Tests explore action with no task in victim.
-  /// @pre Victim queue is empty; activity and exec are default-initialized.
-  /// @details Verifies no execution, thieves unchanged, inc failed_steals, victim remains empty,
-  /// and no tasks run.
-  GIVEN("action::explore with no task in victim")
+  GIVEN("action::explore with no work to steal (first explore episode)")
   {
-    auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{.steal_bound = 8};
-    auto action   = sched::action::explore;
-    THEN("no execution, thieves unchanged (no inc/dec), no resets, failed steals reached bounds")
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{}; // failed_steals=0, yields=0 -> first-episode increments thieves
+    THEN("thieves increments, failed_steals++ (no execution)")
     {
-      sched::process_action(action, activity, exec, self, stealer);
-      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
-      REQUIRE(exec.yields == 1);
-      REQUIRE(exec.failed_steals == exec.steal_bound);
+      sched::process_action(sched::action::explore, activity, exec, self, stealer);
+      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 1);
+      REQUIRE(exec.failed_steals == 1);
+      REQUIRE(exec.yields == 0);
       REQUIRE(victim.empty());
-      REQUIRE(order.empty());
+      REQUIRE(self.empty());
+      REQUIRE(executed.empty());
     }
   }
 
-  /// @brief Tests explore action with task in victim.
-  /// @pre Victim queue has one task pushed; activity and exec are default-initialized.
-  /// @details Verifies no execution (task only stolen), thieves unchanged, resets counters, victim
-  /// empty, self holds task.
-  GIVEN("action::explore with task in victim={t}")
+  GIVEN("action::explore stealing one task from victim (first explore episode)")
   {
-    auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{};
-    auto action   = sched::action::explore;
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{}; // first entry -> thieves++
     victim.push_back(victimTask);
-    THEN("executes, thieves unchanged, resets counters, victim={}, self={t}")
+
+    THEN("moves task to self, sets got_task_last, and restores thieves to 0")
     {
-      sched::process_action(action, activity, exec, self, stealer);
-      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
-      REQUIRE(exec.yields == 0);
-      REQUIRE(exec.failed_steals == 0);
+      sched::process_action(sched::action::explore, activity, exec, self, stealer);
+      REQUIRE(exec.got_task_last == true);
+      REQUIRE(activity.thieves.load(std::memory_order_acquire) ==
+              0); // incremented then decremented
       REQUIRE(victim.empty());
       REQUIRE(self.size() == 1);
+      REQUIRE(executed.empty());
 
-      AND_THEN("action::exploit with task in self={t}, victim={}")
+      AND_THEN("action::exploit runs the stolen task, ready=1 → 0")
       {
+        activity.ready.store(1, std::memory_order_release);
         sched::process_action(sched::action::exploit, activity, exec, self, stealer);
-        REQUIRE(order == std::vector<bool>{false});
+        REQUIRE(executed == std::vector<int>{2});
+        REQUIRE(activity.ready.load(std::memory_order_acquire) == 0);
+        REQUIRE(self.empty());
       }
     }
   }
 
-  /// @brief Tests abort action.
-  /// @pre Activity and exec are default-initialized.
-  /// @details Verifies no-op with no changes to states or queues.
-  GIVEN("action::abort")
+  GIVEN("action::yield_steal_exceed adjusts counters only")
   {
-    auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{};
-    auto action   = sched::action::abort;
-    THEN("no-op, no changes to states or queues")
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    exec.failed_steals = 1025;
+    exec.yields        = 5;
+    THEN("resets failed_steals, increments yields; no global changes")
     {
-      sched::process_action(action, activity, exec, self, stealer);
-      REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
-      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
-      REQUIRE(exec.yields == 0);
+      sched::process_action(sched::action::yield_steal_exceed, activity, exec, self, stealer);
       REQUIRE(exec.failed_steals == 0);
-      REQUIRE(self.empty());
-      REQUIRE(victim.empty());
-      REQUIRE(order.empty());
-    }
-  }
-
-  /// @brief Tests retry action.
-  /// @pre Activity and exec are default-initialized.
-  /// @details Verifies no-op with no changes to states or queues.
-  GIVEN("action::retry")
-  {
-    auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{};
-    auto action   = sched::action::retry;
-    THEN("no-op, no changes")
-    {
-      sched::process_action(action, activity, exec, self, stealer);
-      REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
-      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
-      REQUIRE(exec.yields == 0);
-      REQUIRE(exec.failed_steals == 0);
-      REQUIRE(self.empty());
-      REQUIRE(victim.empty());
-      REQUIRE(order.empty());
-    }
-  }
-
-  /// @brief Tests yield action.
-  /// @pre Activity and exec are default-initialized.
-  /// @details Verifies yield occurs with no state changes.
-  GIVEN("action::yield")
-  {
-    auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{};
-    auto action   = sched::action::yield;
-    THEN("yields but no state changes")
-    {
-      sched::process_action(action, activity, exec, self, stealer);
-      REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
-      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
-      REQUIRE(exec.yields == 0);
-      REQUIRE(exec.failed_steals == 0);
-      REQUIRE(self.empty());
-      REQUIRE(victim.empty());
-      REQUIRE(order.empty());
-    }
-  }
-
-  /// @brief Tests yield_steal_exceed action with pre-set counters.
-  /// @pre Exec has failed_steals=1025, yields=5; activity default-initialized.
-  /// @details Verifies yield, resets failed_steals, increments yields, no global changes.
-  GIVEN("action::yield_steal_exceed")
-  {
-    auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{.failed_steals = 1025, .yields = 5};
-    auto action   = sched::action::yield_steal_exceed;
-    THEN("yields, resets failed_steals, inc yields, no global changes")
-    {
-      sched::process_action(action, activity, exec, self, stealer);
-      REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
-      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
       REQUIRE(exec.yields == 6);
-      REQUIRE(exec.failed_steals == 0);
-      REQUIRE(self.empty());
-      REQUIRE(victim.empty());
-      REQUIRE(order.empty());
+      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
+      REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
     }
   }
 
-  /// @brief Tests yield_reset_yields action with pre-set yields.
-  /// @pre Exec has yields=17; activity default-initialized.
-  /// @details Verifies yield, resets yields, no other changes.
-  GIVEN("action::yield_reset_yields")
+  GIVEN("action::yield_reset_yields zeros yields only")
   {
-    auto activity = sched::activity_stats{};
-    auto exec     = sched::exec_stats{.yields = 17};
-    auto action   = sched::action::yield_reset_yields;
-    THEN("yields, resets yields, no other changes")
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    exec.yields = 17;
+    THEN("yields reset to 0; no other changes")
     {
-      sched::process_action(action, activity, exec, self, stealer);
-      REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
-      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
+      sched::process_action(sched::action::yield_reset_yields, activity, exec, self, stealer);
       REQUIRE(exec.yields == 0);
       REQUIRE(exec.failed_steals == 0);
-      REQUIRE(self.empty());
-      REQUIRE(victim.empty());
-      REQUIRE(order.empty());
+      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
     }
   }
 
-  /// @brief Tests suspend action with ready initially false and pre-set counters.
-  /// @pre Activity ready=false, exec has yields=17, failed_steals=1025.
-  /// @details Verifies blocks until notify, decrements thieves, resets counters post-wake; uses
-  /// thread/latch for simulation.
-  GIVEN("action::suspend with ready initially false")
+  GIVEN("action::suspend waits on bell, with thieves pre-counted (episode semantics)")
   {
-    auto activity = sched::activity_stats{.ready = false};
-    auto exec     = sched::exec_stats{.failed_steals = 1025, .yields = 17};
-    auto action   = sched::action::suspend;
-    THEN("waits (blocks), resets yields/failed_steals post-wake")
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    activity.thieves.store(1, std::memory_order_release); // enter suspend from an explore episode
+
+    THEN("blocks until bell notified; post-wake counters reset; thieves becomes 0")
     {
-      auto l  = std::latch{2};
-      auto th = std::thread(
+      std::latch  go{2};
+      std::thread th(
         [&]
         {
-          l.arrive_and_wait();
-          sched::process_action(action, activity, exec, self, stealer);
+          go.arrive_and_wait();
+          sched::process_action(sched::action::suspend, activity, exec, self, stealer);
         });
-      l.arrive_and_wait();
-      std::this_thread::yield();
-      activity.ready.store(1, std::memory_order_release);
-      activity.ready.notify_one();
+      go.arrive_and_wait();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      // wake the sleeper
+      activity.bell.fetch_add(1, std::memory_order_release);
+      activity.bell.notify_one();
       th.join();
 
       REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
       REQUIRE(exec.yields == 0);
       REQUIRE(exec.failed_steals == 0);
       REQUIRE(self.empty());
+    }
+  }
+
+  GIVEN("action::retry and action::yield are no-ops on state")
+  {
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    THEN("no counters or queues change")
+    {
+      sched::process_action(sched::action::retry, activity, exec, self, stealer);
+      sched::process_action(sched::action::yield, activity, exec, self, stealer);
+      REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
+      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
+      REQUIRE(exec.yields == 0);
+      REQUIRE(exec.failed_steals == 0);
       REQUIRE(victim.empty());
-      REQUIRE(order.empty());
+      REQUIRE(self.empty());
+      REQUIRE(executed.empty());
+    }
+  }
+
+  GIVEN("action::abort notifies but leaves counters as-is")
+  {
+    sched::activity_stats activity{};
+    sched::exec_stats     exec{};
+    THEN("no local counters change")
+    {
+      sched::process_action(sched::action::abort, activity, exec, self, stealer);
+      REQUIRE(activity.actives.load(std::memory_order_acquire) == 0);
+      REQUIRE(activity.thieves.load(std::memory_order_acquire) == 0);
+      REQUIRE(exec.yields == 0);
+      REQUIRE(exec.failed_steals == 0);
     }
   }
 }

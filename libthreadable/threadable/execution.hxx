@@ -23,11 +23,12 @@ namespace fho
   {
   public:
     executor(scheduler::activity_stats& activity, scheduler::invocable_return auto&& stealer)
+      : bell_(activity.bell)
     {
       thread_ = std::thread(
         [this, &activity, stealer = FWD(stealer)]()
         {
-          (*this)(stop_, activity, stealer);
+          (*this)(activity, stealer);
         });
     }
 
@@ -44,7 +45,8 @@ namespace fho
     void
     stop() noexcept
     {
-      stop_.store(true, std::memory_order::release);
+      stats_.abort = true;
+      scheduler::detail::notify_all(bell_);
       if (thread_.joinable())
       {
         thread_.join();
@@ -69,25 +71,29 @@ namespace fho
     }
 
     void
-    operator()(std::atomic_bool const& t, scheduler::activity_stats& activity,
+    operator()(scheduler::activity_stats&        activity,
                scheduler::invocable_return auto& stealer) noexcept
     {
       using claimed_t = claimed_slot<fast_func_t>;
 
-      auto exec   = scheduler::exec_stats{};
       auto order  = std::vector<bool>{};
       auto action = scheduler::action::exploit;
-      while (!t.load(std::memory_order_relaxed))
+      while (!stats_.abort)
       {
-        scheduler::process_action(action, activity, exec, tasks_, stealer);
-        action = scheduler::process_state(activity, exec, action);
+        scheduler::process_action(action, activity, stats_, tasks_, stealer);
+        if (action == scheduler::action::abort) [[unlikely]]
+        {
+          break;
+        }
+        action = scheduler::process_state(activity, stats_, action);
       }
       tasks_.clear();
     }
 
   private:
+    scheduler::exec_stats                                    stats_;
+    decltype(scheduler::activity_stats::bell)&               bell_;
     fho::ring_buffer<ring_buffer<fast_func_t>::claimed_type> tasks_;
-    std::atomic_bool                                         stop_{false};
     std::thread                                              thread_;
   };
 }
