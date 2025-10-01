@@ -49,45 +49,6 @@ namespace fho
       : activity_(activity)
     {}
 
-    /// @brief Pushes a task with a reusable token and arguments.
-    /// @details Emplaces a task constructed from `val...` into the queue, binding it to the
-    ///          provided `slot_token` for tracking. Signals `activity_.ready` to wake sleeping
-    ///          executors. Thread-safe for multiple producers.
-    /// @tparam U Types of the arguments to construct the task.
-    /// @param token Reference to a `slot_token` to track the task's state.
-    /// @param val Arguments to construct a `fast_func_t` task.
-    /// @return Reference to the provided `slot_token`.
-    /// @requires `fast_func_t` must be constructible from `U...`.
-    template<typename... U>
-      requires std::constructible_from<fast_func_t, U...>
-    auto
-    push(slot_token& token, U&&... val) noexcept -> decltype(auto)
-    {
-      emplace_back(token, FWD(val)...);
-      activity_.ready.fetch_add(1, std::memory_order_release);
-      activity_.ready.notify_one();
-      return token;
-    }
-
-    /// @brief Pushes a task with arguments and returns a new token.
-    /// @details Emplaces a task constructed from `val...` into the queue, creating a new
-    ///          `slot_token` for tracking. Signals `activity_.ready` to wake sleeping executors.
-    ///          Thread-safe for multiple producers.
-    /// @tparam U Types of the arguments to construct the task.
-    /// @param val Arguments to construct a `fast_func_t` task.
-    /// @return A `slot_token` for tracking the task's state.
-    /// @requires `fast_func_t` must be constructible from `U...`.
-    template<typename... U>
-      requires std::constructible_from<fast_func_t, U...>
-    auto
-    push(U&&... val) noexcept -> decltype(auto)
-    {
-      auto token = emplace_back(FWD(val)...);
-      activity_.ready.fetch_add(1, std::memory_order_release);
-      activity_.ready.notify_one();
-      return token;
-    }
-
     /// @brief Attempts to claim the first task from the queue.
     /// @details For `execution::seq`, checks if the previous task is completed (`empty` state)
     ///          before claiming, enforcing single-edge DAG ordering. For `execution::par`, claims
