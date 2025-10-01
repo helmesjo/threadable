@@ -88,7 +88,7 @@ namespace fho
     ///          Defaults to `std::thread::hardware_concurrency()` for optimal parallelism.
     ///          Creates a shared `activity_stats` for task notifications.
     /// @param threads Number of worker threads (executors).
-    explicit pool(unsigned int threads = std::thread::hardware_concurrency())
+    explicit pool(unsigned int threads = 2)
     {
       executors_.reserve(threads);
       for (unsigned int i = 0; i < threads; ++i)
@@ -115,8 +115,8 @@ namespace fho
     ~pool()
     {
       activity_.abort.store(true, std::memory_order_release);
-      activity_.ready.store(1, std::memory_order_release);
-      activity_.ready.notify_all();
+      activity_.bell.fetch_add(1, std::memory_order_release);
+      activity_.bell.notify_all();
       for (auto& e : executors_)
       {
         e->stop();
@@ -140,8 +140,11 @@ namespace fho
       static constexpr auto seq =
         Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
       master_.template emplace_back<seq>(token, FWD(val)...);
-      activity_.ready.fetch_add(1, std::memory_order_release);
-      activity_.ready.notify_one();
+      if (activity_.ready.fetch_add(1, std::memory_order_release) == 0) [[unlikely]]
+      {
+        activity_.bell.fetch_add(1, std::memory_order_release);
+        activity_.bell.notify_one();
+      }
       return token;
     }
 
@@ -161,8 +164,11 @@ namespace fho
       static constexpr auto seq =
         Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
       auto token = master_.template emplace_back<seq>(FWD(val)...);
-      activity_.ready.fetch_add(1, std::memory_order_release);
-      activity_.ready.notify_one();
+      if (activity_.ready.fetch_add(1, std::memory_order_release) == 0) [[unlikely]]
+      {
+        activity_.bell.fetch_add(1, std::memory_order_release);
+        activity_.bell.notify_one();
+      }
       return token;
     }
 
@@ -183,7 +189,9 @@ namespace fho
       auto s = victim->steal(FWD(r));
       if (s == 0)
       {
-        for (auto t : master_.try_pop_front(1))
+        constexpr auto cap = std::size_t{64};
+        auto const     max = activity_.ready.load(std::memory_order_acquire) / executors_.size();
+        for (auto t : master_.try_pop_front(std::min(cap, max)))
         {
           r.emplace_back(std::move(t));
           ++s;

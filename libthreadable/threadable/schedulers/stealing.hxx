@@ -5,12 +5,27 @@
 
 #include <atomic>
 #include <concepts>
-#include <format>
-#include <iostream>
 #include <thread>
+
+#if defined(__x86_64__) || defined(_M_X64)
+  #include <immintrin.h> // _mm_pause
+#endif
 
 namespace fho::schedulers::stealing
 {
+  namespace detail
+  {
+    inline void
+    cpu_relax() noexcept
+    {
+#if defined(__x86_64__) || defined(_M_X64)
+      _mm_pause();
+#else
+      std::this_thread::yield(); // fallback
+#endif
+    }
+  }
+
   template<typename T>
   concept invocable_return = requires (T t) {
                                {
@@ -30,6 +45,8 @@ namespace fho::schedulers::stealing
   {
     // Tasks ready to process.
     alignas(details::cache_line_size) std::atomic_size_t ready{0};
+    // Bell counter to wake up workers.
+    alignas(details::cache_line_size) std::atomic_uint64_t bell{0};
     // Workers should stop.
     alignas(details::cache_line_size) std::atomic_bool abort{false};
     // Workers currently exploiting/executing tasks.
@@ -41,10 +58,10 @@ namespace fho::schedulers::stealing
   // Per-worker non-atomic counters (thread-local, reset per idle cycle).
   struct exec_stats
   {
-    std::size_t steal_bound   = 1024; // Max consecutive failed steals
-    std::size_t yield_bound   = 16;   // Max consecutive yields
-    std::size_t failed_steals = 0;    // Count of consecutive failed steal attempts.
-    std::size_t yields        = 0;    // Count of consecutive yield attempts.
+    std::size_t steal_bound   = 16; // Max consecutive failed steals
+    std::size_t yield_bound   = 16; // Max consecutive yields
+    std::size_t failed_steals = 0;  // Count of consecutive failed steal attempts.
+    std::size_t yields        = 0;  // Count of consecutive yield attempts.
   };
   enum class action
   {
@@ -84,33 +101,15 @@ namespace fho::schedulers::stealing
         // value; function decides first if steal_bound exceeded (trigger special yield with
         // updates), then always evaluates yield_bound (sequential ifs), or falls to default yield
         // (else branch).
-        if (exec.failed_steals > exec.steal_bound)
+
+        if (exec.yields >= exec.yield_bound)
         {
-          // Maps to paper's first if (failed_steals_ > STEAL_BOUND): yield, but defers updates to
-          // caller; returns special action to trigger continuation for second if. Correct as it
-          // isolates the first yield and updates, allowing caller to update exec before re-calling
-          // for the remaining logic, replicating the sequential execution without modifying state
-          // here.
+          return action::suspend; // CHANGED: park after enough yields regardless of actives
+        }
+        else if (exec.failed_steals >= exec.steal_bound)
+        {
           return action::yield_steal_exceed;
         }
-        // Sequential: always check second if, even if steal_bound not exceeded.
-        if (exec.yields > exec.yield_bound)
-        {
-          // Maps to paper's second if (yields_ > YIELD_BOUND): reset yields (deferred to caller),
-          // then conditional yield or wait. Correct as actives read with acquire ensures visibility
-          // of concurrent executions; no modification here, caller handles reset post-action.
-          if (activity.actives.load(std::memory_order_acquire) > 0)
-          {
-            return action::yield_reset_yields;
-          }
-          else
-          {
-            return action::suspend;
-          }
-        }
-        // Maps to paper's else branch: simple yield when neither bound exceeded (or after checks).
-        // Correct as this catches low-contention idleness without updates, maintaining minimal
-        // overhead per C++20 yield semantics.
         return action::yield;
       }
       case action::retry:
@@ -123,24 +122,10 @@ namespace fho::schedulers::stealing
         // incremented by caller): now evaluate second if with updated yields. Correct because
         // re-call with this previous allows seeing post-increment yields without function
         // modification, ensuring sequential logic fidelity.
-        if (exec.yields > exec.yield_bound)
-        {
-          // Same as above: maps to second if, with conditional based on actives.
-          // Correct for handling the rare case where inc pushes yields over bound, triggering reset
-          // and yield/suspend.
-          if (activity.actives.load(std::memory_order_acquire) > 0)
-          {
-            return action::yield_reset_yields;
-          }
-          else
-          {
-            return action::suspend;
-          }
-        }
-        // Maps to else after first if (when new yields <= bound): another yield.
-        // Correct as this replicates the double-yield path for non-threshold cases, preserving
-        // adaptive gradual backoff.
-        return action::yield;
+        return (exec.yields >= exec.yield_bound) &&
+                   (activity.ready.load(std::memory_order_acquire) == 0) ?
+                 action::suspend :
+                 action::exploit;
       }
       case action::yield:
         [[fallthrough]];
@@ -172,24 +157,30 @@ namespace fho::schedulers::stealing
         /// all tasks from deque via repeated LIFO pops and executions until empty, resets counters
         /// if any executed, and decrements num_actives. Drains empty queue without execution or
         /// resets. Drains non-empty queue, executes all tasks, resets counters.
-        if (activity.actives.fetch_add(1, std::memory_order_acq_rel) == 0 &&
-            activity.thieves.load(std::memory_order_acquire) == 0)
-        {
-          activity.ready.notify_one();
-        }
         auto executed = false;
         while (auto t = self.try_pop_back())
         {
+          if (!executed) [[likely]]
+          {
+            executed = true;
+            if (activity.actives.fetch_add(1, std::memory_order_acq_rel) == 0 &&
+                activity.thieves.load(std::memory_order_acquire) == 0) [[unlikely]]
+            {
+              activity.bell.fetch_add(1, std::memory_order_release);
+              activity.bell.notify_one();
+            }
+          }
+
+          auto derp = activity.ready.fetch_sub(1, std::memory_order_release);
+          assert(derp != 0 and "stealer::process_action(exploit)");
           (*t)();
-          activity.ready.fetch_sub(1, std::memory_order_release);
-          executed = true;
         }
         if (executed)
         {
+          activity.actives.fetch_sub(1, std::memory_order_acq_rel);
           exec.yields        = 0;
           exec.failed_steals = 0;
         }
-        activity.actives.fetch_sub(1, std::memory_order_acq_rel);
       }
       break;
       case action::explore:
@@ -210,23 +201,26 @@ namespace fho::schedulers::stealing
             exec.failed_steals = 0;
             break;
           }
+          detail::cpu_relax(); // CHANGED: tiny intra-loop backoff to reduce interconnect thrash
         }
-        if (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1 &&
-            activity.ready.load(std::memory_order_acquire) > 0)
+        bool const last = (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1);
+        if (last &&
+            (exec.failed_steals == 0 || activity.actives.load(std::memory_order_acquire) > 0 ||
+             activity.ready.load(std::memory_order_acquire) > 0)) [[unlikely]]
         {
-          activity.ready.notify_one();
+          activity.bell.fetch_add(1, std::memory_order_release); // CHANGED: also wake when last
+                                                                 // thief failed but work exists
+          activity.bell.notify_one();
         }
-        if (exec.failed_steals >= exec.steal_bound)
-        {
-          std::this_thread::yield();
-          ++exec.yields;
-        }
+
         break;
       }
       case action::abort:
       { /// @brief Abort scheduler.
         /// @details This action is reached on external stop signal. It returns immediately without
         /// changes. Returns without affecting states or queues.
+        activity.bell.fetch_add(1, std::memory_order_release);
+        activity.bell.notify_all();
         return;
       }
       break;
@@ -240,7 +234,11 @@ namespace fho::schedulers::stealing
       { /// @brief Yield briefly.
         /// @details This action is reached on non-exceeded bounds in idleness. It yields without
         /// updates. Yields, no state changes.
-        std::this_thread::yield();
+        // CHANGED: short timed wait on bell instead of raw yield (reduces CPU pegging)
+        // auto tk = activity.bell.load(std::memory_order_acquire);
+        // activity.bell.wait(tk, std::memory_order_acquire);
+        detail::cpu_relax();
+        ++exec.yields;
       }
       break;
       case action::yield_steal_exceed:
@@ -267,11 +265,17 @@ namespace fho::schedulers::stealing
         /// counters post-wake. Aborts if signalled, notifies all. Waits, resets counters post-wake.
         if (activity.abort.load(std::memory_order_acquire))
         {
-          activity.ready.store(1, std::memory_order_release);
-          activity.ready.notify_all();
+          activity.bell.fetch_add(1, std::memory_order_release); // CHANGED: bump bell on abort
+          activity.bell.notify_all();                            // CHANGED: wake all waiters
           break;
         }
-        activity.ready.wait(false, std::memory_order_acquire);
+        auto tk = activity.bell.load(std::memory_order_acquire);
+        if (activity.ready.load(std::memory_order_acquire) == 0)
+        {
+          activity.bell.wait(tk, std::memory_order_acquire);
+          tk = activity.bell.load(std::memory_order_acquire);
+        }
+
         exec.yields        = 0;
         exec.failed_steals = 0;
       }

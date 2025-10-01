@@ -409,7 +409,7 @@ namespace fho
     {
       if (auto r = try_pop_front(1); !r.empty())
       {
-        return *r.begin();
+        return std::move(*r.begin());
       }
       return nullptr;
     }
