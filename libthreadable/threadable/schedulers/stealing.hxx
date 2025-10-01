@@ -6,6 +6,9 @@
 #include <atomic>
 #include <concepts>
 #include <cstdint>
+#include <format>
+#include <iostream>
+#include <syncstream>
 #include <thread>
 #include <utility>
 
@@ -88,6 +91,8 @@ namespace fho::schedulers::stealing
     // Workers currently thieves (awake & not sleeping & not exploiting). (Definition 1: thief).
     // (Alg.5 scope) :contentReference[oaicite:5]{index=5}
     alignas(64) std::atomic_size_t thieves{0};
+    // Total amount of available workers
+    alignas(64) std::atomic_size_t workers{0};
   };
 
   // Per-worker non-atomic counters (thread-local, reset per idle cycle).
@@ -213,10 +218,25 @@ namespace fho::schedulers::stealing
         auto const a0 = activity.actives.fetch_add(1, std::memory_order_acq_rel);
         if (a0 == 0 && activity.thieves.load(std::memory_order_relaxed) == 0)
         {
-          detail::notify_one(
-            activity.bell); ///< @EXPLAIN first active & no thief → ring bell to create a thief;
-                            ///< prevents under-subscription. (Alg.3 L2–3; Lemma 1)
-                            ///< :contentReference[oaicite:18]{index=18}
+          // Eagerly wake multiple thieves proportional to backlog.
+          auto const ready   = activity.ready.load(std::memory_order_relaxed);
+          auto const max     = activity.workers.load(std::memory_order_relaxed) - 1;
+          auto const maxWake = std::min(ready, max); // pool_size known in pool
+          // cap to avoid stampede; e.g., 4 or 8
+          auto const k = std::min(maxWake, 4ull);
+          for (std::size_t i = 0; i < k; ++i)
+          {
+            detail::notify_one(activity.bell); ///< ramp quickly from 1 active to many thieves
+          }
+          // detail::notify_one(
+          //   activity.bell); ///< @EXPLAIN first active & no thief → ring bell to create a thief;
+          //                   ///< prevents under-subscription. (Alg.3 L2–3; Lemma 1)
+          //                   ///< :contentReference[oaicite:18]{index=18}
+          // std::osyncstream(std::cout)
+          //   << std::format("AFTER_ACTIVATE actives:{} thieves:{} ready:{}\n",
+          //                  activity.actives.load(std::memory_order_relaxed),
+          //                  activity.thieves.load(std::memory_order_relaxed),
+          //                  activity.ready.load(std::memory_order_relaxed));
         }
 
         // Execute available work until local depletion.

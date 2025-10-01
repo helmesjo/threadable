@@ -4,7 +4,7 @@ import libs += \
   doctest%lib{doctest} \
   libnanobench%lib{nanobench}
 
-exe{threadable-benchmarks}: {hxx ixx txx cxx}{**} $libs
+exe{threadable-benchmarks}: {hxx cxx}{doctest_* util* pool.benchmark.cxx} $libs
 {
   test = true
   install = false

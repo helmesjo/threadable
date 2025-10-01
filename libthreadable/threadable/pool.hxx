@@ -8,9 +8,11 @@
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
+#include <format>
+#include <iostream>
 #include <mutex>
 #include <random>
-#include <thread>
+#include <syncstream>
 
 #ifdef _MSC_VER
   #pragma warning(push)
@@ -90,6 +92,7 @@ namespace fho
     /// @param threads Number of worker threads (executors).
     explicit pool(unsigned int threads = std::thread::hardware_concurrency())
     {
+      activity_.workers.store(threads, std::memory_order_release);
       executors_.reserve(threads);
       for (unsigned int i = 0; i < threads; ++i)
       {
@@ -186,7 +189,7 @@ namespace fho
       auto s = victim->steal(FWD(r));
       if (s == 0)
       {
-        constexpr auto cap = std::size_t{64};
+        constexpr auto cap = std::size_t{32};
         for (auto t : master_.try_pop_front(cap))
         {
           r.emplace_back(std::move(t));

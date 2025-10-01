@@ -29,44 +29,154 @@ TEST_CASE("pool: task execution")
     bench::doNotOptimizeAway(val = fho::utils::do_non_trivial_work(val) );
   });
 
-  b.title("pool: emplace & wait");
+  static constexpr auto tasks_per_iteration_reduced = 1 << 14;
+  // b.title("pool: emplace & wait");
+  // {
+  //   // too slow with large batch size, but also unaffected for
+  //   // stats reported.
+  //   std::queue<std::function<void()>> queue;
+  //   b.batch(tasks_per_iteration_reduced)
+  //     .run("std::queue<function>",
+  //          [&]
+  //          {
+  //            for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
+  //            {
+  //              queue.emplace(task_t{});
+  //            }
+  //            while (!queue.empty())
+  //            {
+  //              auto& task = queue.back();
+  //              task();
+  //              queue.pop();
+  //            }
+  //          });
+  // }
+  // {
+  //   auto pool = fho::pool(1);
+  //   b.batch(tasks_per_iteration_reduced)
+  //     .run("fho::pool (threads: 1)",
+  //          [&]
+  //          {
+  //            auto group = fho::token_group(tasks_per_iteration_reduced);
+  //            for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
+  //            {
+  //              group += pool.push(task_t{});
+  //            }
+  //            group.wait();
+  //          });
+  // }
+  // {
+  //   auto pool = fho::pool(2);
+  //   b.batch(tasks_per_iteration_reduced)
+  //     .run("fho::pool (threads: 2)",
+  //          [&]
+  //          {
+  //            auto group = fho::token_group(tasks_per_iteration_reduced);
+  //            for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
+  //            {
+  //              group += pool.push(task_t{});
+  //            }
+  //            group.wait();
+  //          });
+  // }
+  // {
+  //   auto pool = fho::pool(4);
+  //   b.batch(tasks_per_iteration_reduced)
+  //     .run("fho::pool (threads: 4)",
+  //          [&]
+  //          {
+  //            auto group = fho::token_group(tasks_per_iteration_reduced);
+  //            for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
+  //            {
+  //              group += pool.push(task_t{});
+  //            }
+  //            group.wait();
+  //          });
+  // }
   {
-    // too slow with large batch size, but also unaffected for
-    // stats reported.
-    static constexpr auto             tasks_per_iteration_reduced = 1 << 14;
-    std::queue<std::function<void()>> queue;
+    auto pool = fho::pool(6);
     b.batch(tasks_per_iteration_reduced)
-      .run("std::queue<function>",
+      .run("fho::pool (threads: 6)",
            [&]
            {
+             auto group = fho::token_group(tasks_per_iteration_reduced);
              for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
-             {
-               queue.emplace(task_t{});
-             }
-             while (!queue.empty())
-             {
-               auto& task = queue.back();
-               task();
-               queue.pop();
-             }
-           });
-  }
-  {
-    auto pool = fho::pool();
-
-    // auto& queue = pool.create(fho::execution::par);
-    b.batch(tasks_per_iteration)
-      .run("fho::pool (queues: 1)",
-           [&]
-           {
-             auto group = fho::token_group(tasks_per_iteration);
-             for (std::size_t i = 0; i < tasks_per_iteration; ++i)
              {
                group += pool.push(task_t{});
              }
              group.wait();
            });
   }
+  {
+    auto pool = fho::pool(8);
+    b.batch(tasks_per_iteration_reduced)
+      .run("fho::pool (threads: 8)",
+           [&]
+           {
+             auto group = fho::token_group(tasks_per_iteration_reduced);
+             for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
+             {
+               group += pool.push(task_t{});
+             }
+             group.wait();
+           });
+  }
+  {
+    auto pool = fho::pool(10);
+    b.batch(tasks_per_iteration_reduced)
+      .run("fho::pool (threads: 10)",
+           [&]
+           {
+             auto group = fho::token_group(tasks_per_iteration_reduced);
+             for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
+             {
+               group += pool.push(task_t{});
+             }
+             group.wait();
+           });
+  }
+  {
+    auto pool = fho::pool(12);
+    b.batch(tasks_per_iteration_reduced)
+      .run("fho::pool (threads: 12)",
+           [&]
+           {
+             auto group = fho::token_group(tasks_per_iteration_reduced);
+             for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
+             {
+               group += pool.push(task_t{});
+             }
+             group.wait();
+           });
+  }
+  // {
+  //   auto pool = fho::pool(14);
+  //   b.batch(tasks_per_iteration_reduced)
+  //     .run("fho::pool (threads: 14)",
+  //          [&]
+  //          {
+  //            auto group = fho::token_group(tasks_per_iteration_reduced);
+  //            for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
+  //            {
+  //              group += pool.push(task_t{});
+  //            }
+  //            group.wait();
+  //          });
+  // }
+  // {
+  //   auto pool = fho::pool(16);
+  //   b.batch(tasks_per_iteration_reduced)
+  //     .run("fho::pool (threads: 16)",
+  //          [&]
+  //          {
+  //            auto group = fho::token_group(tasks_per_iteration_reduced);
+  //            for (std::size_t i = 0; i < tasks_per_iteration_reduced; ++i)
+  //            {
+  //              group += pool.push(task_t{});
+  //            }
+  //            group.wait();
+  //          });
+  // }
   // {
   //   auto pool = fho::pool();
 
