@@ -24,9 +24,9 @@ SCENARIO("executor: Submit callables")
   };
 
   auto exec1 = fho::executor(activity, stealer);
-  auto exec2 = fho::executor(activity, stealer);
-  auto exec3 = fho::executor(activity, stealer);
-  auto exec4 = fho::executor(activity, stealer);
+  // auto exec2 = fho::executor(activity, stealer);
+  // auto exec3 = fho::executor(activity, stealer);
+  // auto exec4 = fho::executor(activity, stealer);
   GIVEN("a range of callables")
   {
     static constexpr auto size = std::size_t{1024};
@@ -43,7 +43,7 @@ SCENARIO("executor: Submit callables")
           executed[i] = counter++;
         });
       // simulate interruptions
-      activity.ready.fetch_add(1, std::memory_order_release);
+      activity.notifier.notify_one();
       if (i % 2 == 0)
       {
         std::this_thread::yield();
@@ -59,6 +59,6 @@ SCENARIO("executor: Submit callables")
       }
     }
   }
-  activity.abort = true;
-  fho::scheduler::detail::notify_all(activity.bell);
+  activity.stops = true;
+  activity.notifier.notify_all();
 }

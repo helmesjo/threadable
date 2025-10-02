@@ -3,7 +3,7 @@ import libs += \
   libthreadable%lib{threadable} \
   doctest%lib{doctest}
 
-exe{threadable-tests}: {hxx ixx txx cxx}{**} $libs
+exe{threadable-tests}: {hxx cxx}{doctest* pool*} $libs
 {
   test = true
   install = false

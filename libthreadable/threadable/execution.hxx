@@ -23,7 +23,7 @@ namespace fho
   {
   public:
     executor(scheduler::activity_stats& activity, scheduler::invocable_return auto&& stealer)
-      : bell_(activity.bell)
+      : notifier_(activity.notifier)
     {
       thread_ = std::thread(
         [this, &activity, stealer = FWD(stealer)]()
@@ -46,7 +46,7 @@ namespace fho
     stop() noexcept
     {
       stats_.abort = true;
-      scheduler::detail::notify_all(bell_);
+      notifier_.notify_all();
       if (thread_.joinable())
       {
         thread_.join();
@@ -55,7 +55,7 @@ namespace fho
     }
 
     [[nodiscard]] auto
-    steal(std::ranges::range auto&& r) noexcept -> std::size_t
+    steal(std::ranges::range auto&& r, auto& cached) noexcept -> std::size_t
     {
       if (&r == &tasks_) [[unlikely]]
       {
@@ -64,7 +64,8 @@ namespace fho
 
       if (auto t = tasks_.try_pop_front(); t)
       {
-        r.emplace_back(std::move(*t));
+        // r.emplace_back(std::move(*t));
+        cached = std::move(*t);
         return 1;
       }
       return 0;
@@ -74,25 +75,13 @@ namespace fho
     operator()(scheduler::activity_stats&        activity,
                scheduler::invocable_return auto& stealer) noexcept
     {
-      using claimed_t = claimed_slot<fast_func_t>;
-
-      auto order  = std::vector<bool>{};
-      auto action = scheduler::action::exploit;
-      while (!stats_.abort)
-      {
-        scheduler::process_action(action, activity, stats_, tasks_, stealer);
-        if (action == scheduler::action::abort) [[unlikely]]
-        {
-          break;
-        }
-        action = scheduler::process_state(activity, stats_, action);
-      }
+      scheduler::worker_loop(activity, stats_, tasks_, stealer);
       tasks_.clear();
     }
 
   private:
     scheduler::exec_stats                                    stats_;
-    decltype(scheduler::activity_stats::bell)&               bell_;
+    decltype(scheduler::activity_stats::notifier)&           notifier_;
     fho::ring_buffer<ring_buffer<fast_func_t>::claimed_type> tasks_;
     std::thread                                              thread_;
   };

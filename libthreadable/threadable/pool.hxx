@@ -12,6 +12,7 @@
 #include <iostream>
 #include <mutex>
 #include <random>
+#include <ranges>
 #include <syncstream>
 
 #ifdef _MSC_VER
@@ -92,16 +93,15 @@ namespace fho
     /// @param threads Number of worker threads (executors).
     explicit pool(unsigned int threads = std::thread::hardware_concurrency())
     {
-      activity_.workers.store(threads, std::memory_order_release);
       executors_.reserve(threads);
       for (unsigned int i = 0; i < threads; ++i)
       {
-        executors_.emplace_back(
-          std::make_unique<executor>(activity_,
-                                     [this](std::ranges::range auto&& r) -> std::size_t
-                                     {
-                                       return steal(FWD(r));
-                                     }));
+        executors_.emplace_back(std::make_unique<executor>(activity_,
+                                                           [this](std::ranges::range auto&& r)
+                                                             -> claimed_slot<fast_func_t>
+                                                           {
+                                                             return steal(FWD(r));
+                                                           }));
       }
     }
 
@@ -117,8 +117,8 @@ namespace fho
     ///          destructors.
     ~pool()
     {
-      activity_.abort.store(true, std::memory_order_release);
-      fho::schedulers::stealing::detail::notify_all(activity_.bell);
+      activity_.stops.store(true, std::memory_order_release);
+      activity_.notifier.notify_all();
       for (auto& e : executors_)
       {
         e->stop();
@@ -141,11 +141,8 @@ namespace fho
     {
       static constexpr auto seq =
         Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
-      master_.template emplace_back<seq>(token, FWD(val)...);
-      if (activity_.ready.fetch_add(1, std::memory_order_release) == 0) [[unlikely]]
-      {
-        schedulers::stealing::detail::notify_one(activity_.bell);
-      }
+      activity_.master.template emplace_back<seq>(token, FWD(val)...);
+      activity_.notifier.notify_one();
       return token;
     }
 
@@ -164,11 +161,8 @@ namespace fho
     {
       static constexpr auto seq =
         Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
-      auto token = master_.template emplace_back<seq>(FWD(val)...);
-      if (activity_.ready.fetch_add(1, std::memory_order_release) == 0) [[unlikely]]
-      {
-        schedulers::stealing::detail::notify_one(activity_.bell);
-      }
+      auto token = activity_.master.template emplace_back<seq>(FWD(val)...);
+      activity_.notifier.notify_one();
       return token;
     }
 
@@ -178,25 +172,34 @@ namespace fho
     ///          or the queue is empty. Thread-safe for concurrent stealing.
     /// @return A `claimed_slot<fast_func_t>` if a task is stolen, or `nullptr` if none available.
     [[nodiscard]] auto
-    steal(std::ranges::range auto&& r) noexcept -> std::size_t
+    steal(std::ranges::range auto&& r) noexcept
     {
       thread_local auto rng = std::mt19937{std::random_device{}()};
+      using cached_t        = std::ranges::range_value_t<decltype(r)>;
 
       auto  dist   = std::uniform_int_distribution<std::size_t>(0, executors_.size() - 1);
       auto  idx    = dist(rng);
       auto& victim = executors_[idx];
 
-      auto s = victim->steal(FWD(r));
-      if (s == 0)
+      auto cached = cached_t{nullptr};
+
+      auto s = victim->steal(FWD(r), cached);
+      if (!cached)
       {
-        constexpr auto cap = std::size_t{32};
-        for (auto t : master_.try_pop_front(cap))
+        constexpr auto cap = std::size_t{4};
+        for (auto t : activity_.master.try_pop_front(cap))
         {
-          r.emplace_back(std::move(t));
-          ++s;
+          if (!cached)
+          {
+            cached = std::move(t);
+          }
+          else
+          {
+            r.emplace_back(std::move(t));
+          }
         }
       }
-      return s;
+      return std::move(cached);
     }
 
     /// @brief Returns the number of pending tasks.
@@ -205,7 +208,7 @@ namespace fho
     [[nodiscard]] auto
     size() const noexcept -> std::size_t
     {
-      return master_.size();
+      return activity_.master.size();
     }
 
     /// @brief Returns the maximum task capacity.
@@ -214,12 +217,11 @@ namespace fho
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
-      return decltype(master_)::max_size();
+      return decltype(activity_.master)::max_size();
     }
 
   private:
     alignas(details::cache_line_size) schedulers::stealing::activity_stats activity_;
-    alignas(details::cache_line_size) ring_buffer<fast_func_t> master_;
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
   };
 

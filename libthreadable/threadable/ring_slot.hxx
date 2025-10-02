@@ -6,6 +6,7 @@
 #include <threadable/token.hxx>
 
 #include <atomic>
+#include <concepts>
 #include <memory>
 #include <type_traits>
 
@@ -118,6 +119,12 @@ namespace fho
         value_ = std::move(that.value_); // For trivial T, bitwise move (memcpy equivalent).
       }
       return *this;
+    }
+
+    [[nodiscard]] inline constexpr auto
+    operator==(ring_slot const& rhs) const noexcept -> bool
+    {
+      return data() == rhs.data();
     }
 
     /// @brief Conversion to reference to `T`.
@@ -401,6 +408,8 @@ namespace fho
     Slot* slot_ = nullptr;
 
   public:
+    using value_type = T;
+
     claimed_slot(Slot* slot)
       : slot_(slot)
     {
@@ -437,6 +446,24 @@ namespace fho
       return *this;
     }
 
+    // template<typename U>
+    //   requires (!std::same_as<U, claimed_slot>)
+    // auto
+    // operator=(U other) noexcept -> claimed_slot&
+    //   requires std::assignable_from<claimed_slot&, claimed_slot<U>>
+    // {
+    //   if (slot_) [[unlikely]]
+    //   {
+    //     if (slot_->value() == other) [[likely]]
+    //     {
+    //       return *this;
+    //     }
+    //     slot_->template release<slot_state::locked_ready>();
+    //   }
+    //   *this = std::move(other);
+    //   return *this;
+    // }
+
     claimed_slot(claimed_slot const&)                    = delete;
     auto operator=(claimed_slot const&) -> claimed_slot& = delete;
 
@@ -455,11 +482,17 @@ namespace fho
       return std::exchange(slot_, nullptr);
     }
 
-    [[nodiscard]] inline constexpr explicit
+    [[nodiscard]] inline constexpr
     operator bool() const noexcept
     {
       return slot_ != nullptr;
     }
+
+    // [[nodiscard]] inline constexpr auto
+    // operator==(T const& rhs) const noexcept -> bool
+    // {
+    //   return true;
+    // }
 
     auto
     operator*() noexcept -> decltype(auto)
