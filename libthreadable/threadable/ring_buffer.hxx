@@ -343,6 +343,8 @@ namespace fho
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
+      auto       diff = head - tail;
+      max             = std::max(diff, max);
       max             = std::min(tail + max, head);
       auto cap        = tail;
 
@@ -356,7 +358,7 @@ namespace fho
         }
         if (elem.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
         {
-          auto& prev = elems_[ring_iterator_t::mask(cap - 1)];
+          auto& prev = elems_[ring_iterator_t::mask(cap - std::min(diff, index_t{1}))];
           if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]
           {
             // Fail: requires previous slot to be empty.
@@ -415,38 +417,71 @@ namespace fho
     }
 
     /// @brief Claim the last element from the ring buffer.
-    /// @details Attempts to claims the item at `back()` and advances `head_`.
+    /// @details Attempts to claim items from `back()` and decrements `head_`.
     /// The claimed slot is released when it goes out of scope.
     /// Thread-safe for multiple consumers.
     /// @note: Makes only a single attempt to claim next item in line.
     auto
-    try_pop_back() noexcept -> claimed_type
+    try_pop_back(index_t max) noexcept
     {
-      auto  head = head_.load(std::memory_order_acquire);
-      auto& elem = elems_[ring_iterator_t::mask(head - 1)];
-      // 1. If element exists, try to claim it & recede head.
-      if (elem.template try_lock<slot_state::ready>()) [[likely]]
+      auto const tail = tail_.load(std::memory_order_acquire);
+      auto const head = head_.load(std::memory_order_acquire);
+      auto       diff = head - tail;
+      max             = std::min(diff, max);
+      auto const min  = head - max;
+      auto       cap  = head;
+
+      // @NOTE: Forward-scan & claim until failure, or reached max range.
+      while (cap > min)
       {
+        auto& elem = elems_[ring_iterator_t::mask(cap - 1)];
+        if (!elem.template try_lock<slot_state::ready>())
+        {
+          break;
+        }
         if (elem.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
         {
-          auto& prev = elems_[ring_iterator_t::mask(head - 2)];
+          auto& prev = elems_[ring_iterator_t::mask(cap - std::min(diff, index_t{2}))];
           if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]
           {
             // Fail: requires previous slot to be empty.
             elem.template unlock<slot_state::locked_ready>();
-            return nullptr;
+            break;
           }
         }
-        if (head_.compare_exchange_strong(head, head - 1, std::memory_order_acq_rel)) [[likely]]
+        --cap;
+      }
+
+      auto exp = head;
+      while (exp > cap && !head_.compare_exchange_weak(exp, cap, std::memory_order_acq_rel,
+                                                       std::memory_order_acquire)) [[unlikely]]
+      {
+        if (exp <= cap) [[unlikely]]
         {
-          // Success: own the slot, safe to access (read value)
-          return claimed_type{&elem};
+          // Okay: Someone else already published head past our claimed range.
+          break;
         }
-        else [[unlikely]]
-        {
-          // Fail: contention lost, return slot
-          elem.template unlock<slot_state::locked_ready>();
-        }
+        std::this_thread::yield();
+      }
+      if (exp > cap) [[likely]]
+      {
+        head_.notify_all();
+      }
+      auto b = ring_iterator_t(elems_.data(), cap);
+      auto e = ring_iterator_t(elems_.data(), head);
+      return std::ranges::subrange(b, e) | std::ranges::views::transform(
+                                             [](auto& s)
+                                             {
+                                               return claimed_type{&s};
+                                             });
+    }
+
+    auto
+    try_pop_back() noexcept -> claimed_type
+    {
+      if (auto r = try_pop_back(1); !r.empty())
+      {
+        return std::move(*r.begin());
       }
       return nullptr;
     }
