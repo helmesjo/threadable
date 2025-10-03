@@ -411,6 +411,7 @@ namespace fho
     {
       if (auto r = try_pop_front(1); !r.empty())
       {
+        assert(r.size() == 1 and "ring_buffer::try_pop_front()");
         return std::move(*r.begin());
       }
       return nullptr;
@@ -481,6 +482,7 @@ namespace fho
     {
       if (auto r = try_pop_back(1); !r.empty())
       {
+        assert(r.size() == 1 and "ring_buffer::try_pop_front()");
         return std::move(*r.begin());
       }
       return nullptr;

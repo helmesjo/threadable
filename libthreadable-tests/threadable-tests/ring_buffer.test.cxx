@@ -480,6 +480,10 @@ SCENARIO("ring_buffer: stress-test")
     THEN("all tasks are executed")
     {
       REQUIRE(executed.load() == nr_of_tasks);
+      for (auto d = ring.data(); d < ring.data() + capacity; ++d)
+      {
+        REQUIRE(d->load(std::memory_order_acquire) == fho::slot_state::empty);
+      }
     }
   }
   GIVEN("1 producer & 1 consumer")
@@ -543,6 +547,10 @@ SCENARIO("ring_buffer: stress-test")
 
       REQUIRE(executed.load() == nr_to_process);
       REQUIRE(ring.size() == 0);
+      for (auto d = ring.data(); d < ring.data() + capacity; ++d)
+      {
+        REQUIRE(d->load(std::memory_order_acquire) == fho::slot_state::empty);
+      }
     }
   }
   GIVEN("5 producer & 1 consumers")
@@ -606,6 +614,10 @@ SCENARIO("ring_buffer: stress-test")
 
       REQUIRE(executed.load() == nr_to_process);
       REQUIRE(ring.size() == 0);
+      for (auto d = ring.data(); d < ring.data() + capacity; ++d)
+      {
+        REQUIRE(d->load(std::memory_order_acquire) == fho::slot_state::empty);
+      }
     }
   }
   GIVEN("1 producer & 5 consumers")
@@ -679,6 +691,10 @@ SCENARIO("ring_buffer: stress-test")
 
       REQUIRE(executed.load() == nr_to_process);
       REQUIRE(ring.size() == 0);
+      for (auto d = ring.data(); d < ring.data() + capacity; ++d)
+      {
+        REQUIRE(d->load(std::memory_order_acquire) == fho::slot_state::empty);
+      }
     }
   }
   GIVEN("4 producers & 4 consumers")
@@ -752,6 +768,10 @@ SCENARIO("ring_buffer: stress-test")
 
       REQUIRE(executed.load() == nr_to_process);
       REQUIRE(ring.size() == 0);
+      for (auto d = ring.data(); d < ring.data() + capacity; ++d)
+      {
+        REQUIRE(d->load(std::memory_order_acquire) == fho::slot_state::empty);
+      }
     }
   }
   GIVEN("3 producers & 3 consumers (front) & 3 consumers (back)")
@@ -859,6 +879,11 @@ SCENARIO("ring_buffer: stress-test")
       }
       REQUIRE(executed.load() == nr_to_process);
       REQUIRE(ring.empty());
+
+      for (auto d = ring.data(); d < ring.data() + capacity; ++d)
+      {
+        REQUIRE(d->load(std::memory_order_acquire) == fho::slot_state::empty);
+      }
     }
   }
 }
@@ -895,6 +920,10 @@ SCENARIO("ring_buffer: standard algorithms")
         {
           REQUIRE(executed.load() == ring.max_size());
           REQUIRE(ring.size() == 0);
+          for (auto d = ring.data(); d < ring.data() + capacity; ++d)
+          {
+            REQUIRE(d->load(std::memory_order_acquire) == fho::slot_state::empty);
+          }
         }
       }
     }
