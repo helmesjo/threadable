@@ -344,7 +344,7 @@ namespace fho
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
       auto       diff = head - tail;
-      max             = std::max(diff, max);
+      max             = std::min(diff, max);
       max             = std::min(tail + max, head);
       auto cap        = tail;
 
