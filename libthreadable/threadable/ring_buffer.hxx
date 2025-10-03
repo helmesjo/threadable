@@ -345,11 +345,13 @@ namespace fho
       auto const head = head_.load(std::memory_order_acquire);
       auto       diff = head - tail;
       max             = std::min(diff, max);
-      max             = std::min(tail + max, head);
-      auto cap        = tail;
+      auto const lim  = tail + max;
+      auto       cap  = tail;
+
+      assert(cap <= lim and "ring_buffer::try_pop_front()");
 
       // @NOTE: Forward-scan & claim until failure, or reached max range.
-      while (cap < max)
+      while (cap < lim)
       {
         auto& elem = elems_[ring_iterator_t::mask(cap)];
         if (!elem.template try_lock<slot_state::ready>())
@@ -358,8 +360,8 @@ namespace fho
         }
         if (elem.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
         {
-          auto& prev = elems_[ring_iterator_t::mask(cap - std::min(diff, index_t{1}))];
-          if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]
+          auto& prev = elems_[ring_iterator_t::mask(cap - 1)];
+          if (!prev.template test<slot_state::empty>(std::memory_order_acquire)) [[unlikely]]
           {
             // Fail: requires previous slot to be empty.
             elem.template unlock<slot_state::locked_ready>();
@@ -429,11 +431,13 @@ namespace fho
       auto const head = head_.load(std::memory_order_acquire);
       auto       diff = head - tail;
       max             = std::min(diff, max);
-      auto const min  = head - max;
+      auto const lim  = head - max;
       auto       cap  = head;
 
+      assert(lim <= cap and "ring_buffer::try_pop_back()");
+
       // @NOTE: Forward-scan & claim until failure, or reached max range.
-      while (cap > min)
+      while (lim < cap)
       {
         auto& elem = elems_[ring_iterator_t::mask(cap - 1)];
         if (!elem.template try_lock<slot_state::ready>())
@@ -442,8 +446,8 @@ namespace fho
         }
         if (elem.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
         {
-          auto& prev = elems_[ring_iterator_t::mask(cap - std::min(diff, index_t{2}))];
-          if (&elem != &prev && !prev.template test<slot_state::empty>()) [[unlikely]]
+          auto& prev = elems_[ring_iterator_t::mask(cap - 2)];
+          if (!prev.template test<slot_state::empty>(std::memory_order_acquire)) [[unlikely]]
           {
             // Fail: requires previous slot to be empty.
             elem.template unlock<slot_state::locked_ready>();
