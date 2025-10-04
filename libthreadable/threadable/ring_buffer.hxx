@@ -13,7 +13,9 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <memory>
 #include <ranges>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -31,6 +33,9 @@ namespace fho
     inline constexpr auto        slot_size        = cache_line_size - sizeof(fho::atomic_state_t);
     inline constexpr std::size_t default_capacity = 1 << 16;
   }
+
+  template<typename R, typename T, template<typename, typename> typename C>
+  concept range_of = std::ranges::range<R> && C<T&, std::ranges::range_value_t<R>>::value;
 
   /// @brief A `fho::function` alias optimized to cache line size for use within a `ring_buffer`.
   /// @details The size of the function object is exactly that of the target system's (deduced)
@@ -167,79 +172,39 @@ namespace fho
       return *this;
     }
 
-    /// @brief Constructs a value into the buffer with an existing token.
-    /// @details Adds a value to the buffer, associating it with a provided token. The process
-    ///          involves:
-    ///          1. **Claim a slot**: Atomically increments `head_` & acquire the slot.
-    //              Blocks via `tail_.wait()` if the buffer is full until space is freed by the
-    //              consumer.
-    ///          2. **Assign the value**: Constructs the value in the slot and binds the token.
-    ///          3. **Commit the slot**: Updates slot `state` to make the slot available, then
-    ///             notifies via `head_.notify_one()`.
-    /// @param token Token to associate with the slot.
-    /// @param args Arguments to construct the value.
-    /// @return Reference to the provided token.
-    /// @note Thread-safe for multiple producers.
-    /// @example
-    /// ```cpp
-    /// fho::slot_token token;
-    /// buffer.emplace_back(token, []() { std::cout << "Task\n"; });
-    /// ```
-    template<slot_state Tags = slot_state::invalid, typename... Args>
-      requires std::constructible_from<T, Args...>
+    template<slot_state Tags = slot_state::invalid>
     auto
-    emplace_back(slot_token& token, Args&&... args) noexcept -> slot_token&
+    push_back(slot_token& token, range_of<T, std::is_constructible> auto&& r) noexcept
+      -> slot_token&
     {
-      // 1. Claim a slot
-      //
-      // @NOTE: Relaxed fetch-add mem order ok, it's followed by slot lock.
-      auto const slot = head_.fetch_add(1, std::memory_order_relaxed);
-      slot_type& elem = elems_[ring_iterator_t::mask(slot)];
-      elem.template lock<slot_state::empty>();
-      dbg::verify(elem, slot_state::locked_empty);
-      elem.template set<Tags, true>(std::memory_order_relaxed);
+      auto const s = std::ssize(r);
+      assert(s <= Capacity and "ring_buffer::push_back()");
+      // 1. Reserv slot(s)
+      auto h = head_.fetch_add(s, std::memory_order_relaxed);
 
-      // 2. Assign & Commit.
-      elem.emplace(FWD(args)...);
-      elem.bind(token);
+      // 2. Construct
+      auto idx = h;
+      for (auto& v : r)
+      {
+        auto& s = elems_[ring_iterator_t::mask(idx)];
+        // Wait until the consumer has recycled this slot to empty, then lock it.
+        // try_lock<empty>() is an acquire-CAS on the slot header.
+        while (!s.template try_lock<slot_state::empty>())
+        {
+          s.template wait<slot_state::empty, false>(std::memory_order_acquire);
+        }
+        s.template set<Tags, true>(std::memory_order_relaxed);
+        s.bind(token);
+        s.emplace(fho::stdext::forward_like<decltype(r)>(v));
 
-      // 3. Notify slot.
-      head_.notify_all();
+        // 3. Publish
+        s.template commit<slot_state::locked_empty>();
+        ++idx;
+      }
 
       return token;
     }
 
-    /// @brief Constructs a value into the buffer and returns a new token.
-    /// @details Adds a value to the buffer by creating a new token and delegating to the
-    ///          token-based overload.
-    /// @param `args` Arguments to construct the value.
-    /// @return New token associated with the slot.
-    /// @note Thread-safe for multiple producers.
-    /// @example
-    /// ```cpp
-    /// auto token = buffer.emplace_back([]() { std::cout << "Task\n"; });
-    /// ```
-    template<slot_state Tags = slot_state::invalid, typename... Args>
-      requires std::constructible_from<T, Args...>
-    auto
-    emplace_back(Args&&... args) noexcept -> slot_token
-    {
-      slot_token token;
-      (void)emplace_back<Tags>(token, FWD(args)...);
-      return token;
-    }
-
-    /// @brief Pushes a value into the buffer with an existing token.
-    /// @details Adds a value to the buffer, associating it with a provided token.
-    /// @param token Token to associate with the slot.
-    /// @param val Value to add.
-    /// @return Reference to the provided token.
-    /// @note Thread-safe for multiple producers.
-    /// @example
-    /// ```cpp
-    /// fho::slot_token token;
-    /// buffer.push_back(token, []() { std::cout << "Task\n"; });
-    /// ```
     template<slot_state Tags = slot_state::invalid, typename U>
       requires std::constructible_from<T, U>
     auto
@@ -248,22 +213,52 @@ namespace fho
       return emplace_back<Tags>(token, FWD(val));
     }
 
-    /// @brief Pushes a value into the buffer and returns a new token.
-    /// @details Adds a value to the buffer by creating a new token and delegating to the
-    ///          token-based overload.
-    /// @param `args` Arguments to construct the value.
-    /// @return New token associated with the slot.
-    /// @note Thread-safe for multiple producers.
-    /// @example
-    /// ```cpp
-    /// auto token = buffer.push_back([]() { std::cout << "Task\n"; });
-    /// ```
     template<slot_state Tags = slot_state::invalid, typename U>
       requires std::constructible_from<T, U>
     auto
-    push_back(U&& val) noexcept -> slot_token
+    push_back(U&& u) noexcept -> slot_token
     {
-      return emplace_back<Tags>(FWD(val));
+      auto t = slot_token{};
+      auto s = std::span{std::addressof(u), 1};
+      push_back<Tags>(t, fho::stdext::forward_like<U>(s));
+      return t;
+    }
+
+    template<slot_state Tags = slot_state::invalid, typename... Args>
+      requires std::constructible_from<T, Args...>
+    auto
+    emplace_back(slot_token& token, Args&&... args) noexcept -> slot_token&
+    {
+      // 1. Reserv slot(s)
+      auto h = head_.fetch_add(1, std::memory_order_relaxed);
+
+      // 2. Construct
+      auto& s = elems_[ring_iterator_t::mask(h)];
+      // Wait until the consumer has recycled this slot to empty, then lock it.
+      // try_lock<empty>() is an acquire-CAS on the slot header.
+      while (!s.template try_lock<slot_state::empty>())
+      {
+        // Wait on the slot state changing away from non-empty (acquire).
+        s.template wait<slot_state::empty, false>(std::memory_order_acquire);
+      }
+      s.template set<Tags, true>(std::memory_order_relaxed);
+      s.bind(token);
+      s.emplace(FWD(args)...);
+
+      // 3. Publish
+      s.template commit<slot_state::locked_empty>();
+
+      return token;
+    }
+
+    template<slot_state Tags = slot_state::invalid, typename... Args>
+      requires std::constructible_from<T, Args...>
+    auto
+    emplace_back(Args&&... args) noexcept -> slot_token
+    {
+      auto t = slot_token{};
+      emplace_back<Tags>(t, FWD(args)...);
+      return t;
     }
 
     /// @brief Accesses the first element in the ring buffer.
@@ -319,7 +314,6 @@ namespace fho
           {
             exp = tail;
           }
-          tail_.notify_all();
           break;
         }
         // 4. Somebody already released tail - Retry.
@@ -490,19 +484,6 @@ namespace fho
         return std::move(*r.begin());
       }
       return nullptr;
-    }
-
-    /// @brief Waits until the buffer has items available.
-    /// @details Blocks until `head_ != tail_`, indicating items are ready for consumption.
-    void
-    wait() const noexcept
-    {
-      auto const tail = tail_.load(std::memory_order_acquire);
-      auto const head = head_.load(std::memory_order_acquire);
-      if (head == tail) [[unlikely]]
-      {
-        head_.wait(head, std::memory_order_acquire);
-      }
     }
 
     /// @brief Clears all items from the buffer.
