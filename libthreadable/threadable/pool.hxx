@@ -186,18 +186,19 @@ namespace fho
       auto s = victim->steal(r, cached);
       if (!cached)
       {
-        constexpr auto cap = std::size_t{4};
-        for (auto t : activity_.master.try_pop_front(cap))
-        {
-          if (!cached)
-          {
-            cached = std::move(t);
-          }
-          else
-          {
-            r.emplace_back(std::move(t));
-          }
-        }
+        // constexpr auto cap = std::size_t{4};
+        // for (auto t : activity_.master.try_pop_front(cap))
+        // {
+        //   if (!cached)
+        //   {
+        //     cached = std::move(t);
+        //   }
+        //   else
+        //   {
+        //     r.emplace_back(std::move(t));
+        //   }
+        // }
+        cached = activity_.master.try_pop_front();
       }
       return std::move(cached);
     }

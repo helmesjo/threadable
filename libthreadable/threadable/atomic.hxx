@@ -107,7 +107,8 @@ namespace fho
     /// @details Compares the bits in `Mask` with `expected`. If they match, sets them to the
     /// corresponding bits in `desired`, preserving other bits. Updates `expected` with the current
     /// bits if the operation fails.
-    /// @tparam Mask A constant expression representing the bitmask to operate on.
+    /// @tparam MaskDes A constant expression representing the bitmask to operate on.
+    /// @tparam MaskExp A constant expression representing the bitmask to operate on.
     /// @param expected Reference to the expected bit values.
     /// @param desired The desired bit values to set if comparison succeeds.
     /// @param success Memory order for the operation.
@@ -206,6 +207,29 @@ namespace fho
       }
     }
 
+    /// @brief Atomically tests and sets or clears the bits specified by the mask.
+    /// @details Tests the bits in `Mask` and sets them if `Value` is true, or clears them if
+    /// `Value` is false.
+    /// @tparam Mask A constant expression representing the bitmask to operate on.
+    /// @param value If true, sets the bits; if false, clears the bits.
+    /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
+    /// @return True if any of the bits in `Mask` were set before the operation, false otherwise.
+    template<T Mask>
+    [[nodiscard]] inline auto
+    test_and_set(bool value, std::same_as<std::memory_order> auto... orders) noexcept -> bool
+    {
+      if (value)
+      {
+        // Set the bits
+        return (atomic_t::fetch_or(to_underlying(Mask), orders...) & Mask) != 0;
+      }
+      else
+      {
+        // Clear the bits
+        return (atomic_t::fetch_and(to_underlying(~Mask), orders...) & Mask) != 0;
+      }
+    }
+
     /// @brief Atomically sets or clears the bits specified by the mask.
     /// @details Sets the bits if `Value` is true, or clears them if `Value` is false, without
     /// returning the previous state.
@@ -217,6 +241,19 @@ namespace fho
     set(std::same_as<std::memory_order> auto... orders) noexcept
     {
       (void)test_and_set<Mask, Value>(orders...);
+    }
+
+    /// @brief Atomically sets or clears the bits specified by the mask.
+    /// @details Sets the bits if `Value` is true, or clears them if `Value` is false, without
+    /// returning the previous state.
+    /// @tparam Mask A constant expression representing the bitmask to operate on.
+    /// @param value If true, sets the bits; if false, clears the bits.
+    /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
+    template<T Mask>
+    inline void
+    set(bool value, std::same_as<std::memory_order> auto... orders) noexcept
+    {
+      (void)test_and_set<Mask>(value, orders...);
     }
 
     /// @brief Atomically clears the bits specified by the mask and returns the previous state.

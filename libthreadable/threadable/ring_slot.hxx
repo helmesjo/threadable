@@ -265,15 +265,13 @@ namespace fho
 #ifndef NDEBUG
       value_ = {};
 #endif
-      auto expected = State;
       // @NOTE: Ownership is dropped, so we reset all bits.
-      if (!state_.compare_exchange_strong<slot_state::state_mask, slot_state::all_mask>(
-            expected, slot_state::empty, std::memory_order_acq_rel, std::memory_order_acquire))
-        [[likely]]
-      {
-        dbg::log("Prerequisite violation: ", expected, slot_state::locked_ready);
-        std::abort();
-      }
+      // Expected = current {state,epoch} (and we assert state is locked_ready)
+      auto curr = state_.load(std::memory_order_relaxed);
+      // Desired = {state=empty, epoch = flipped}
+      auto val = static_cast<slot_state>(slot_state::empty |
+                                         ((curr ^ slot_state::epoch) & slot_state::epoch));
+      state_.store(val, std::memory_order_release);
       state_.notify_all();
     }
 
@@ -325,6 +323,13 @@ namespace fho
     {
       state_.set<Mask, Value>(orders...);
     }
+
+    // template<slot_state Mask>
+    // inline void
+    // set(bool value, std::same_as<std::memory_order> auto... orders) noexcept
+    // {
+    //   state_.set<Mask>(value, orders...);
+    // }
 
     [[nodiscard]] inline auto
     load(std::memory_order order) const noexcept -> slot_state
@@ -492,10 +497,29 @@ namespace fho
     //   return std::exchange(slot_, nullptr);
     // }
 
+    template<typename U>
+      requires (!std::common_reference_with<T, U>)
     [[nodiscard]] inline constexpr
-    operator bool() const noexcept
+    operator U&&() const noexcept
     {
       return slot_ != nullptr;
+    }
+
+    template<std::common_reference_with<T> U>
+    [[nodiscard]] inline constexpr
+    operator U() const noexcept
+      requires (std::same_as<U, bool>)
+    {
+      return slot_ != nullptr;
+    }
+
+    template<std::common_reference_with<T> U>
+    [[nodiscard]] inline constexpr
+    operator U() const noexcept
+      requires (!std::same_as<U, bool>)
+    {
+      assert(slot_ != nullptr and "claimed_slot::U()");
+      return *slot_;
     }
 
     // [[nodiscard]] inline constexpr auto

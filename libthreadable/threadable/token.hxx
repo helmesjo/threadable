@@ -20,14 +20,17 @@ namespace fho
     ready = 1 << 1,
     /// @brief Exclusive ownership.
     locked = 1 << 2,
+    epoch  = 1 << 3,
     /// @brief Owned & empty = Assign.
     locked_empty = locked | empty,
     /// @brief Owned & ready = Read/Modify.
     locked_ready = locked | ready,
     /// @brief Depends on previous task.
-    tag_seq = 1 << 3,
+    tag_seq = 1 << 4,
     /// @brief Mask for state bits.
     state_mask = empty | ready | locked,
+    /// @brief Mask for state+epoch bits.
+    state_u_epoch_mask = state_mask | epoch,
     /// @brief Mask for tag bits.
     tag_mask = tag_seq,
     /// @brief Mask for all bits.

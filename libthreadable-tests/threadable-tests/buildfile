@@ -3,7 +3,7 @@ import libs += \
   libthreadable%lib{threadable} \
   doctest%lib{doctest}
 
-exe{threadable-tests}: {hxx cxx}{doctest* pool*} $libs
+exe{threadable-tests}: {hxx cxx}{doctest* ring_buffer.test.cxx} $libs
 {
   test = true
   install = false
