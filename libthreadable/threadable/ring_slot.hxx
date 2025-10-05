@@ -183,6 +183,24 @@ namespace fho
     }
 
     template<slot_state State>
+      requires (State == slot_state::locked_empty)
+    inline void
+    commit() noexcept
+    {
+      constexpr auto desired = slot_state::ready;
+
+      dbg::verify<slot_state::state_mask>(state_, State);
+      auto exp = State;
+      if (!state_.compare_exchange_strong<slot_state::state_mask>(exp, desired,
+                                                                  std::memory_order_acq_rel,
+                                                                  std::memory_order_acquire))
+      {
+        dbg::log("Prerequisite violation: ", exp, slot_state::locked_empty);
+        std::abort();
+      }
+    }
+
+    template<slot_state State>
       requires (State == slot_state::locked_empty || State == slot_state::locked_ready)
     void
     unlock() noexcept
@@ -224,14 +242,6 @@ namespace fho
 #endif
 
       std::construct_at<T>(data(), FWD(args)...);
-      auto exp = slot_state::locked_empty;
-      if (!state_.compare_exchange_strong<slot_state::state_mask>(exp, slot_state::ready,
-                                                                  std::memory_order_acq_rel,
-                                                                  std::memory_order_acquire))
-      {
-        dbg::log("Prerequisite violation: ", exp, slot_state::locked_empty);
-        std::abort();
-      }
       // @NOTE: Intentionally not notifying here since it's redundant (and costly),
       //        it is designed to be waited on by checking state `ready | ready_locked` -> `empty`.
     }
@@ -338,7 +348,7 @@ namespace fho
     inline constexpr auto
     value() noexcept -> T&
     {
-      dbg::verify<slot_state::state_mask>(state_, slot_state::locked_ready);
+      // dbg::verify<slot_state::state_mask>(state_, slot_state::locked_ready);
       return *data(); // NOLINT
     }
 
@@ -348,7 +358,7 @@ namespace fho
     inline constexpr auto
     value() const noexcept -> T const&
     {
-      dbg::verify_bitwise(state_, slot_state::ready | slot_state::locked_ready);
+      // dbg::verify_bitwise(state_, slot_state::ready | slot_state::locked_ready);
       return *data(); // NOLINT
     }
 
@@ -475,12 +485,12 @@ namespace fho
       }
     }
 
-    auto
-    release() noexcept -> decltype(auto)
-    {
-      assert(slot_ and "claimed_slot<T>::slot()");
-      return std::exchange(slot_, nullptr);
-    }
+    // auto
+    // release() noexcept -> decltype(auto)
+    // {
+    //   assert(slot_ and "claimed_slot<T>::slot()");
+    //   return std::exchange(slot_, nullptr);
+    // }
 
     [[nodiscard]] inline constexpr
     operator bool() const noexcept
