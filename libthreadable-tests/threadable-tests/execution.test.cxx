@@ -13,14 +13,22 @@ SCENARIO("executor: Submit callables")
   auto master   = fho::ring_buffer<>{};
   auto order    = std::vector<bool>{};
 
-  auto stealer = [&master](std::ranges::range auto&& r) -> std::size_t
+  auto stealer = [&master](std::ranges::range auto&& r) -> typename decltype(master)::claimed_type
   {
+    using cached_t = std::ranges::range_value_t<decltype(r)>;
+    auto cached    = cached_t{nullptr};
     if (auto t = master.try_pop_back())
     {
-      r.emplace_back(std::move(t));
-      return 1;
+      if (!cached)
+      {
+        cached = std::move(t);
+      }
+      else
+      {
+        r.emplace_back(std::move(t));
+      }
     }
-    return 0;
+    return cached;
   };
 
   auto exec1 = fho::executor(activity, stealer);

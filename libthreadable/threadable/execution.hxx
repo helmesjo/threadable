@@ -64,7 +64,6 @@ namespace fho
 
       if (auto t = tasks_.try_pop_front(); t)
       {
-        // r.emplace_back(std::move(*t));
         cached = std::move(*t);
         return 1;
       }

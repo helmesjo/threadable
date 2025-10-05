@@ -172,7 +172,7 @@ namespace fho
     ///          or the queue is empty. Thread-safe for concurrent stealing.
     /// @return A `claimed_slot<fast_func_t>` if a task is stolen, or `nullptr` if none available.
     [[nodiscard]] auto
-    steal(std::ranges::range auto&& r) noexcept
+    steal(std::ranges::range auto& r) noexcept -> claimed_slot<fast_func_t>
     {
       thread_local auto rng = std::mt19937{std::random_device{}()};
       using cached_t        = std::ranges::range_value_t<decltype(r)>;
@@ -183,7 +183,7 @@ namespace fho
 
       auto cached = cached_t{nullptr};
 
-      auto s = victim->steal(FWD(r), cached);
+      auto s = victim->steal(r, cached);
       if (!cached)
       {
         constexpr auto cap = std::size_t{4};
