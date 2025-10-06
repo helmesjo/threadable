@@ -507,7 +507,7 @@ namespace fho
     template<std::common_reference_with<T> U>
     [[nodiscard]] inline constexpr
     operator U() const noexcept
-      requires (!std::same_as<U, bool>)
+      requires (!std::same_as<U, bool> && std::convertible_to<T, U>)
     {
       assert(slot_ != nullptr and "claimed_slot::U()");
       return *slot_;
