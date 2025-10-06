@@ -283,10 +283,18 @@ namespace fho
           for (; scan < bound; ++scan)
           {
             auto& s = elems_[ring_iterator_t::mask(scan)];
-            if (!(s.template test<slot_state::ready>(std::memory_order_acquire) &&
-                  (s.template test<slot_state::epoch>(std::memory_order_relaxed) ==
-                   epoch_of(scan))))
+
+            auto const epeq =
+              (s.template test<slot_state::epoch>(std::memory_order_relaxed) == epoch_of(scan));
+            bool const publishable =
+              // still available to consumers for this lap
+              // or already consumed for this lap
+              (epeq && (s.template test<slot_state::ready>(std::memory_order_acquire) ||
+                        s.template test<slot_state::locked_ready>(std::memory_order_acquire))) ||
+              (!epeq && s.template test<slot_state::empty>(std::memory_order_acquire));
+            if (!publishable)
             {
+              auto str = dbg::to_str(s.load(std::memory_order_acquire));
               break; // hole at `scan` → cannot advance beyond it
             }
           }
