@@ -275,17 +275,6 @@ namespace fho
       state_.notify_all();
     }
 
-    template<slot_state State>
-      requires (State == slot_state::locked_ready)
-    inline void
-    try_release() noexcept
-    {
-      if (test<slot_state::locked_ready>(std::memory_order_acquire))
-      {
-        release<slot_state::locked_ready>();
-      }
-    }
-
     /// @brief Waits for the slot to leave a state.
     /// @details Blocks until the slot's state changes to/from `State`, typically indicating that
     /// the stored value (e.g., a task) has been processed and released.
@@ -318,18 +307,20 @@ namespace fho
     /// @tparam Value If true, sets the bits; if false, clears the bits.
     /// @param orders Memory orders for the operation (e.g., `std::memory_order_seq_cst`).
     template<slot_state Mask, bool Value>
+      requires ((Mask & (slot_state::state_mask)) == 0)
     inline void
     set(std::same_as<std::memory_order> auto... orders) noexcept
     {
       state_.set<Mask, Value>(orders...);
     }
 
-    // template<slot_state Mask>
-    // inline void
-    // set(bool value, std::same_as<std::memory_order> auto... orders) noexcept
-    // {
-    //   state_.set<Mask>(value, orders...);
-    // }
+    template<slot_state Mask>
+      requires ((Mask & (slot_state::state_mask)) == 0)
+    inline void
+    set(bool value, std::same_as<std::memory_order> auto... orders) noexcept
+    {
+      state_.set<Mask>(value, orders...);
+    }
 
     [[nodiscard]] inline auto
     load(std::memory_order order) const noexcept -> slot_state
