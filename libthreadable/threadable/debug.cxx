@@ -1,6 +1,8 @@
 #include <threadable/debug.hxx>
 #include <threadable/token.hxx>
 
+#include <sstream>
+
 #ifdef _WIN32
   #define WIN32_LEAN_AND_MEAN
   #include <io.h>
@@ -28,40 +30,9 @@ namespace fho::dbg
   auto
   to_str(slot_state s) noexcept -> std::string
   {
-    std::string result;
-
-    bool first  = true;
-    auto append = [&](char const* str)
-    {
-      if (!first)
-      {
-        result += "|";
-      }
-      result += str;
-      first = false;
-    };
-
-    if (s == fho::invalid)
-    {
-      return "invalid";
-    }
-    if (s == fho::empty)
-    {
-      append("empty");
-    }
-    if (s & fho::ready)
-    {
-      append("ready");
-    }
-    if (s & fho::locked)
-    {
-      append("locked");
-    }
-    if (s & fho::tag_seq)
-    {
-      append("sequential");
-    }
-
-    return result.empty() ? "unknown" : result;
+    auto ss = std::stringstream{};
+    ss << s;
+    auto res = ss.str();
+    return res.empty() ? "unknown" : res;
   }
 }

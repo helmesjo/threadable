@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <ostream>
 #include <type_traits>
 #include <vector>
 
@@ -20,7 +21,8 @@ namespace fho
     ready = 1 << 1,
     /// @brief Exclusive ownership.
     locked = 1 << 2,
-    epoch  = 1 << 3,
+    /// @brief Related epoch.
+    epoch = 1 << 3,
     /// @brief Owned & empty = Assign.
     locked_empty = locked | empty,
     /// @brief Owned & ready = Read/Modify.
@@ -56,6 +58,53 @@ namespace fho
   {
     using ut_t = std::underlying_type_t<slot_state>;
     return static_cast<slot_state>(~static_cast<ut_t>(rhs));
+  }
+
+  inline constexpr auto
+  operator<<(std::ostream& os, slot_state const& v) -> std::ostream&
+  {
+    bool first  = true;
+    auto append = [&](char const* str)
+    {
+      if (!first)
+      {
+        os << "|";
+      }
+      os << str;
+      first = false;
+    };
+
+    if (v == fho::invalid)
+    {
+      append("invalid");
+    }
+    if (v == fho::empty)
+    {
+      append("empty");
+    }
+    if (v & fho::ready)
+    {
+      append("ready");
+    }
+    if (v & fho::locked)
+    {
+      append("locked");
+    }
+    if (v & fho::epoch)
+    {
+      append("epoch");
+    }
+    if (v & fho::tag_seq)
+    {
+      append("sequential");
+    }
+
+    if (first)
+    {
+      append("unknown");
+    }
+
+    return os;
   }
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;

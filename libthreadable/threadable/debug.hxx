@@ -50,7 +50,7 @@ namespace fho::dbg
 
   template<slot_state Mask = slot_state::all_mask, typename T>
   inline void
-  verify(T& current, slot_state expected,
+  verify(T const& current, slot_state expected,
          std::source_location l = std::source_location::current()) noexcept
     requires requires (T& c) { c.load(std::memory_order_relaxed); }
   {
