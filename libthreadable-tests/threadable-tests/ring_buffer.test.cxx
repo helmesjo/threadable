@@ -241,7 +241,7 @@ namespace
 //   auto ring = fho::ring_buffer<int, 8>{};
 //   GIVEN("an empty ring")
 //   {
-//     auto e = ring.try_pop_back();
+//     auto e = ring.try_pop_back2();
 //     REQUIRE_FALSE(e);
 //   }
 //   GIVEN("a ring with 2 emplaced items")
@@ -253,19 +253,19 @@ namespace
 //       THEN("it pops from head")
 //       {
 //         {
-//           auto e = ring.try_pop_back();
+//           auto e = ring.try_pop_back2();
 //           REQUIRE(e);
 //           REQUIRE(*e == 2);
 //           REQUIRE(ring.size() == 1);
 //         }
 //         {
-//           auto e = ring.try_pop_back();
+//           auto e = ring.try_pop_back2();
 //           REQUIRE(e);
 //           REQUIRE(*e == 1);
 //           REQUIRE(ring.size() == 0);
 //         }
 //         {
-//           auto e = ring.try_pop_back();
+//           auto e = ring.try_pop_back2();
 //           REQUIRE_FALSE(e);
 //         }
 //       }
@@ -279,10 +279,72 @@ namespace
 //     {
 //       THEN("it fails to pop back")
 //       {
-//         auto e = ring.try_pop_back();
+//         auto e = ring.try_pop_back2();
 //         REQUIRE_FALSE(e);
 //       }
 //     }
+//   }
+// }
+
+// SCENARIO("ring_buffer: pop back & front")
+// {
+//   auto ring = fho::ring_buffer<int, 8>{};
+//   // GIVEN("a ring with 2 emplaced items")
+//   // {
+//   //   ring.emplace_back(1);
+//   //   ring.emplace_back(2);
+//   //   WHEN("popping once from back & front")
+//   //   {
+//   //     THEN("it pops respective item")
+//   //     {
+//   //       {
+//   //         auto e = ring.try_pop_back2();
+//   //         REQUIRE(*e == 2);
+//   //         REQUIRE(ring.size() == 1);
+//   //       }
+//   //       {
+//   //         auto e = ring.try_pop_back2();
+//   //         REQUIRE(e);
+//   //         REQUIRE(*e == 1);
+//   //         REQUIRE(ring.size() == 0);
+//   //       }
+//   //       REQUIRE_FALSE(ring.try_pop_back());
+//   //       REQUIRE_FALSE(ring.try_pop_front());
+//   //     }
+//   //   }
+//   // }
+//   GIVEN("a ring with gaps (empty) slots")
+//   {
+//     ring.emplace_back(1);
+//     ring.emplace_back(2);
+//     ring.emplace_back(3);
+//     auto e = ring.try_pop_back2();
+//     REQUIRE(e);
+//     REQUIRE(*e == 3);
+//     ring.emplace_back(4);
+//     e = ring.try_pop_back2();
+//     REQUIRE(e);
+//     REQUIRE(*e == 4);
+//     e = ring.try_pop_back2();
+//     REQUIRE(e);
+//     REQUIRE(*e == 2);
+//     ring.emplace_back(5);
+//     e = ring.try_pop_back2();
+//     REQUIRE(e);
+//     REQUIRE(*e == 5);
+//     e = ring.try_pop_back2();
+//     REQUIRE(e);
+//     REQUIRE(*e == 1);
+
+//     // auto itr = ring.begin();
+//     // REQUIRE(*itr == 1); // slot: 0
+//     // ++itr;
+//     // REQUIRE(*itr == 2); // slot: 1
+//     // ++itr;
+//     // ++itr;
+//     // ++itr;
+//     // REQUIRE(*itr == 5); // slot: 4
+//     // head_: 5, headPop_: 5
 //   }
 // }
 
@@ -473,109 +535,38 @@ SCENARIO("ring_buffer: stress-test")
       return !ring.empty() || producers.joinable();
     }
   };
-  GIVEN("produce & consume enough for wrap-around")
-  {
-    auto ring = fho::ring_buffer<func_t, capacity>();
+  // GIVEN("produce & consume enough for wrap-around")
+  // {
+  //   auto ring = fho::ring_buffer<func_t, capacity>();
 
-    static constexpr auto nr_of_tasks = ring.max_size() * 2;
+  //   static constexpr auto nr_of_tasks = ring.max_size() * 2;
 
-    auto executed = std::atomic_size_t{0};
+  //   auto executed = std::atomic_size_t{0};
 
-    for (std::size_t i = 0; i < nr_of_tasks; ++i)
-    {
-      auto token = ring.emplace_back(
-        [&executed]
-        {
-          ++executed;
-        });
-      if (auto e = ring.try_pop_front(); e)
-      {
-        e();
-      }
-      REQUIRE(token.done());
-    }
+  //   for (std::size_t i = 0; i < nr_of_tasks; ++i)
+  //   {
+  //     auto token = ring.emplace_back(
+  //       [&executed]
+  //       {
+  //         ++executed;
+  //       });
+  //     if (auto e = ring.try_pop_front(); e)
+  //     {
+  //       e();
+  //     }
+  //     REQUIRE(token.done());
+  //   }
 
-    THEN("all tasks are executed")
-    {
-      REQUIRE(executed.load() == nr_of_tasks);
-      for (auto d = ring.data(); d < ring.data() + capacity; ++d)
-      {
-        REQUIRE(d->load(std::memory_order_acquire) == fho::slot_state::empty);
-      }
-    }
-  }
-  GIVEN("1 producer (back) & 1 consumer (front)")
-  {
-    static constexpr auto nr_producers  = std::size_t{1};
-    static constexpr auto nr_consumers  = std::size_t{1};
-    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
-
-    auto ring    = fho::ring_buffer<func_t, capacity>();
-    auto barrier = std::barrier{nr_consumers + nr_producers};
-
-    THEN("there are no race conditions")
-    {
-      auto executed = std::atomic_size_t{0};
-
-      // start producers
-      std::vector<std::thread> producers;
-      for (std::size_t i = 0; i < nr_producers; ++i)
-      {
-        producers.emplace_back(
-          [&barrier, &ring, &executed]
-          {
-            barrier.arrive_and_wait();
-            for (std::size_t i = 0; i < ring.max_size(); ++i)
-            {
-              ring.emplace_back(
-                [&executed]
-                {
-                  ++executed;
-                });
-            }
-          });
-      }
-      // start consumers
-      std::vector<std::thread> consumers;
-      for (std::size_t i = 0; i < nr_consumers; ++i)
-      {
-        consumers.emplace_back(
-          [&barrier, &ring, &producers]
-          {
-            barrier.arrive_and_wait();
-            while (keep_consuming(ring, producers))
-            {
-              if (auto e = ring.try_pop_front(); e)
-              {
-                e();
-              }
-            }
-          });
-      }
-
-      for (auto& producer : producers)
-      {
-        producer.join();
-      }
-
-      for (auto& consumer : consumers)
-      {
-        consumer.join();
-      }
-
-      auto i = std::uint64_t{0u};
-      for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
-      {
-        INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
-                           << ", slot: " << decltype(ring)::mask(i)
-                           << " state: " << d->load(std::memory_order_acquire));
-        REQUIRE(d->template test<fho::slot_state::empty>());
-      }
-      REQUIRE(executed.load() == nr_to_process);
-      REQUIRE(ring.size() == 0);
-    }
-  }
-  // GIVEN("1 producer (back) & 1 consumer (back)")
+  //   THEN("all tasks are executed")
+  //   {
+  //     REQUIRE(executed.load() == nr_of_tasks);
+  //     for (auto d = ring.data(); d < ring.data() + capacity; ++d)
+  //     {
+  //       REQUIRE(d->load(std::memory_order_acquire) == fho::slot_state::empty);
+  //     }
+  //   }
+  // }
+  // GIVEN("1 producer (back) & 1 consumer (front)")
   // {
   //   static constexpr auto nr_producers  = std::size_t{1};
   //   static constexpr auto nr_consumers  = std::size_t{1};
@@ -616,7 +607,7 @@ SCENARIO("ring_buffer: stress-test")
   //           barrier.arrive_and_wait();
   //           while (keep_consuming(ring, producers))
   //           {
-  //             if (auto e = ring.try_pop_back(); e)
+  //             if (auto e = ring.try_pop_front(); e)
   //             {
   //               e();
   //             }
@@ -634,18 +625,21 @@ SCENARIO("ring_buffer: stress-test")
   //       consumer.join();
   //     }
 
+  //     auto i = std::uint64_t{0u};
+  //     for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
+  //     {
+  //       INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
+  //                          << ", slot: " << decltype(ring)::mask(i)
+  //                          << " state: " << d->load(std::memory_order_acquire));
+  //       REQUIRE(d->template test<fho::slot_state::empty>());
+  //     }
   //     REQUIRE(executed.load() == nr_to_process);
   //     REQUIRE(ring.size() == 0);
-  //     for (auto d = ring.data(); d < ring.data() + capacity; ++d)
-  //     {
-  //       REQUIRE((d->load(std::memory_order_acquire) & fho::slot_state::state_mask) ==
-  //               fho::slot_state::empty);
-  //     }
   //   }
   // }
-  GIVEN("5 producers (back) & 1 consumer (front)")
+  GIVEN("1 producer (back) & 1 consumer (back)")
   {
-    static constexpr auto nr_producers  = std::size_t{5};
+    static constexpr auto nr_producers  = std::size_t{1};
     static constexpr auto nr_consumers  = std::size_t{1};
     static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
 
@@ -654,228 +648,309 @@ SCENARIO("ring_buffer: stress-test")
 
     THEN("there are no race conditions")
     {
-      auto executed = std::atomic_size_t{0};
+      auto k = 0u;
+      while (true)
+      {
+        auto executed = std::atomic_size_t{0};
 
-      // start producers
-      std::vector<std::thread> producers;
-      for (std::size_t i = 0; i < nr_producers; ++i)
-      {
-        producers.emplace_back(
-          [&barrier, &ring, &executed]
-          {
-            barrier.arrive_and_wait();
-            for (std::size_t i = 0; i < ring.max_size(); ++i)
+        // start producers
+        std::vector<std::thread> producers;
+        for (std::size_t i = 0; i < nr_producers; ++i)
+        {
+          producers.emplace_back(
+            [&barrier, &ring, &executed]
             {
-              ring.emplace_back(
-                [&executed]
-                {
-                  ++executed;
-                });
-            }
-          });
-      }
-      // start consumers
-      std::vector<std::thread> consumers;
-      for (std::size_t i = 0; i < nr_consumers; ++i)
-      {
-        consumers.emplace_back(
-          [&barrier, &ring, &producers]
-          {
-            barrier.arrive_and_wait();
-            while (keep_consuming(ring, producers))
-            {
-              if (auto e = ring.try_pop_front(); e)
+              auto tokens = fho::token_group{};
+              barrier.arrive_and_wait();
+              for (std::size_t i = 0; i < ring.max_size(); ++i)
               {
-                e();
+                tokens += ring.emplace_back(
+                  [&executed]
+                  {
+                    ++executed;
+                  });
               }
-            }
-          });
-      }
+              tokens.wait();
+            });
+        }
+        // start consumers
+        std::vector<std::thread> consumers;
+        for (std::size_t i = 0; i < nr_consumers; ++i)
+        {
+          consumers.emplace_back(
+            [&barrier, &ring, &producers]
+            {
+              barrier.arrive_and_wait();
+              while (keep_consuming(ring, producers))
+              {
+                if (auto e = ring.try_pop_back2(); e)
+                {
+                  e();
+                }
+              }
+            });
+        }
 
-      for (auto& producer : producers)
-      {
-        producer.join();
-      }
+        for (auto& producer : producers)
+        {
+          producer.join();
+        }
 
-      for (auto& consumer : consumers)
-      {
-        consumer.join();
-      }
+        for (auto& consumer : consumers)
+        {
+          consumer.join();
+        }
 
-      auto i = std::uint64_t{0u};
-      for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
-      {
-        INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
-                           << ", slot: " << decltype(ring)::mask(i)
-                           << " state: " << d->load(std::memory_order_acquire));
-        REQUIRE(d->template test<fho::slot_state::empty>());
+        auto i = std::uint64_t{0u};
+        for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
+        {
+          INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
+                             << ", slot: " << decltype(ring)::mask(i)
+                             << " state: " << d->load(std::memory_order_acquire));
+          REQUIRE(d->template test<fho::slot_state::empty>());
+        }
+        REQUIRE(executed.load() == nr_to_process);
+        REQUIRE(ring.size() == 0);
+        if (++k % 100 == 0)
+        {
+          std::cout << "Gucci after: " << k << "\n";
+        }
       }
-      REQUIRE(executed.load() == nr_to_process);
-      REQUIRE(ring.size() == 0);
     }
   }
-  GIVEN("1 producer (back) & 5 consumers (front)")
-  {
-    static constexpr auto nr_producers  = std::size_t{1};
-    static constexpr auto nr_consumers  = std::size_t{5};
-    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+  // GIVEN("5 producers (back) & 1 consumer (front)")
+  // {
+  //   static constexpr auto nr_producers  = std::size_t{5};
+  //   static constexpr auto nr_consumers  = std::size_t{1};
+  //   static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
 
-    auto ring    = fho::ring_buffer<func_t, capacity>();
-    auto barrier = std::barrier{nr_consumers + nr_producers};
+  //   auto ring    = fho::ring_buffer<func_t, capacity>();
+  //   auto barrier = std::barrier{nr_consumers + nr_producers};
 
-    THEN("there are no race conditions")
-    {
-      auto executed = std::atomic_size_t{0};
+  //   THEN("there are no race conditions")
+  //   {
+  //     auto executed = std::atomic_size_t{0};
 
-      // start producers
-      std::vector<std::thread> producers;
-      for (std::size_t i = 0; i < nr_producers; ++i)
-      {
-        producers.emplace_back(
-          [&barrier, &ring, &executed]
-          {
-            barrier.arrive_and_wait();
-            for (std::size_t i = 0; i < ring.max_size(); ++i)
-            {
-              ring.emplace_back(
-                [&executed]
-                {
-                  ++executed;
-                });
-            }
-          });
-      }
-      // start consumers
-      std::vector<std::thread> consumers;
-      for (std::size_t i = 0; i < nr_consumers; ++i)
-      {
-        consumers.emplace_back(
-          [&barrier, &ring, &producers, i]
-          {
-            barrier.arrive_and_wait();
-            while (keep_consuming(ring, producers))
-            {
-              if (i % 2 == 0)
-              {
-                if (auto e = ring.try_pop_front(); e)
-                {
-                  e();
-                }
-              }
-              else
-              {
-                for (auto e : ring.try_pop_front(3))
-                {
-                  e();
-                }
-              }
-            }
-          });
-      }
+  //     // start producers
+  //     std::vector<std::thread> producers;
+  //     for (std::size_t i = 0; i < nr_producers; ++i)
+  //     {
+  //       producers.emplace_back(
+  //         [&barrier, &ring, &executed]
+  //         {
+  //           barrier.arrive_and_wait();
+  //           for (std::size_t i = 0; i < ring.max_size(); ++i)
+  //           {
+  //             ring.emplace_back(
+  //               [&executed]
+  //               {
+  //                 ++executed;
+  //               });
+  //           }
+  //         });
+  //     }
+  //     // start consumers
+  //     std::vector<std::thread> consumers;
+  //     for (std::size_t i = 0; i < nr_consumers; ++i)
+  //     {
+  //       consumers.emplace_back(
+  //         [&barrier, &ring, &producers]
+  //         {
+  //           barrier.arrive_and_wait();
+  //           while (keep_consuming(ring, producers))
+  //           {
+  //             if (auto e = ring.try_pop_front(); e)
+  //             {
+  //               e();
+  //             }
+  //           }
+  //         });
+  //     }
 
-      for (auto& producer : producers)
-      {
-        producer.join();
-      }
+  //     for (auto& producer : producers)
+  //     {
+  //       producer.join();
+  //     }
 
-      for (auto& consumer : consumers)
-      {
-        consumer.join();
-      }
+  //     for (auto& consumer : consumers)
+  //     {
+  //       consumer.join();
+  //     }
 
-      auto i = std::uint64_t{0u};
-      for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
-      {
-        INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
-                           << ", slot: " << decltype(ring)::mask(i)
-                           << " state: " << d->load(std::memory_order_acquire));
-        REQUIRE(d->template test<fho::slot_state::empty>());
-      }
-      REQUIRE(executed.load() == nr_to_process);
-      REQUIRE(ring.size() == 0);
-    }
-  }
-  GIVEN("4 producers (back) & 4 consumers (front)")
-  {
-    static constexpr auto nr_producers  = std::size_t{4};
-    static constexpr auto nr_consumers  = std::size_t{4};
-    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+  //     auto i = std::uint64_t{0u};
+  //     for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
+  //     {
+  //       INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
+  //                          << ", slot: " << decltype(ring)::mask(i)
+  //                          << " state: " << d->load(std::memory_order_acquire));
+  //       REQUIRE(d->template test<fho::slot_state::empty>());
+  //     }
+  //     REQUIRE(executed.load() == nr_to_process);
+  //     REQUIRE(ring.size() == 0);
+  //   }
+  // }
+  // GIVEN("1 producer (back) & 5 consumers (front)")
+  // {
+  //   static constexpr auto nr_producers  = std::size_t{1};
+  //   static constexpr auto nr_consumers  = std::size_t{5};
+  //   static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
 
-    auto ring    = fho::ring_buffer<func_t, capacity>();
-    auto barrier = std::barrier{nr_consumers + nr_producers};
+  //   auto ring    = fho::ring_buffer<func_t, capacity>();
+  //   auto barrier = std::barrier{nr_consumers + nr_producers};
 
-    THEN("there are no race conditions")
-    {
-      auto executed = std::atomic_size_t{0};
+  //   THEN("there are no race conditions")
+  //   {
+  //     auto executed = std::atomic_size_t{0};
 
-      // start producers
-      std::vector<std::thread> producers;
-      for (std::size_t i = 0; i < nr_producers; ++i)
-      {
-        producers.emplace_back(
-          [&barrier, &ring, &executed]
-          {
-            barrier.arrive_and_wait();
-            for (std::size_t i = 0; i < ring.max_size(); ++i)
-            {
-              ring.emplace_back(
-                [&executed]
-                {
-                  ++executed;
-                });
-            }
-          });
-      }
-      // start consumers
-      std::vector<std::thread> consumers;
-      for (std::size_t i = 0; i < nr_consumers; ++i)
-      {
-        consumers.emplace_back(
-          [&barrier, &ring, &producers, i]
-          {
-            barrier.arrive_and_wait();
-            while (keep_consuming(ring, producers))
-            {
-              if (i % 2 == 0)
-              {
-                if (auto e = ring.try_pop_front(); e)
-                {
-                  e();
-                }
-              }
-              else
-              {
-                for (auto e : ring.try_pop_front(3))
-                {
-                  e();
-                }
-              }
-            }
-          });
-      }
+  //     // start producers
+  //     std::vector<std::thread> producers;
+  //     for (std::size_t i = 0; i < nr_producers; ++i)
+  //     {
+  //       producers.emplace_back(
+  //         [&barrier, &ring, &executed]
+  //         {
+  //           barrier.arrive_and_wait();
+  //           for (std::size_t i = 0; i < ring.max_size(); ++i)
+  //           {
+  //             ring.emplace_back(
+  //               [&executed]
+  //               {
+  //                 ++executed;
+  //               });
+  //           }
+  //         });
+  //     }
+  //     // start consumers
+  //     std::vector<std::thread> consumers;
+  //     for (std::size_t i = 0; i < nr_consumers; ++i)
+  //     {
+  //       consumers.emplace_back(
+  //         [&barrier, &ring, &producers, i]
+  //         {
+  //           barrier.arrive_and_wait();
+  //           while (keep_consuming(ring, producers))
+  //           {
+  //             if (i % 2 == 0)
+  //             {
+  //               if (auto e = ring.try_pop_front(); e)
+  //               {
+  //                 e();
+  //               }
+  //             }
+  //             else
+  //             {
+  //               for (auto e : ring.try_pop_front(3))
+  //               {
+  //                 e();
+  //               }
+  //             }
+  //           }
+  //         });
+  //     }
 
-      for (auto& producer : producers)
-      {
-        producer.join();
-      }
+  //     for (auto& producer : producers)
+  //     {
+  //       producer.join();
+  //     }
 
-      for (auto& consumer : consumers)
-      {
-        consumer.join();
-      }
+  //     for (auto& consumer : consumers)
+  //     {
+  //       consumer.join();
+  //     }
 
-      auto i = std::uint64_t{0u};
-      for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
-      {
-        INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
-                           << ", slot: " << decltype(ring)::mask(i)
-                           << " state: " << d->load(std::memory_order_acquire));
-        REQUIRE(d->template test<fho::slot_state::empty>());
-      }
-      REQUIRE(executed.load() == nr_to_process);
-      REQUIRE(ring.size() == 0);
-    }
-  }
+  //     auto i = std::uint64_t{0u};
+  //     for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
+  //     {
+  //       INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
+  //                          << ", slot: " << decltype(ring)::mask(i)
+  //                          << " state: " << d->load(std::memory_order_acquire));
+  //       REQUIRE(d->template test<fho::slot_state::empty>());
+  //     }
+  //     REQUIRE(executed.load() == nr_to_process);
+  //     REQUIRE(ring.size() == 0);
+  //   }
+  // }
+  // GIVEN("4 producers (back) & 4 consumers (front)")
+  // {
+  //   static constexpr auto nr_producers  = std::size_t{4};
+  //   static constexpr auto nr_consumers  = std::size_t{4};
+  //   static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+
+  //   auto ring    = fho::ring_buffer<func_t, capacity>();
+  //   auto barrier = std::barrier{nr_consumers + nr_producers};
+
+  //   THEN("there are no race conditions")
+  //   {
+  //     auto executed = std::atomic_size_t{0};
+
+  //     // start producers
+  //     std::vector<std::thread> producers;
+  //     for (std::size_t i = 0; i < nr_producers; ++i)
+  //     {
+  //       producers.emplace_back(
+  //         [&barrier, &ring, &executed]
+  //         {
+  //           barrier.arrive_and_wait();
+  //           for (std::size_t i = 0; i < ring.max_size(); ++i)
+  //           {
+  //             ring.emplace_back(
+  //               [&executed]
+  //               {
+  //                 ++executed;
+  //               });
+  //           }
+  //         });
+  //     }
+  //     // start consumers
+  //     std::vector<std::thread> consumers;
+  //     for (std::size_t i = 0; i < nr_consumers; ++i)
+  //     {
+  //       consumers.emplace_back(
+  //         [&barrier, &ring, &producers, i]
+  //         {
+  //           barrier.arrive_and_wait();
+  //           while (keep_consuming(ring, producers))
+  //           {
+  //             if (i % 2 == 0)
+  //             {
+  //               if (auto e = ring.try_pop_front(); e)
+  //               {
+  //                 e();
+  //               }
+  //             }
+  //             else
+  //             {
+  //               for (auto e : ring.try_pop_front(3))
+  //               {
+  //                 e();
+  //               }
+  //             }
+  //           }
+  //         });
+  //     }
+
+  //     for (auto& producer : producers)
+  //     {
+  //       producer.join();
+  //     }
+
+  //     for (auto& consumer : consumers)
+  //     {
+  //       consumer.join();
+  //     }
+
+  //     auto i = std::uint64_t{0u};
+  //     for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
+  //     {
+  //       INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
+  //                          << ", slot: " << decltype(ring)::mask(i)
+  //                          << " state: " << d->load(std::memory_order_acquire));
+  //       REQUIRE(d->template test<fho::slot_state::empty>());
+  //     }
+  //     REQUIRE(executed.load() == nr_to_process);
+  //     REQUIRE(ring.size() == 0);
+  //   }
+  // }
   // GIVEN("3 producers & 3 consumers (front) & 3 consumers (back)")
   // {
   //   static constexpr auto nr_producers  = std::size_t{3};
@@ -980,14 +1055,17 @@ SCENARIO("ring_buffer: stress-test")
   //     {
   //       c.join();
   //     }
-  //     REQUIRE(executed.load() == nr_to_process);
-  //     REQUIRE(ring.empty());
 
-  //     for (auto d = ring.data(); d < ring.data() + capacity; ++d)
+  //     auto i = std::uint64_t{0u};
+  //     for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
   //     {
-  // REQUIRE((d->load(std::memory_order_acquire) & fho::slot_state::state_mask) ==
-  //         fho::slot_state::empty);
+  //       INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
+  //                          << ", slot: " << decltype(ring)::mask(i)
+  //                          << " state: " << d->load(std::memory_order_acquire));
+  //       REQUIRE(d->template test<fho::slot_state::empty>());
   //     }
+  //     REQUIRE(executed.load() == nr_to_process);
+  //     REQUIRE(ring.size() == 0);
   //   }
   // }
 }

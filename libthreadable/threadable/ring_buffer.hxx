@@ -182,7 +182,6 @@ namespace fho
       assert(s <= Capacity and "ring_buffer::push_back()");
       // 1. Reserv slot(s)
       auto h = head_.fetch_add(s, std::memory_order_relaxed);
-      headPop_.store(h + s, std::memory_order_release);
 
       // 2. Construct
       auto idx = h;
@@ -203,7 +202,52 @@ namespace fho
         s.template commit<slot_state::locked_empty>();
         ++idx;
       }
+      assert(h >= tailPop_.load(std::memory_order_acquire) and
+             "ring_buffer::emplace_back() - producer would publish 'ready' behind tailPop_");
 
+      // We just committed slot 'h' to READY. Try to extend publication contiguously
+      // starting from the current published top (hp), not from head_ (reservations).
+      auto hp = h;
+      h       = h + s;
+      if (!headPop_.compare_exchange_weak(hp, h + 1, std::memory_order_acq_rel,
+                                          std::memory_order_acquire))
+      {
+        do
+        {
+          if (hp > h)
+          {
+            break; // our slot became visible → done
+          }
+          // Load current published top and decide if we're the tip *now*.
+          auto hl = head_.load(std::memory_order_acquire);
+          assert(hp <= hl and "ring_buffer::emplace_back()");
+          auto tip = hl == h + 1;
+
+          // We only ever try to push within a proven contiguous prefix
+          // starting at `hp`, capped at our own visibility need (h+1) and reservations (hl).
+          auto bound = std::min(hl, h + 1);
+          auto scan  = hp;
+          for (; scan < bound; ++scan)
+          {
+            auto& s = elems_[ring_iterator_t::mask(scan)];
+            if (!(s.template test<slot_state::ready>(std::memory_order_acquire) &&
+                  (s.template test<slot_state::epoch>(std::memory_order_relaxed) ==
+                   epoch_of(scan))))
+            {
+              break; // hole at `scan` → cannot advance beyond it
+            }
+          }
+
+          if (headPop_.compare_exchange_weak(hp, scan, std::memory_order_acq_rel,
+                                             std::memory_order_acquire))
+          {
+            hp = scan;
+          }
+        }
+        while (true);
+      }
+
+      assert(h < headPop_.load(std::memory_order_acquire) and "ring_buffer::emplace_back()");
       return token;
     }
 
@@ -268,47 +312,65 @@ namespace fho
         do
         {
           if (hp > h)
-          {
-            break; // our slot became visible → done
+          { // slot published by another; done
+            break;
           }
-          // Load current published top and decide if we're the tip *now*.
-          auto hl = head_.load(std::memory_order_acquire);
-          assert(hp <= hl and "ring_buffer::emplace_back()");
-          auto tip = hl == h + 1;
 
-          // We only ever try to push within a proven contiguous prefix
-          // starting at `hp`, capped at our own visibility need (h+1) and reservations (hl).
-          auto bound = std::min(hl, h + 1);
-          auto scan  = hp;
-          for (; scan < bound; ++scan)
+          auto hl = head_.load(std::memory_order_acquire); // current reservation bound
+          assert(h <= hl && "ring_buffer::emplace_back(): new head ahead of head_");
+          assert(hp <= hl && "ring_buffer::emplace_back(): headPop_ ahead of head_");
+
+          // Scan backward from h to hp to verify contiguous ready slots
+          auto scan  = hl;
+          auto ready = true;
+          for (; scan > hp; --scan)
           {
-            auto& s = elems_[ring_iterator_t::mask(scan)];
+            auto const  pos = scan - 1;
+            auto const& s1  = elems_[ring_iterator_t::mask(pos)];
+            auto const  sameEpoch =
+              s1.template test<slot_state::epoch>(std::memory_order_acquire) == epoch_of(pos);
 
-            auto const epeq =
-              (s.template test<slot_state::epoch>(std::memory_order_relaxed) == epoch_of(scan));
-            bool const publishable =
-              // still available to consumers for this lap
-              // or already consumed for this lap
-              (epeq && (s.template test<slot_state::ready>(std::memory_order_acquire) ||
-                        s.template test<slot_state::locked_ready>(std::memory_order_acquire))) ||
-              (!epeq && s.template test<slot_state::empty>(std::memory_order_acquire));
-            if (!publishable)
+            if (sameEpoch && !s1.template test<slot_state::ready>(std::memory_order_acquire))
             {
-              auto str = dbg::to_str(s.load(std::memory_order_acquire));
-              break; // hole at `scan` → cannot advance beyond it
+              ready = false;
+              break; // prior epoch, not ready.
+            }
+            if (!sameEpoch)
+            {
+              break; // prior epoch, not consumed.
             }
           }
 
-          if (headPop_.compare_exchange_weak(hp, scan, std::memory_order_acq_rel,
+          if (!ready)
+          {
+            std::this_thread::yield();
+            hp = headPop_.load(std::memory_order_acquire);
+            continue;
+          }
+
+          if (scan < hp)
+          {
+            assert(scan >= hp and "ring_buffer::emplace_back() - Bad back-tracking");
+          }
+          // If contiguous to hp, try to publish up to h+1 (or hl if smaller)
+          if (headPop_.compare_exchange_weak(hp, hl, std::memory_order_acq_rel,
                                              std::memory_order_acquire))
           {
-            hp = scan;
+            hp = hl;
           }
+          // CAS failed; hp already reloaded, so retry
         }
         while (true);
       }
+      else
+      {
+        hp = h + 1;
+      }
 
-      assert(h <= hp and "ring_buffer::emplace_back()");
+      if (h >= hp)
+      {
+        assert(h < hp and "ring_buffer::emplace_back() - Premature publish");
+      }
       return token;
     }
 
@@ -320,6 +382,158 @@ namespace fho
       auto t = slot_token{};
       emplace_back<Tags>(t, FWD(args)...);
       return t;
+    }
+
+    static constexpr auto claim_view = std::ranges::views::transform(
+      [](slot_type& s)
+      {
+        return claimed_type{&s};
+      });
+
+    auto
+    try_pop_back2() noexcept -> claimed_type
+    {
+      if (auto r = try_pop_back2(1); !r.empty())
+      {
+        assert(r.size() == 1 and "ring_buffer::try_pop_front()");
+        return std::move(*r.begin());
+      }
+      return nullptr;
+    }
+
+    auto
+    try_pop_back2(index_t max) noexcept
+    {
+      for (;;)
+      {
+        // 1. Validate boundaries/early bail
+        auto const tp = tailPop_.load(std::memory_order_acquire); // published start
+        auto const hp = headPop_.load(std::memory_order_acquire); // published end
+        assert(hp <= head_.load(std::memory_order_relaxed) and
+               "ring_buffer::try_pop_back() - Published head surpassed reserved head");
+        if (hp <= tp)
+        { // empty published range
+          return std::ranges::subrange(ring_iterator_t(elems_.data(), 0),
+                                       ring_iterator_t(elems_.data(), 0)) |
+                 claim_view;
+        }
+
+        // 2. FAA to reserve (optimistically)
+        auto const diff = hp - tp;
+        auto const lim  = std::min(max, diff);
+        // retreat headPop_ by lim
+        auto const res = headPop_.fetch_sub(lim, std::memory_order_acq_rel);
+        // new published end after reservation
+        auto const cap = res - lim;
+
+        // 3. Iterate & try-lock reserved range (backward from reserved end)
+        auto locked   = std::size_t{0};
+        bool gapFound = false;
+        for (auto i = lim; i > 0; --i)
+        {
+          auto const pos  = cap + i - 1; // logical pos from back
+          auto&      slot = elems_[ring_iterator_t::mask(pos)];
+
+          // Attempt lock first, then check epoch for correctness
+          if (!slot.template try_lock<slot_state::ready>())
+          {
+            gapFound = true;
+            break; // gap or contention; stop claiming
+          }
+          // Verify correct epoch
+          if (slot.template test<slot_state::epoch>(std::memory_order_acquire) != epoch_of(pos))
+          {
+            slot.template unlock<slot_state::locked_ready>();
+            gapFound = true;
+            break;
+          }
+          // If insertion required "previous empty" on back, then for front
+          // we require "next empty" (and same-lap) when tag_seq is set.
+          if (slot.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
+          {
+            auto const  ppos = pos - 1;
+            auto const& prev = elems_[ring_iterator_t::mask(ppos)];
+
+            if (!prev.template test<slot_state::empty>(std::memory_order_acquire) &&
+                prev.template test<slot_state::epoch>(std::memory_order_relaxed) == epoch_of(ppos))
+            {
+              slot.template unlock<slot_state::locked_ready>();
+              break;
+            }
+          }
+          ++locked;
+        }
+
+        // Handle claims or gaps
+        if (locked > 0)
+        {
+          // Restore over-reserved slots
+          auto over = lim - locked;
+          if (over > 0)
+          {
+            assert(cap + over <= res and
+                   "ring_buffer::try_pop_back() - Restored published head would go past head");
+            headPop_.fetch_add(over, std::memory_order_acq_rel);
+          }
+          // Return claimed range
+          auto b = ring_iterator_t(elems_.data(), cap);
+          auto e = ring_iterator_t(elems_.data(), cap + locked);
+          return std::ranges::subrange(b, e) | claim_view;
+        }
+
+        // 4. Handle zero claims with gap: validate as empty for safe trim
+        if (gapFound)
+        {
+          // Try to lock and validate gap as empty or stale
+          auto trimmed = std::size_t{0};
+          for (auto i = lim; i > 0; --i)
+          {
+            auto const pos  = cap + i - 1;
+            auto&      slot = elems_[ring_iterator_t::mask(pos)];
+            if (!slot.template try_lock<slot_state::empty>())
+            {
+              break; // not empty; stop trimming
+            }
+            if (slot.template test<slot_state::epoch>(std::memory_order_acquire) == epoch_of(pos))
+            {
+              slot.template unlock<slot_state::locked_empty>(); // still in current lap; may become
+                                                                // ready
+              break;
+            }
+            ++trimmed;                                          // confirmed stale/empty
+            slot.template unlock<slot_state::locked_empty>();
+            assert(trimmed <= lim and "ring_buffer::try_pop_back() - Trimming past reservation");
+          }
+
+          if (trimmed == 0)
+          {
+            // No gaps trimmed, no claims: bail
+            break;
+          }
+
+          // Restore non-trimmed portion
+          auto restore = lim - trimmed;
+          assert(cap + restore <= res and
+                 "ring_buffer::try_pop_back() - Restored published head would go past head");
+          if (restore > 0)
+          {
+            auto p = headPop_.fetch_add(restore, std::memory_order_acq_rel);
+            assert(p + restore <= head_.load(std::memory_order_relaxed) and
+                   "ring_buffer::try_pop_back() - Overshot published head past head");
+          }
+        }
+        else
+        {
+          // No claims, no gap: lower bound (empty); restore and exit
+          headPop_.fetch_add(lim, std::memory_order_acq_rel);
+          break;
+        }
+      }
+
+      // No claims after attempts; return empty
+      return std::ranges::subrange(ring_iterator_t(elems_.data(), 0),
+                                   ring_iterator_t(elems_.data(), 0)) |
+             claim_view;
     }
 
     /// @brief Accesses the first element in the ring buffer.
@@ -464,7 +678,7 @@ namespace fho
             // “Published?” for tail-pop means: state==READY.
             // If not, we can exclude this cell from the published window.
             // Stop at first non-empty: could be READY/LOCKED → must not skip.
-            if (!slot.template test<slot_state::empty>(std::memory_order_acquire))
+            if (!slot.template try_lock<slot_state::empty>())
             {
               break;
             }
@@ -485,10 +699,19 @@ namespace fho
 
           assert(k > tp);
           assert(k <= hp);
+          assert(k <= headPop_.load(std::memory_order_acquire));
           auto exp = tp;
           // Move tailPop_ forward to exclude the prefix of non-published cells.
-          if (tailPop_.compare_exchange_strong(exp, k, std::memory_order_acq_rel,
-                                               std::memory_order_acquire))
+          auto cas = tailPop_.compare_exchange_strong(exp, k, std::memory_order_acq_rel,
+                                                      std::memory_order_acquire);
+          // Unlock scanned range.
+          for (auto i = k; i < tp; --i)
+          {
+            auto const pos  = i;
+            auto&      slot = elems_[ring_iterator_t::mask(pos)];
+            slot.template unlock<slot_state::locked_empty>();
+          }
+          if (cas)
           {
             assert(k <= headPop_.load(std::memory_order_acquire));
             // tail fixed; retry outer loop
@@ -620,7 +843,7 @@ namespace fho
             // “Published?” for head-pop means: state==READY.
             // If not, we can exclude this cell from the published window.
             // Stop at first non-empty: could be READY/LOCKED → must not skip.
-            if (!slot.template test<slot_state::empty>(std::memory_order_acquire))
+            if (!slot.template try_lock<slot_state::empty>())
             {
               break;
             }
@@ -628,6 +851,7 @@ namespace fho
             // Empty but epoch matches this logical pos → producer may still commit here.
             if (slot.template test<slot_state::epoch>(std::memory_order_acquire) == epoch_of(pos))
             {
+              slot.template unlock<slot_state::locked_empty>();
               break;
             }
             --k;
@@ -642,10 +866,19 @@ namespace fho
 
           assert(k < hp);
           assert(k >= tp);
+          assert(k >= tailPop_.load(std::memory_order_acquire));
           auto exp = hp;
           // Move headPop_ forward to exclude the prefix of non-published cells.
-          if (headPop_.compare_exchange_strong(exp, k, std::memory_order_acq_rel,
-                                               std::memory_order_acquire))
+          auto cas = headPop_.compare_exchange_strong(exp, k, std::memory_order_acq_rel,
+                                                      std::memory_order_acquire);
+          // Unlock scanned range.
+          for (auto i = k; i < hp; ++i)
+          {
+            auto const pos  = i;
+            auto&      slot = elems_[ring_iterator_t::mask(pos)];
+            slot.template unlock<slot_state::locked_empty>();
+          }
+          if (cas)
           {
             assert(k >= tailPop_.load(std::memory_order_acquire));
             // head fixed; retry outer loop
@@ -752,7 +985,7 @@ namespace fho
     {
       auto const tail = tailPop_.load(std::memory_order_acquire);
       auto const head = headPop_.load(std::memory_order_acquire);
-      return head - tail; // circular distance
+      return mask(head - tail); // circular distance
     }
 
     /// @brief Checks if the buffer is empty.
