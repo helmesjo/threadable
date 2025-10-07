@@ -977,6 +977,39 @@ namespace fho
       return ring_iterator_t::mask(i);
     }
 
+    static constexpr auto
+    le(index_t lhs, index_t rhs) noexcept -> bool
+    {
+      return ring_iterator_t::mask(lhs - rhs) <= Capacity / 2;
+    }
+
+    static auto
+    eq(index_t lhs, index_t rhs) noexcept -> bool
+    {
+      return ring_iterator_t::mask(lhs - rhs) == 0;
+    }
+
+    static constexpr auto
+    ge(index_t lhs, index_t rhs) noexcept -> bool
+    {
+      return ring_iterator_t::mask(lhs - rhs) <= Capacity / 2 ||
+             ring_iterator_t::mask(lhs - rhs) == Capacity;
+    }
+
+    static constexpr auto
+    gt(index_t lhs, index_t rhs) noexcept -> bool
+    {
+      auto dist = ring_iterator_t::mask(lhs - rhs);
+      return dist > 0 && dist <= Capacity / 2;
+    }
+
+    static constexpr auto
+    lt(index_t lhs, index_t rhs) noexcept -> bool
+    {
+      auto dist = ring_iterator_t::mask(rhs - lhs);
+      return dist > 0 && dist <= Capacity / 2;
+    }
+
     /// @brief Returns the current number of items in the buffer.
     /// @details Computes the direct (unbounded) difference between `head_` and `tail_`.
     /// @return Current number of items.
