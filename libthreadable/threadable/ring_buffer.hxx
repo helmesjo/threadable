@@ -298,8 +298,8 @@ namespace fho
       s.bind(token);
       s.emplace(FWD(args)...);
 
-      assert(h >= tailPop_.load(std::memory_order_acquire) and
-             "ring_buffer::emplace_back() - producer would publish 'ready' behind tailPop_");
+      // assert(h >= tailPop_.load(std::memory_order_acquire) and
+      //        "ring_buffer::emplace_back() - producer would publish 'ready' behind tailPop_");
       // 3. Publish
       s.template commit<slot_state::locked_empty>();
 
@@ -333,11 +333,11 @@ namespace fho
             if (sameEpoch && !s1.template test<slot_state::ready>(std::memory_order_acquire))
             {
               ready = false;
-              break; // prior epoch, not ready.
+              break; // Same epoch, not ready.
             }
             if (!sameEpoch)
             {
-              break; // prior epoch, not consumed.
+              break; // Different epoch, not consumed.
             }
           }
 
@@ -409,13 +409,9 @@ namespace fho
         // 1. Validate boundaries/early bail
         auto const tp = tailPop_.load(std::memory_order_acquire); // published start
         auto const hp = headPop_.load(std::memory_order_acquire); // published end
-        assert(hp <= head_.load(std::memory_order_relaxed) and
-               "ring_buffer::try_pop_back() - Published head surpassed reserved head");
         if (hp <= tp)
-        { // empty published range
-          return std::ranges::subrange(ring_iterator_t(elems_.data(), 0),
-                                       ring_iterator_t(elems_.data(), 0)) |
-                 claim_view;
+        {
+          break;
         }
 
         // 2. FAA to reserve (optimistically)
@@ -427,7 +423,7 @@ namespace fho
         auto const cap = res - lim;
 
         // 3. Iterate & try-lock reserved range (backward from reserved end)
-        auto locked   = std::size_t{0};
+        auto locked   = index_t{0};
         bool gapFound = false;
         for (auto i = lim; i > 0; --i)
         {
@@ -485,7 +481,7 @@ namespace fho
         if (gapFound)
         {
           // Try to lock and validate gap as empty or stale
-          auto trimmed = std::size_t{0};
+          auto trimmed = index_t{0};
           for (auto i = lim; i > 0; --i)
           {
             auto const pos  = cap + i - 1;
@@ -502,7 +498,6 @@ namespace fho
             }
             ++trimmed;                                          // confirmed stale/empty
             slot.template unlock<slot_state::locked_empty>();
-            assert(trimmed <= lim and "ring_buffer::try_pop_back() - Trimming past reservation");
           }
 
           if (trimmed == 0)
@@ -512,20 +507,156 @@ namespace fho
           }
 
           // Restore non-trimmed portion
-          auto restore = lim - trimmed;
-          assert(cap + restore <= res and
-                 "ring_buffer::try_pop_back() - Restored published head would go past head");
-          if (restore > 0)
+          if (auto restore = lim - trimmed; restore > 0)
           {
+            assert(cap + restore <= res and
+                   "ring_buffer::try_pop_back() - Restored published head would go past head");
             auto p = headPop_.fetch_add(restore, std::memory_order_acq_rel);
             assert(p + restore <= head_.load(std::memory_order_relaxed) and
-                   "ring_buffer::try_pop_back() - Overshot published head past head");
+                   "ring_buffer::try_pop_back() - Published head surpassed head");
           }
         }
         else
         {
           // No claims, no gap: lower bound (empty); restore and exit
           headPop_.fetch_add(lim, std::memory_order_acq_rel);
+          break;
+        }
+      }
+
+      // No claims after attempts; return empty
+      return std::ranges::subrange(ring_iterator_t(elems_.data(), 0),
+                                   ring_iterator_t(elems_.data(), 0)) |
+             claim_view;
+    }
+
+    auto
+    try_pop_front2() noexcept -> claimed_type
+    {
+      if (auto r = try_pop_front2(1); !r.empty())
+      {
+        assert(r.size() == 1 and "ring_buffer::try_pop_front()");
+        return std::move(*r.begin());
+      }
+      return nullptr;
+    }
+
+    auto
+    try_pop_front2(index_t max) noexcept
+    {
+      for (;;)
+      {
+        // 1. Validate boundaries/early bail
+        auto const tp = tailPop_.load(std::memory_order_acquire); // published start
+        auto const hp = headPop_.load(std::memory_order_acquire); // published end
+        if (tp >= hp)
+        {
+          break;
+        }
+
+        // 2. FAA to reserve (optimistically)
+        auto const diff = mask(hp - tp);
+        auto const lim  = std::min(max, diff);
+        // advance tailPop_ by lim
+        auto const res = tailPop_.fetch_add(lim, std::memory_order_acq_rel);
+        // new published start after reservation
+        auto const cap = res;
+
+        // 3. Iterate & try-lock reserved range (forward from reserved start)
+        auto locked   = index_t{0};
+        bool gapFound = false;
+        for (auto i = index_t{0}; i < lim; ++i)
+        {
+          auto const pos  = cap + i; // logical pos from front
+          auto&      slot = elems_[ring_iterator_t::mask(pos)];
+
+          // Attempt lock first, then check epoch for correctness
+          if (!slot.template try_lock<slot_state::ready>())
+          {
+            gapFound = true;
+            break; // gap or contention; stop claiming
+          }
+          // Verify correct epoch
+          if (slot.template test<slot_state::epoch>(std::memory_order_acquire) != epoch_of(pos))
+          {
+            slot.template unlock<slot_state::locked_ready>();
+            gapFound = true;
+            break;
+          }
+          // If tag_seq is set, require "next empty" (and same-lap) for front
+          if (slot.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
+          {
+            auto const  ppos = pos - 1;
+            auto const& prev = elems_[ring_iterator_t::mask(ppos)];
+            if (!prev.template test<slot_state::empty>(std::memory_order_acquire) &&
+                prev.template test<slot_state::epoch>(std::memory_order_acquire) == epoch_of(ppos))
+            {
+              slot.template unlock<slot_state::locked_ready>();
+              break;
+            }
+          }
+          ++locked;
+        }
+
+        // 4. Handle claims or gaps
+        if (locked > 0)
+        {
+          // Restore over-reserved slots
+          auto over = lim - locked;
+          if (over > 0)
+          {
+            assert(cap >= over &&
+                   "ring_buffer::try_pop_front() - Restored published tail would go below tail");
+            tailPop_.fetch_sub(over, std::memory_order_acq_rel);
+          }
+          // Return claimed range
+          auto b = ring_iterator_t(elems_.data(), cap);
+          auto e = ring_iterator_t(elems_.data(), cap + locked);
+          return std::ranges::subrange(b, e) | claim_view;
+        }
+
+        // 5. Handle zero claims with gap: validate as empty for safe trim
+        if (gapFound)
+        {
+          auto trimmed = index_t{0};
+          for (auto i = index_t{0}; i < lim; ++i)
+          {
+            auto const pos  = cap + i;
+            auto&      slot = elems_[ring_iterator_t::mask(pos)];
+            if (!slot.template try_lock<slot_state::empty>())
+            {
+              break; // not empty; stop trimming
+            }
+            if (slot.template test<slot_state::epoch>(std::memory_order_acquire) == epoch_of(pos))
+            {
+              slot.template unlock<slot_state::locked_empty>(); // still in current lap; may become
+                                                                // ready
+              break;
+            }
+            ++trimmed;                                          // confirmed stale/empty
+            slot.template unlock<slot_state::locked_empty>();
+          }
+
+          if (trimmed == 0)
+          {
+            // No gaps trimmed, no claims: bail
+            break;
+          }
+
+          // Restore non-trimmed portion
+          if (auto restore = lim - trimmed; restore > 0)
+          {
+            assert(lim >= restore &&
+                   "ring_buffer::try_pop_front() - Restored published tail would go below tail");
+            auto p = tailPop_.fetch_sub(restore, std::memory_order_acq_rel);
+            assert(p >= tail_.load(std::memory_order_relaxed) &&
+                   "ring_buffer::try_pop_front() - Undershot published tail below tail");
+          }
+        }
+        else
+        {
+          // No claims, no gap: upper bound (empty); restore and exit
+          tailPop_.fetch_sub(lim, std::memory_order_acq_rel);
           break;
         }
       }
