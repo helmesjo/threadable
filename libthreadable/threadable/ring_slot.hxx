@@ -1,6 +1,7 @@
 #pragma once
 
 #include <threadable/atomic.hxx>
+#include <threadable/debug.hxx>
 #include <threadable/function.hxx>
 #include <threadable/token.hxx>
 
@@ -132,11 +133,11 @@ namespace fho
     inline void
     acquire() noexcept
     {
-      auto exp = slot_state::free;
-      while (!state_.compare_exchange_weak(exp, slot_state::claimed, std::memory_order_release,
+      auto exp = slot_state::empty;
+      while (!state_.compare_exchange_weak(exp, slot_state::locked_empty, std::memory_order_release,
                                            std::memory_order_relaxed)) [[likely]]
       {
-        exp = slot_state::free;
+        exp = slot_state::empty;
       }
     }
 
@@ -161,10 +162,10 @@ namespace fho
       }
 #endif
       // Must be claimed
-      assert(state_.load(std::memory_order_acquire) == slot_state::claimed);
+      dbg::verify(state_.load(std::memory_order_acquire), slot_state::locked_empty);
 
       std::construct_at<T>(data(), FWD(args)...);
-      state_.store(slot_state::active, std::memory_order_release);
+      state_.store(slot_state::ready, std::memory_order_release);
       // @NOTE: Intentionally not notifying here since that is redundant (and costly),
       //        it is designed to be waited on by checking state active -> inactive.
     }
@@ -175,7 +176,7 @@ namespace fho
     inline void
     wait() const noexcept
     {
-      state_.template wait<slot_state::active, true>(std::memory_order_acquire);
+      state_.template wait<slot_state::ready, true>(std::memory_order_acquire);
     }
 
     /// @brief Releases the slot.
@@ -186,7 +187,7 @@ namespace fho
     release() noexcept
     {
       // Must be active
-      assert(state_.test<slot_state::active>());
+      dbg::verify(state_.load(std::memory_order_acquire), slot_state::ready);
       // Free up slot for re-use.
       if constexpr (!std::is_trivially_destructible_v<T>)
       {
@@ -195,7 +196,7 @@ namespace fho
 #ifndef NDEBUG
       value_ = {};
 #endif
-      state_.store(slot_state::free, std::memory_order_release);
+      state_.store(slot_state::empty, std::memory_order_release);
       state_.notify_all();
     }
 
@@ -215,7 +216,7 @@ namespace fho
     inline constexpr auto
     value() noexcept -> T&
     {
-      assert(state_.load(std::memory_order_acquire) == slot_state::active and "ring_slot::value()");
+      dbg::verify(state_.load(std::memory_order_acquire), slot_state::ready);
       return *data(); // NOLINT
     }
 
@@ -225,7 +226,7 @@ namespace fho
     inline constexpr auto
     value() const noexcept -> T const&
     {
-      assert(state_.load(std::memory_order_acquire) == slot_state::active and "ring_slot::value()");
+      dbg::verify(state_.load(std::memory_order_acquire), slot_state::ready);
       return *data(); // NOLINT
     }
 
@@ -251,7 +252,7 @@ namespace fho
     }
 
     /// Atomic state of the slot.
-    fho::atomic_state_t state_{slot_state::free};
+    fho::atomic_state_t state_{slot_state::empty};
     /// Aligned storage for the value of type `T`.
     alignas(T) std::array<std::byte, sizeof(T)> value_;
   };

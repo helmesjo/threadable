@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <ostream>
+#include <type_traits>
 #include <vector>
 
 namespace fho
@@ -12,23 +14,102 @@ namespace fho
   enum slot_state : std::uint_fast8_t
   {
     /// @brief No state, only used as variable default init.
-    null = 0,
-    /// @brief No value assigned.
-    free = 1 << 0,
-    /// @brief Reserved.
-    claimed = 1 << 1,
-    /// @brief Ready to, or being, processed.
-    active = 1 << 2,
-    /// @brief For debugging purposes only.
-    claimed_free = claimed | free,
-    /// @brief For debugging purposes only.
-    claimed_active = claimed | active,
-    all_mask       = static_cast<slot_state>(-1)
+    invalid = 0,
+    /// @brief Un-assigned & free to claim.
+    empty = 1 << 0,
+    /// @brief Un-assigned & ready to be claimed.
+    ready = 1 << 1,
+    /// @brief Exclusive ownership.
+    locked = 1 << 2,
+    /// @brief Related epoch.
+    epoch = 1 << 3,
+    /// @brief Owned & empty = Assign.
+    locked_empty = locked | empty,
+    /// @brief Owned & ready = Read/Modify.
+    locked_ready = locked | ready,
+    /// @brief Depends on previous task.
+    tag_seq = 1 << 4,
+    /// @brief Mask for state bits.
+    state_mask = empty | ready | locked,
+    /// @brief Mask for state+epoch bits.
+    state_u_epoch_mask = state_mask | epoch,
+    /// @brief Mask for tag bits.
+    tag_mask = tag_seq,
+    /// @brief Mask for all bits.
+    all_mask = static_cast<std::underlying_type_t<slot_state>>(-1)
   };
+
+  inline constexpr auto
+  operator|(slot_state lhs, slot_state rhs) noexcept -> slot_state
+  {
+    using ut_t = std::underlying_type_t<slot_state>;
+    return static_cast<slot_state>(static_cast<ut_t>(lhs) | static_cast<ut_t>(rhs));
+  }
+
+  inline constexpr auto
+  operator&(slot_state lhs, slot_state rhs) noexcept -> slot_state
+  {
+    using ut_t = std::underlying_type_t<slot_state>;
+    return static_cast<slot_state>(static_cast<ut_t>(lhs) & static_cast<ut_t>(rhs));
+  }
+
+  inline constexpr auto
+  operator~(slot_state rhs) noexcept -> slot_state
+  {
+    using ut_t = std::underlying_type_t<slot_state>;
+    return static_cast<slot_state>(~static_cast<ut_t>(rhs));
+  }
+
+  inline constexpr auto
+  operator<<(std::ostream& os, slot_state const& v) -> std::ostream&
+  {
+    bool first  = true;
+    auto append = [&](char const* str)
+    {
+      if (!first)
+      {
+        os << "|";
+      }
+      os << str;
+      first = false;
+    };
+
+    if (v == fho::invalid)
+    {
+      append("invalid");
+    }
+    if (v == fho::empty)
+    {
+      append("empty");
+    }
+    if (v & fho::ready)
+    {
+      append("ready");
+    }
+    if (v & fho::locked)
+    {
+      append("locked");
+    }
+    if (v & fho::epoch)
+    {
+      append("epoch");
+    }
+    if (v & fho::tag_seq)
+    {
+      append("sequential");
+    }
+
+    if (first)
+    {
+      append("unknown");
+    }
+
+    return os;
+  }
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;
 
-  static constexpr auto null_state = atomic_state_t{slot_state::null};
+  inline constexpr auto null_state = atomic_state_t{slot_state::invalid};
 
   /// @brief A token representing a claim on a `ring_slot` state.
   /// @details The `slot_token` class allows for monitoring and controlling the state of a
@@ -117,13 +198,13 @@ namespace fho
     }
 
     /// @brief Checks if the associated `ring_slot` is done.
-    /// @details Returns `true` if the `ring_slot` state is not `active` or if no `ring_slot` is
+    /// @details Returns `true` if the `ring_slot` state is not `ready` or if no `ring_slot` is
     /// associated.
     [[nodiscard]] auto
     done() const noexcept -> bool
     {
       auto state = state_.load(std::memory_order_acquire);
-      return !state || !state->test<slot_state::active>(std::memory_order_acquire);
+      return !state || !state->test<slot_state::ready>(std::memory_order_acquire);
     }
 
     /// @brief Cancels the associated `ring_slot`.
@@ -143,7 +224,7 @@ namespace fho
     }
 
     /// @brief Waits for the associated `ring_slot` to be processed.
-    /// @details Blocks until the `ring_slot` state changes from `active`.
+    /// @details Blocks until the `ring_slot` state changes from `ready`.
     /// @note: The associated state pointer might be rebound during waiting, for example,
     /// in repeated/self-submitting tasks. This will wait until the chain is fully processed.
     void
@@ -152,7 +233,9 @@ namespace fho
       auto state = state_.load(std::memory_order_acquire);
       while (state)
       {
-        state->wait<slot_state::active, true>(std::memory_order_acquire);
+        assert(state != nullptr and
+               "token::wait() - state must never be assigned null while owned");
+        state->wait<slot_state::ready, true>(std::memory_order_acquire);
         // Re-fetch to handle rebinding. If it
         // stayed same, then it wasn't rebound.
         if (auto next = state_.load(std::memory_order_acquire); next == state) [[likely]]
