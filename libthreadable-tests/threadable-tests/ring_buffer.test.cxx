@@ -25,9 +25,9 @@ namespace
 
 SCENARIO("ring_buffer: emplace & consume")
 {
-  GIVEN("ring with capacity 2 (max size 1)")
+  GIVEN("ring with capacity 2")
   {
-    static_assert(fho::ring_buffer<func_t, 2>::max_size() == 1);
+    static_assert(fho::ring_buffer<func_t, 2>::max_size() == 2);
 
     auto ring = fho::ring_buffer<func_t, 2>{};
     REQUIRE(ring.size() == 0);

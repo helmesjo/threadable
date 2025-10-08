@@ -134,6 +134,19 @@ namespace fho
   {
     static constexpr auto index_mask = Capacity - 1u;
 
+    static_assert(Capacity > 1, "capacity must be greater than 1");
+    static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
+
+#if 0
+  #if __cpp_static_assert >= 202306L && __cpp_lib_constexpr_format
+    static_assert(sizeof(T) <= details::slot_size,
+                  std::format("T (size: {}) does not fit ring buffer slot (free : {}) ", sizeof(T),
+                              details::slot_size));
+  #else
+    static_assert(sizeof(T) <= details::slot_size, "T does not fit ring buffer slot");
+  #endif
+#endif
+
     using value_type      = T;
     using slot_type       = ring_slot<value_type>;
     using size_type       = std::size_t;
@@ -231,7 +244,8 @@ namespace fho
     {
       // 1. Claim a slot.
       auto const slot = head_.fetch_add(1, std::memory_order_acquire);
-      slot_type& elem = elems_[ring_iterator_t::mask(slot)];
+      auto const pos  = ring_iterator_t::mask(slot);
+      slot_type& elem = elems_[pos];
 
       while (!elem.template try_lock<slot_state::empty>(std::memory_order_acq_rel))
       {
@@ -405,7 +419,7 @@ namespace fho
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
-      return Capacity - 1;
+      return Capacity;
     }
 
     /// @brief Returns the current number of items in the buffer.
@@ -416,7 +430,7 @@ namespace fho
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
-      return ring_iterator_t::mask(head - tail); // circular distance
+      return head - tail;
     }
 
     /// @brief Checks if the buffer is empty.
