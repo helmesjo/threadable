@@ -79,17 +79,17 @@ namespace fho
   {
     static auto& queue = create(Policy);
 
-    auto lambda = [](int counter, auto&& self, fho::slot_token& token, decltype(func) func,
+    auto lambda = [](auto&& self, fho::slot_token& token, decltype(func) func,
                      decltype(args)... args) -> void
     {
       FWD(func)(FWD(args)...);
 
       if (!token.cancelled())
       {
-        queue.emplace_back(token, self, ++counter, self, std::ref(token), FWD(func), FWD(args)...);
+        queue.emplace_back(token, self, self, std::ref(token), FWD(func), FWD(args)...);
       }
     };
-    queue.emplace_back(token, lambda, 0, lambda, std::ref(token), FWD(func), FWD(args)...);
+    queue.emplace_back(token, lambda, lambda, std::ref(token), FWD(func), FWD(args)...);
   }
 
   /// @brief Executes a range of callables with specified execution policy.
