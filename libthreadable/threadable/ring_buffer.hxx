@@ -88,7 +88,7 @@ namespace fho
                                   for (auto i = b; i < e; ++i)
                                   {
                                     Slot& elem = d[Iterator::mask(i)];
-                                    elem.release();
+                                    elem.template release<slot_state::locked_ready>();
                                   }
                                 }
                               }
@@ -115,7 +115,7 @@ namespace fho
   /// @tparam `Allocator` The allocator type used for the buffer's slots. Defaults to an aligned
   ///                     allocator for `ring_slot<T>`.
   /// @note The buffer uses three atomic indices: `tail_` (next slot to consume), `head_` (next
-  ///       slot to produce into), and `next_` (next slot to claim for production).
+  ///       slot to produce into).
   /// @warning Only one consumer should call `consume()` at a time to ensure thread safety.
   ///          Multiple producers can safely call `emplace_back()` concurrently.
   /// @example
@@ -186,12 +186,10 @@ namespace fho
     ring_buffer(ring_buffer&& rhs) noexcept
       : tail_(rhs.tail_.load(std::memory_order::relaxed))
       , head_(rhs.head_.load(std::memory_order::relaxed))
-      , next_(rhs.next_.load(std::memory_order::relaxed))
       , elems_(std::move(rhs.elems_))
     {
       rhs.tail_.store(0, std::memory_order::relaxed);
       rhs.head_.store(0, std::memory_order::relaxed);
-      rhs.next_.store(0, std::memory_order::relaxed);
     }
 
     auto operator=(ring_buffer const&) -> ring_buffer& = delete;
@@ -205,7 +203,6 @@ namespace fho
     {
       tail_  = rhs.tail_.load(std::memory_order::relaxed);
       head_  = rhs.head_.load(std::memory_order::relaxed);
-      next_  = rhs.next_.load(std::memory_order::relaxed);
       elems_ = std::move(rhs.elems_);
       return *this;
     }
@@ -213,7 +210,7 @@ namespace fho
     /// @brief Constructs a value into the buffer with an existing token.
     /// @details Adds a value to the buffer, associating it with a provided token. The process
     ///          involves:
-    ///          1. **Claim a slot**: Atomically increments `next_` to reserve a slot.
+    ///          1. **Claim a slot**: Atomically increments `head_` to reserve a slot.
     ///          2. **Assign the value**: Constructs the value in the slot and binds the token.
     ///          3. **Commit the slot**: Updates `head_` using a compare-exchange loop to make the
     ///          slot available. Blocks via `tail_.wait()` if the buffer is full until space is
@@ -233,28 +230,21 @@ namespace fho
     emplace_back(slot_token& token, Args&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot.
-      auto const slot = next_.fetch_add(1, std::memory_order_acquire);
+      auto const slot = head_.fetch_add(1, std::memory_order_acquire);
       slot_type& elem = elems_[ring_iterator_t::mask(slot)];
-      elem.acquire();
+
+      while (!elem.template try_lock<slot_state::empty>(std::memory_order_acq_rel))
+      {
+        elem.template wait<slot_state::empty, false>(std::memory_order_relaxed);
+      }
 
       // 2. Assign `value_type`.
       elem.emplace(FWD(args)...);
       elem.bind(token);
 
-      // 3. Commit slot.
-      index_t expected; // NOLINT
-      do
-      {
-        // Check if full before committing.
-        if (auto tail = tail_.load(std::memory_order_acquire);
-            ring_iterator_t::mask(slot + 1 - tail) == 0) [[unlikely]]
-        {
-          tail_.wait(tail, std::memory_order_acquire);
-        }
-        expected = slot;
-      }
-      while (!head_.compare_exchange_weak(expected, slot + 1, std::memory_order_release,
-                                          std::memory_order_relaxed));
+      elem.template commit<slot_state::locked_empty>(std::memory_order_acq_rel,
+                                                     std::memory_order_acquire);
+
       head_.notify_one();
       return token;
     }
@@ -314,11 +304,23 @@ namespace fho
     void
     pop() noexcept
     {
-      assert(size() > 0);
-      auto const tail = tail_.load(std::memory_order_acquire);
-      slot_type& elem = elems_[ring_iterator_t::mask(tail)];
-      elem.release();
-      tail_.store(tail + 1, std::memory_order_release);
+      assert(size() > 0 and "ring_buffer::pop()");
+      index_t tail; // NOLINT
+      while (true)
+      {
+        // 1. Read tail slot.
+        tail = tail_.load(std::memory_order_acquire);
+        // 2. Acquire tail slot.
+        slot_type& elem = elems_[ring_iterator_t::mask(tail)];
+        if (elem.template try_lock<slot_state::ready>()) [[likely]]
+        {
+          // 3. Release tail slot.
+          tail_.fetch_add(1, std::memory_order_acq_rel);
+          elem.template release<slot_state::locked_ready>();
+          break;
+        }
+        // 4. Somebody already released tail - Retry.
+      }
     }
 
     /// @brief Waits until the buffer has items available.
@@ -352,9 +354,18 @@ namespace fho
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
       auto const cap  = tail + std::min<index_t>(max, head - tail); // Cap range size
-      auto       b    = ring_iterator_t(elems_.data(), tail);
-      auto       e    = ring_iterator_t(elems_.data(), cap);
-      tail_.store(cap, std::memory_order_release);
+      auto       i    = tail;
+      for (; i < cap; ++i)
+      {
+        auto& s = elems_[ring_iterator_t::mask(i)];
+        if (!s.template try_lock<slot_state::ready>(std::memory_order_acq_rel))
+        {
+          break;
+        }
+      }
+      auto b = ring_iterator_t(elems_.data(), tail);
+      auto e = ring_iterator_t(elems_.data(), i);
+      tail_.store(i, std::memory_order_release);
       tail_.notify_all();
       return subrange_type(std::ranges::subrange(b, e), slot_value_accessor<value_type>);
     }
@@ -446,7 +457,6 @@ namespace fho
 
     alignas(details::cache_line_size) atomic_index_t tail_{0};
     alignas(details::cache_line_size) atomic_index_t head_{0};
-    alignas(details::cache_line_size) atomic_index_t next_{0};
 
     alignas(details::cache_line_size) std::vector<slot_type, allocator_type> elems_{Capacity};
 

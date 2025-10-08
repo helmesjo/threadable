@@ -56,6 +56,14 @@ namespace fho::dbg
     verify(static_cast<slot_state>(current.load(std::memory_order_relaxed) & Mask), expected, l);
   }
 
+  template<slot_state Mask = slot_state::all_mask>
+  inline void
+  verify(slot_state current, slot_state expected,
+         std::source_location l = std::source_location::current()) noexcept
+  {
+    verify(current & Mask, expected, l);
+  }
+
   inline void
   verify_bitwise([[maybe_unused]] slot_state current, [[maybe_unused]] slot_state mask, // NOLINT
                  [[maybe_unused]] std::source_location l = std::source_location::current()) noexcept
