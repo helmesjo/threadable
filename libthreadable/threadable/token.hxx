@@ -60,50 +60,61 @@ namespace fho
     return static_cast<slot_state>(~static_cast<ut_t>(rhs));
   }
 
-  inline constexpr auto
-  operator<<(std::ostream& os, slot_state const& v) -> std::ostream&
+  namespace dbg
   {
-    bool first  = true;
-    auto append = [&](char const* str)
+    inline constexpr auto
+    to_str(slot_state s) -> std::string
     {
-      if (!first)
+      auto res    = std::string{};
+      bool first  = true;
+      auto append = [&](char const* str)
       {
-        os << "|";
+        if (!first)
+        {
+          res += "|";
+        }
+        res += str;
+        first = false;
+      };
+
+      if (s & fho::locked)
+      {
+        append("locked");
       }
-      os << str;
-      first = false;
-    };
+      if (s == fho::invalid)
+      {
+        append("invalid");
+      }
+      if (s == fho::empty)
+      {
+        append("empty");
+      }
+      if (s & fho::ready)
+      {
+        append("ready");
+      }
+      if (s & fho::epoch)
+      {
+        append("epoch");
+      }
+      if (s & fho::tag_seq)
+      {
+        append("tag_seq");
+      }
 
-    if (v == fho::invalid)
-    {
-      append("invalid");
-    }
-    if (v == fho::empty)
-    {
-      append("empty");
-    }
-    if (v & fho::ready)
-    {
-      append("ready");
-    }
-    if (v & fho::locked)
-    {
-      append("locked");
-    }
-    if (v & fho::epoch)
-    {
-      append("epoch");
-    }
-    if (v & fho::tag_seq)
-    {
-      append("sequential");
-    }
+      if (first)
+      {
+        append("unknown");
+      }
 
-    if (first)
-    {
-      append("unknown");
+      return res;
     }
+  }
 
+  inline auto
+  operator<<(std::ostream& os, slot_state const& s) -> std::ostream&
+  {
+    os << dbg::to_str(s);
     return os;
   }
 

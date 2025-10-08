@@ -9,7 +9,6 @@
 namespace fho::dbg
 {
   auto is_tty_color() noexcept -> bool;
-  auto to_str(slot_state s) noexcept -> std::string;
 
   inline void
   log(char const* pref, slot_state current, slot_state expected, // NOLINT
