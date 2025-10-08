@@ -25,8 +25,8 @@ SCENARIO("ring_iterator")
 
     THEN("it points to the same position as begin")
     {
-      REQUIRE(it == begin);   // mask(16) = mask(0)
-      REQUIRE(*it == *begin); // Same task
+      REQUIRE(it != begin);   // Logically different positions - index(16) != index(0)
+      REQUIRE(*it == *begin); // But physically the same task  -  mask(16) == mask(0)
     }
   }
 
@@ -78,8 +78,8 @@ SCENARIO("ring_iterator")
 
     THEN("it wraps back to original position")
     {
-      REQUIRE(it == begin); // mask(32) = 0
-      REQUIRE(*it == *begin);
+      REQUIRE(it != begin);   // Logically different positions - index(32) != index(0)
+      REQUIRE(*it == *begin); // But physically the same task  -  mask(32) == mask(0)
     }
   }
 }

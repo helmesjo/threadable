@@ -7,19 +7,19 @@
 namespace fho
 {
   /// @brief A random access iterator for a ring buffer.
-  /// @details This iterator provides random access and contiguous iteration capabilities for a ring
-  /// buffer, enabling efficient traversal and manipulation of elements in a circular manner. It
-  /// uses a mask to wrap indices around the buffer size, optimized for capacities that are powers
-  /// of two.
+  /// @details This iterator provides random access capabilities for a ring buffer, and efficient
+  /// traversal and manipulation of elements in a circular manner. It uses a mask to wrap indices
+  /// around the buffer size, optimized for capacities that are powers of two.
   /// @tparam `T` The type of elements stored in the ring buffer.
-  /// @tparam `Mask` A mask equal to `capacity - 1`, where `capacity` is a power of two, used to
+  /// @tparam `Mask` A mask equal to `Capacity - 1`, where `Capacity` is a power of two, used to
   /// wrap indices efficiently via bitwise operations.
+  /// @note Random-access only; subranges may wrap (non-contiguous memory).
   template<typename T, size_t Mask>
   class ring_iterator
   {
   public:
     using iterator_category = std::random_access_iterator_tag;
-    using iterator_concept  = std::contiguous_iterator_tag;
+    using iterator_concept  = std::random_access_iterator_tag;
     using difference_type   = std::ptrdiff_t;
     using value_type        = T;
     using pointer           = value_type*;
@@ -58,9 +58,9 @@ namespace fho
     /// @param `rhs` The offset (positive or negative) from the current position.
     /// @return Reference to the element at the computed position.
     inline auto
-    operator[](difference_type rhs) const noexcept -> reference
+    operator[](difference_type i) const noexcept -> reference
     {
-      return data_[mask(index_ + rhs)];
+      return data_[mask(index_ + i)];
     }
 
     /// @brief Dereferences the iterator to access the current element.
@@ -104,26 +104,13 @@ namespace fho
     }
 
     /// @brief Checks equality between two iterators.
-    /// @details Determines if two iterators point to the same physical position in the buffer by
-    /// comparing their current pointers.
+    /// @details Compares logical (unbounded) indices. Handles wraparound.
     /// @param `rhs` The iterator to compare with.
-    /// @return `true` if both point to the same element, `false` otherwise.
+    /// @return `true` if logical indices are equal, `false` otherwise.
     inline auto
     operator==(ring_iterator const& rhs) const noexcept -> bool
     {
-      return current_ == rhs.current_;
-    }
-
-    /// @brief Computes the sum of two iterators' indices.
-    /// @details Adds the logical indices of two iterators, returning the result as a difference
-    /// type. Note: This is not a standard iterator operation and may be intended for specific use
-    /// cases.
-    /// @param `rhs` The iterator whose index is added.
-    /// @return The sum of the indices.
-    inline auto
-    operator+(ring_iterator const& rhs) const noexcept -> difference_type
-    {
-      return index_ + rhs.index_;
+      return index_ == rhs.index_;
     }
 
     /// @brief Computes the distance between two iterators.
@@ -212,11 +199,7 @@ namespace fho
     inline auto
     operator++() noexcept -> ring_iterator&
     {
-      ++index_;
-      if (++current_ > (data_ + buffer_size - 1)) [[unlikely]]
-      {
-        current_ = data_;
-      }
+      current_ = data_ + mask(++index_);
       return *this;
     }
 
@@ -238,11 +221,7 @@ namespace fho
     inline auto
     operator--() noexcept -> ring_iterator&
     {
-      --index_;
-      if (--current_ < data_) [[unlikely]]
-      {
-        current_ = (data_ + buffer_size - 1);
-      }
+      current_ = data_ + mask(--index_);
       return *this;
     }
 
@@ -290,9 +269,24 @@ namespace fho
     size_t  index_   = 0;       ///< Logical index, may exceed buffer size.
   };
 
-  // Verify iterator compatibility with standard algorithms
+  // Iterator & Ranges compatibility with standard algorithms
+  //
+  // Verifies basic iterator validity for input/output operations.
+  static_assert(std::input_or_output_iterator<ring_iterator<int, 1024>>);
+  // Increment without equality preservation, base for traversal.
+  static_assert(std::weakly_incrementable<ring_iterator<int, 1024>>);
+  // Increment preserves equality, enabling reliable looping.
+  static_assert(std::incrementable<ring_iterator<int, 1024>>);
+  // Read access and single-pass traversal, core for input ranges.
+  static_assert(std::input_iterator<ring_iterator<int, 1024>>);
+  // Multi-pass traversal without modifying the iterated sequence.
+  static_assert(std::forward_iterator<ring_iterator<int, 1024>>);
+  // Forward/backward traversal, useful for algorithms like reverse.
+  static_assert(std::bidirectional_iterator<ring_iterator<int, 1024>>);
+  // Constant-time jumps and arithmetic, optimizing stdlib algos.
   static_assert(std::random_access_iterator<ring_iterator<int, 1024>>);
-  static_assert(std::contiguous_iterator<ring_iterator<int, 1024>>);
+  // Efficient size computation via operator-, aiding range-based ops.
+  static_assert(std::sized_sentinel_for<ring_iterator<int, 1024>, ring_iterator<int, 1024>>);
 
   /// @brief A type alias for a transformed view over a ring buffer's subrange.
   /// @details The `ring_transform_view` alias defines a `std::ranges::transform_view` that applies
@@ -308,7 +302,7 @@ namespace fho
   /// ```cpp
   /// auto buffer = fho::ring_buffer<>{};
   /// buffer.emplace_back([]() { std::cout << "Task\n"; });
-  /// auto range = buffer.consume();
+  /// auto range = buffer.pop range();
   /// for (auto& func : range) { // range is a ring_transform_view
   ///     func();
   /// }
