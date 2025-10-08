@@ -24,6 +24,16 @@
 
 namespace fho
 {
+  template<typename S>
+  concept atomic_slot = requires (S slot, slot_token& token) {
+                          { slot.template lock<slot_state::empty>() } noexcept;
+                          { slot.template unlock<slot_state::locked_empty>() } noexcept;
+                          { slot.template release<slot_state::locked_ready>() } noexcept;
+                          {
+                            slot.template wait<slot_state::ready, true>(std::memory_order_acquire)
+                          } noexcept;
+                        };
+
   /// @brief A slot in a ring buffer that holds a value of type `T` and manages its state
   /// atomically.
   /// @details The `ring_slot` class is designed for use in concurrent environments, such as thread
@@ -375,12 +385,148 @@ namespace fho
     alignas(T) std::array<std::byte, sizeof(T)> value_;
   };
 
+  static_assert(atomic_slot<ring_slot<int>>);
+
   template<typename T>
   inline constexpr auto slot_value_accessor = [](auto&& a) -> std::add_lvalue_reference_t<T>
   {
-    dbg::verify<slot_state::state_mask>(a.load(std::memory_order_acquire) | slot_state::locked,
-                                        slot_state::locked_ready);
     return FWD(a).value();
+  };
+
+  /// @brief A scoped RAII wrapper for a borrowed `ring_slot` pointer, ensuring release on
+  /// destruction.
+  /// @details The `claimed_slot` class provides temporary access to a `ring_slot`'s value,
+  /// automatically releasing the slot when it goes out of scope. It supports dereferencing, arrow
+  /// access, and invocation if the value is callable. Move-only to transfer ownership safely.
+  /// @tparam `Slot` The slot type, typically `ring_slot<T>`.
+  /// @note Assumes the slot is in `ready` state when lent; undefined otherwise.
+  /// @example
+  /// ```cpp
+  /// auto slot = queue.try_pop();
+  /// if (slot) {
+  ///   slot();  // If callable
+  /// }  // Auto-releases
+  /// ```
+  template<typename T>
+  class alignas(details::cache_line_size) claimed_slot
+  {
+    using Slot  = ring_slot<T>;
+    Slot* slot_ = nullptr;
+
+  public:
+    using value_type = T;
+
+    claimed_slot(Slot* slot)
+      : slot_(slot)
+    {
+#ifndef NDEBUG
+      if (slot_)
+      {
+        dbg::verify<slot_state::state_mask>(*slot_, slot_state::locked_ready);
+      }
+#endif
+    }
+
+    claimed_slot(claimed_slot&& other) noexcept
+      : slot_(std::exchange(other.slot_, nullptr))
+    {
+#ifndef NDEBUG
+      if (slot_)
+      {
+        dbg::verify<slot_state::state_mask>(*slot_, slot_state::locked_ready);
+      }
+#endif
+    }
+
+    auto
+    operator=(claimed_slot&& other) noexcept -> claimed_slot&
+    {
+      if (this != &other) [[likely]]
+      {
+        if (slot_) [[unlikely]]
+        {
+          slot_->template release<slot_state::locked_ready>();
+        }
+        slot_ = std::exchange(other.slot_, nullptr);
+      }
+      return *this;
+    }
+
+    claimed_slot(claimed_slot const&)                    = delete;
+    auto operator=(claimed_slot const&) -> claimed_slot& = delete;
+
+    ~claimed_slot()
+    {
+      if (slot_)
+      {
+        slot_->template release<slot_state::locked_ready>();
+      }
+    }
+
+    template<typename U>
+      requires (!std::common_reference_with<T, U>)
+    [[nodiscard]] inline constexpr
+    operator U&&() const noexcept
+    {
+      return slot_ != nullptr;
+    }
+
+    template<std::common_reference_with<T> U>
+    [[nodiscard]] inline constexpr
+    operator U() const noexcept
+      requires (std::same_as<U, bool>)
+    {
+      return slot_ != nullptr;
+    }
+
+    template<std::common_reference_with<T> U>
+    [[nodiscard]] inline constexpr
+    operator U() const noexcept
+      requires (!std::same_as<U, bool> && std::convertible_to<T, U>)
+    {
+      assert(slot_ != nullptr and "claimed_slot::U()");
+      return *slot_;
+    }
+
+    auto
+    operator*() noexcept -> decltype(auto)
+    {
+      return slot_->value();
+    }
+
+    auto
+    operator*() const noexcept -> decltype(auto)
+    {
+      return slot_->value();
+    }
+
+    auto
+    operator->() noexcept -> decltype(auto)
+    {
+      return &slot_->value();
+    }
+
+    auto
+    operator->() const noexcept -> decltype(auto)
+    {
+      return &slot_->value();
+    }
+
+    template<typename... Args>
+    auto
+    operator()(Args&&... args) noexcept -> decltype(auto)
+      requires std::invocable<decltype(**this), Args...>
+    {
+      return std::invoke(**this, std::forward<Args>(args)...);
+    }
+
+    template<typename... Args>
+    auto
+    operator()(Args&&... args) const noexcept -> decltype(auto)
+      requires std::invocable<decltype(**this) const, Args...>
+    {
+      return std::invoke(**this, std::forward<Args>(args)...);
+    }
   };
 }
 
