@@ -23,6 +23,7 @@ namespace fho
     claimed_free = claimed | free,
     /// @brief For debugging purposes only.
     claimed_active = claimed | active,
+    all_mask       = static_cast<slot_state>(-1)
   };
 
   using atomic_state_t = fho::atomic_bitfield<slot_state>;
