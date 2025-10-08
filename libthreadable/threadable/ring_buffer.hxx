@@ -240,10 +240,10 @@ namespace fho
 
       // 2. Assign `value_type`.
       elem.emplace(FWD(args)...);
-      elem.bind(token);
 
       elem.template commit<slot_state::locked_empty>(std::memory_order_acq_rel,
                                                      std::memory_order_acquire);
+      elem.bind(token); // NOTE: Always bind _after_ comitting (state == ready).
 
       head_.notify_one();
       return token;
