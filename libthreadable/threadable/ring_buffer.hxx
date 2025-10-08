@@ -469,29 +469,6 @@ namespace fho
       const_transform_type(std::ranges::subrange(begin_, end_),
                            slot_value_accessor<value_type const>);
   };
-
-  /// @brief Ensures the value type fits within the slot size. See `ring_buffer` for details.
-  /// @details Identical to `ring_buffer` but statically checks that the size of type `T` does not
-  ///          exceed the available slot size (`details::slot_size`, typically cache line size minus
-  ///          `sizeof(atomic_state_t)`). Provides a detailed error message if supported by C++23
-  ///          and `std::format`.
-  template<typename T = fast_func_t, std::size_t Capacity = details::default_capacity,
-           typename Allocator = aligned_allocator<ring_slot<T>, details::cache_line_size>>
-  class fixed_ring_buffer : public ring_buffer<T, Capacity, Allocator>
-  {
-    static constexpr auto index_mask = Capacity - 1u;
-
-    static_assert(Capacity > 1, "capacity must be greater than 1");
-    static_assert((Capacity & index_mask) == 0, "capacity must be a power of 2");
-
-#if __cpp_static_assert >= 202306L && __cpp_lib_constexpr_format
-    static_assert(sizeof(T) <= details::slot_size,
-                  std::format("T (size: {}) does not fit ring buffer slot (free : {}) ", sizeof(T),
-                              details::slot_size));
-#else
-    static_assert(sizeof(T) <= details::slot_size, "T does not fit ring buffer slot");
-#endif
-  };
 }
 
 #undef FWD
