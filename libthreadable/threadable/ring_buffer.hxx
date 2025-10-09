@@ -181,6 +181,18 @@ namespace fho
     static_assert(sizeof(slot_type) % details::cache_line_size == 0,
                   "Buffer slot size must be a multiple of the cache line size");
 
+    static constexpr auto
+    mask(index_t i) noexcept -> decltype(auto)
+    {
+      return ring_iterator_t::mask(i);
+    }
+
+    static constexpr auto
+    epoch_of(index_t i) noexcept -> decltype(auto)
+    {
+      return ring_iterator_t::epoch_of(i);
+    }
+
     /// @brief Default constructor.
     /// @details Initializes the ring buffer with pre-allocated slots of size `Capacity`.
     ring_buffer() noexcept          = default;
@@ -244,7 +256,7 @@ namespace fho
     {
       // 1. Claim a slot.
       auto const slot = head_.fetch_add(1, std::memory_order_acquire);
-      auto const pos  = ring_iterator_t::mask(slot);
+      auto const pos  = mask(slot);
       slot_type& elem = elems_[pos];
 
       while (!elem.template try_lock<slot_state::empty>(std::memory_order_acq_rel))
@@ -293,7 +305,7 @@ namespace fho
     {
       assert(size() > 0);
       auto const tail = tail_.load(std::memory_order_acquire);
-      return elems_[ring_iterator_t::mask(tail)];
+      return elems_[mask(tail)];
     }
 
     /// @brief Accesses the last element in the ring buffer.
@@ -306,7 +318,7 @@ namespace fho
     {
       assert(size() > 0);
       auto const head = head_.load(std::memory_order_acquire);
-      return elems_[ring_iterator_t::mask(head - 1)];
+      return elems_[mask(head - 1)];
     }
 
     /// @brief Removes the first element from the ring buffer.
@@ -325,7 +337,7 @@ namespace fho
         // 1. Read tail slot.
         tail = tail_.load(std::memory_order_acquire);
         // 2. Acquire tail slot.
-        slot_type& elem = elems_[ring_iterator_t::mask(tail)];
+        slot_type& elem = elems_[mask(tail)];
         if (elem.template try_lock<slot_state::ready>()) [[likely]]
         {
           // 3. Release tail slot.
@@ -344,7 +356,7 @@ namespace fho
     {
       auto const tail = tail_.load(std::memory_order_acquire);
       auto const head = head_.load(std::memory_order_acquire);
-      if (ring_iterator_t::mask(head - tail) == 0) [[unlikely]]
+      if (mask(head - tail) == 0) [[unlikely]]
       {
         head_.wait(head, std::memory_order_acquire);
       }
@@ -371,7 +383,7 @@ namespace fho
       auto       i    = tail;
       for (; i < cap; ++i)
       {
-        auto& s = elems_[ring_iterator_t::mask(i)];
+        auto& s = elems_[mask(i)];
         if (!s.template try_lock<slot_state::ready>(std::memory_order_acq_rel))
         {
           break;

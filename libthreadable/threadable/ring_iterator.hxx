@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <cstddef>
 #include <iterator>
 #include <ranges>
@@ -26,17 +27,24 @@ namespace fho
     using reference         = value_type&;
     using element_type      = value_type;
 
-    inline static constexpr size_t buffer_size = Mask + 1;
+    static constexpr size_t buffer_size   = Mask + 1;
+    static constexpr auto   capacity_bits = std::countr_zero(buffer_size);
 
     /// @brief Masks an index to wrap it around the buffer size.
     /// @details Applies a bitwise AND operation with `Mask` to compute the effective position
     /// within the buffer, equivalent to `index % capacity` for power-of-two capacities.
     /// @param `index` The index to mask.
     /// @return The masked index, ensuring it stays within the buffer bounds.
-    inline static constexpr auto
+    static constexpr auto
     mask(size_t index) noexcept
     {
       return index & Mask;
+    }
+
+    static constexpr auto
+    epoch_of(size_t i) noexcept -> bool
+    {
+      return (i >> capacity_bits) & 1;
     }
 
     ring_iterator() = default;
