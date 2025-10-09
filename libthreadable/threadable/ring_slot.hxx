@@ -463,14 +463,6 @@ namespace fho
       }
     }
 
-    template<typename U>
-      requires (!std::common_reference_with<T, U>)
-    [[nodiscard]] inline constexpr
-    operator U&&() const noexcept
-    {
-      return slot_ != nullptr;
-    }
-
     template<std::common_reference_with<T> U>
     [[nodiscard]] inline constexpr
     operator U() const noexcept
@@ -479,13 +471,20 @@ namespace fho
       return slot_ != nullptr;
     }
 
+    [[nodiscard]] inline constexpr
+    operator bool() const noexcept
+      requires (!std::common_reference_with<T, bool>)
+    {
+      return slot_ != nullptr;
+    }
+
     template<std::common_reference_with<T> U>
     [[nodiscard]] inline constexpr
-    operator U() const noexcept
+    operator U&&() const noexcept
       requires (!std::same_as<U, bool> && std::convertible_to<T, U>)
     {
       assert(slot_ != nullptr and "claimed_slot::U()");
-      return *slot_;
+      return slot_->value();
     }
 
     auto
