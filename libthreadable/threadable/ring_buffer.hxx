@@ -391,6 +391,20 @@ namespace fho
         {
           break;
         }
+        // If insertion required "previous empty" on back,
+        // then for front we require "next empty" (and same-lap) when tag_seq is set.
+        if (s.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
+        {
+          auto const  ppos = i - 1;
+          auto const& p    = elems_[mask(ppos)];
+
+          if (!p.template test<slot_state::empty>(std::memory_order_acquire) &&
+              p.template test<slot_state::epoch>(std::memory_order_relaxed) == epoch_of(ppos))
+          {
+            s.template unlock<slot_state::locked_ready>();
+            break;
+          }
+        }
       }
       auto b = ring_iterator_t(elems_.data(), tail);
       auto e = ring_iterator_t(elems_.data(), i);
