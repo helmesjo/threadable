@@ -41,28 +41,8 @@ namespace fho
   class pool
   {
   public:
-    using queue_t = ring_buffer<fast_func_t, Capacity>;
-
-    /// @brief Structure representing a task queue with an associated execution policy.
-    struct task_queue
-    {
-      task_queue(task_queue const&)                    = delete;
-      task_queue(task_queue&&)                         = default;
-      auto operator=(task_queue const&) -> task_queue& = delete;
-      auto operator=(task_queue&&) -> task_queue&      = default;
-
-      task_queue(execution policy, queue_t buffer)
-        : policy(policy)
-        , buffer(std::move(buffer))
-      {}
-
-      ~task_queue() = default;
-
-      alignas(details::cache_line_size) execution policy;
-      alignas(details::cache_line_size) queue_t buffer;
-    };
-
-    using queues_t = std::vector<std::shared_ptr<task_queue>>;
+    using queue_t  = ring_buffer<fast_func_t, Capacity>;
+    using queues_t = std::vector<std::shared_ptr<queue_t>>;
 
     /// @brief Initializes the thread pool with a specified number of worker threads.
     /// @details Creates the specified number of `executor` instances, each running in its own
@@ -114,20 +94,19 @@ namespace fho
               executed = false;
               for (auto& queue : queues)
               {
-                auto& [policy, buffer] = *queue;
                 // assign to (random) worker
                 // @TODO: Implement a proper load balancer, both
                 //        for range size & executor selection.
                 // @NOTE: The `cap` is arbitrary and should be
                 //        dealt with by a load balancer.
                 //        Runs until queues are exhausted.
-                for (auto range = buffer.consume(cap); !range.empty(); range = buffer.consume(cap))
+                for (auto range = queue->consume(cap); !range.empty(); range = queue->consume(cap))
                   [[likely]]
                 {
                   if (mt) [[likely]]
                   {
                     executor& e = *executors_[distr(gen)];
-                    e.submit(std::move(range), policy);
+                    e.submit(std::move(range));
                   }
                   else [[unlikely]]
                   {
@@ -160,7 +139,7 @@ namespace fho
                   !std::ranges::any_of(queues,
                                        [](auto const& q) -> bool
                                        {
-                                         return q->buffer.size() > 0;
+                                         return q->size() > 0;
                                        })) [[unlikely]]
               {
                 if (hpclock_t::now() - last < 10ms) [[likely]]
@@ -201,34 +180,31 @@ namespace fho
       }
     }
 
-    /// @brief Creates and adds a new task queue to the pool with the specified execution policy.
+    /// @brief Creates and adds a new task queue to the pool.
     /// @details Instantiates a new `ring_buffer<fast_func_t, Capacity>` and adds it to the pool's
-    /// list of queues. The execution policy determines how tasks in this queue are executed
-    /// (sequentially or in parallel).
-    /// @param policy The execution policy for the new queue. Defaults to `execution::par`.
+    /// list of queues.
     /// @return A reference to the newly created `ring_buffer`.
     [[nodiscard]] auto
-    create(execution policy = execution::par) noexcept -> queue_t&
+    create() noexcept -> queue_t&
     {
-      return add(queue_t{}, policy);
+      return add(queue_t{});
     }
 
     /// @brief Adds an existing queue to the pool's management.
     /// @details Moves the provided `ring_buffer` into the pool's list of queues, allowing the
     /// scheduler to distribute its tasks to the executors.
     /// @param q The `ring_buffer` to add, moved into the pool.
-    /// @param policy The execution policy for the queue.
     /// @return A reference to the added `ring_buffer`.
     [[nodiscard]] auto
-    add(queue_t&& q, execution policy) -> queue_t&
+    add(queue_t&& q) -> queue_t&
     {
-      task_queue* queue = nullptr;
+      queue_t* queue = nullptr;
       {
         auto _ = std::scoped_lock{queueMutex_};
-        queue  = queues_.emplace_back(std::make_unique<task_queue>(policy, std::move(q))).get();
+        queue  = queues_.emplace_back(std::make_unique<queue_t>(std::move(q))).get();
       }
 
-      return queue->buffer;
+      return *queue;
     }
 
     /// @brief Removes a specified queue from the pool.
@@ -243,7 +219,7 @@ namespace fho
       if (auto itr = std::find_if(std::begin(queues_), std::end(queues_),
                                   [&queue](auto const& q)
                                   {
-                                    return &q->buffer == &queue;
+                                    return q.get() == &queue;
                                   });
           itr != std::end(queues_))
       {
@@ -318,14 +294,12 @@ namespace fho
   }
 
   /// @brief Creates a new task queue in the default thread pool.
-  /// @details Uses a lazily-initialized default `pool` instance to create a new queue with the
-  /// specified execution policy.
-  /// @param policy The execution policy for the new queue. Defaults to `execution::par`.
+  /// @details Uses a lazily-initialized default `pool` instance to create a new queue.
   /// @return A reference to the newly created `ring_buffer`.
   [[nodiscard]] inline auto
-  create(execution policy = execution::par) noexcept -> decltype(auto)
+  create() noexcept -> decltype(auto)
   {
-    return details::default_pool().create(policy);
+    return details::default_pool().create();
   }
 
   /// @brief Removes a queue from the default thread pool.

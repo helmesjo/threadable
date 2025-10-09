@@ -53,38 +53,15 @@ TEST_CASE("pool: task execution")
   {
     auto pool = fho::pool<tasks_per_iteration>();
 
-    auto& queue = pool.create(fho::execution::par);
+    auto& queue = pool.create();
     b.batch(tasks_per_iteration)
-      .run("fho::pool (queues: 1)",
+      .run("fho::pool",
            [&]
            {
-             fho::token_group group;
+             auto group = fho::token_group{};
              for (std::size_t i = 0; i < tasks_per_iteration; ++i)
              {
                group += queue.emplace_back(task_t{});
-             }
-             group.wait();
-           });
-  }
-  {
-    auto pool = fho::pool<tasks_per_iteration>();
-
-    auto queues =
-      std::vector<std::reference_wrapper<fho::ring_buffer<fho::fast_func_t, tasks_per_iteration>>>{
-        pool.create(fho::execution::par), pool.create(fho::execution::par),
-        pool.create(fho::execution::par), pool.create(fho::execution::par)};
-
-    b.batch(tasks_per_iteration)
-      .run("fho::pool (queues: 4)",
-           [&]
-           {
-             fho::token_group group;
-             for (std::size_t i = 0; i < tasks_per_iteration >> 2; ++i)
-             {
-               for (decltype(pool)::queue_t& queue : queues)
-               {
-                 group += queue.emplace_back(task_t{});
-               }
              }
              group.wait();
            });

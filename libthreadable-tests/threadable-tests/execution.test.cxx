@@ -24,7 +24,7 @@ SCENARIO("executor: Submit callables")
       // simulate interruptions
       if (i % 2 == 0)
       {
-        tokens += exec.submit(items, fho::execution::seq);
+        tokens += exec.submit(items);
         items.clear();
         std::this_thread::yield();
       }

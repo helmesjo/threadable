@@ -59,33 +59,18 @@ namespace fho
     auto operator=(executor const&) -> executor& = delete;
     auto operator=(executor&&) -> executor&      = delete;
 
-    /// @brief Submits a range of tasks as a single task with specified execution policy.
-    /// @details Wraps the range in a lambda that executes all tasks in the range based on the
-    ///          policy (`seq` or `par`). For `seq`, ensures prior `ring_buffer` slots complete.
+    /// @brief Submits a range of tasks as a single task.
+    /// @details Wraps the range in a lambda that executes all tasks in the range.
     /// @tparam T The range type, must contain invocable objects.
     /// @param range The range of tasks to execute as a single task.
-    /// @param policy The execution policy (`execution::seq` or `execution::par`).
     /// @return A `slot_token` representing the submitted task in the `ring_buffer`.
     auto
-    submit(std::ranges::range auto&& range, execution policy) noexcept
+    submit(std::ranges::range auto&& range) noexcept
       requires std::invocable<std::ranges::range_value_t<decltype(range)>>
     {
       return work_.emplace_back(
-        [policy](std::ranges::range auto r)
+        [](std::ranges::range auto r)
         {
-          if constexpr (requires { r.begin().base()->wait(); })
-          {
-            if (policy == execution::seq) [[unlikely]]
-            {
-              auto const b    = r.begin().base();
-              auto const e    = r.end().base();
-              auto const prev = b - 1;
-              if (b != e && prev != e && prev < b) [[unlikely]]
-              {
-                prev->wait();
-              }
-            }
-          }
           for (auto& c : r)
           {
             c();

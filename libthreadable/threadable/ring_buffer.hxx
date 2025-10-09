@@ -249,27 +249,30 @@ namespace fho
     /// fho::slot_token token;
     /// buffer.emplace_back(token, []() { std::cout << "Task\n"; });
     /// ```
-    template<typename... Args>
+    template<slot_state Tags = slot_state::invalid, typename... Args>
       requires std::constructible_from<T, Args...>
     auto
     emplace_back(slot_token& token, Args&&... args) noexcept -> slot_token&
     {
       // 1. Claim a slot.
-      auto const slot = head_.fetch_add(1, std::memory_order_acquire);
-      auto const pos  = mask(slot);
-      slot_type& elem = elems_[pos];
+      auto const h   = head_.fetch_add(1, std::memory_order_acquire);
+      auto const pos = mask(h);
+      slot_type& s   = elems_[pos];
 
-      while (!elem.template try_lock<slot_state::empty>(std::memory_order_acq_rel))
+      while (!s.template try_lock<slot_state::empty>(std::memory_order_acq_rel))
       {
-        elem.template wait<slot_state::empty, false>(std::memory_order_relaxed);
+        s.template wait<slot_state::empty, false>(std::memory_order_relaxed);
       }
 
       // 2. Assign `value_type`.
-      elem.emplace(FWD(args)...);
+      s.emplace(FWD(args)...);
+      s.template set<Tags, true>(std::memory_order_relaxed);
+      s.template set<slot_state::epoch>(epoch_of(h), std::memory_order_relaxed);
+      // dbg::verify<slot_state::epoch>(s, epoch_of(h) ? slot_state::epoch : slot_state::invalid);
 
-      elem.template commit<slot_state::locked_empty>(std::memory_order_acq_rel,
-                                                     std::memory_order_acquire);
-      elem.bind(token); // NOTE: Always bind _after_ comitting (state == ready).
+      s.template commit<slot_state::locked_empty>(std::memory_order_acq_rel,
+                                                  std::memory_order_acquire);
+      s.bind(token); // NOTE: Always bind _after_ comitting (state == ready).
 
       head_.notify_one();
       return token;
@@ -285,14 +288,14 @@ namespace fho
     /// ```cpp
     /// auto token = buffer.emplace_back([]() { std::cout << "Task\n"; });
     /// ```
-    template<typename... Args>
+    template<slot_state Tags = slot_state::invalid, typename... Args>
       requires std::constructible_from<T, Args...>
     auto
     emplace_back(Args&&... args) noexcept -> slot_token
     {
-      slot_token token;
-      (void)emplace_back(token, FWD(args)...);
-      return token;
+      auto t = slot_token{};
+      emplace_back<Tags>(t, FWD(args)...);
+      return t;
     }
 
     /// @brief Accesses the first element in the ring buffer.
