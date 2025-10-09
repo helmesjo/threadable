@@ -202,7 +202,7 @@ namespace fho
     /// @details Consumes all remaining items to ensure proper cleanup.
     ~ring_buffer()
     {
-      (void)consume();
+      clear();
     }
 
     /// @brief Move constructor.
@@ -350,6 +350,39 @@ namespace fho
         }
         // 4. Somebody already released tail - Retry.
       }
+    }
+
+    auto
+    try_pop_front() noexcept -> claimed_slot<T>
+    {
+      auto const t = tail_.load(std::memory_order_acquire);
+      auto&      s = elems_[mask(t)];
+      if (s.template try_lock<slot_state::ready>())
+      {
+        // If insertion required "previous empty" (tag_seq is set)
+        // then check if previous slot is set to 'empty' iff in the
+        // same epoch.
+        if (s.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
+        {
+          auto const  ppos = t - 1;
+          auto const& p    = elems_[mask(ppos)];
+
+          if (!p.template test<slot_state::empty>(std::memory_order_acquire) &&
+              p.template test<slot_state::epoch>(std::memory_order_relaxed) == epoch_of(ppos))
+          {
+            s.template unlock<slot_state::locked_ready>();
+            return {nullptr};
+          }
+        }
+        auto exp = t;
+        if (tail_.compare_exchange_strong(exp, t + 1, std::memory_order_acq_rel,
+                                          std::memory_order_acquire))
+        {
+          return {&s};
+        }
+        s.template unlock<slot_state::locked_ready>();
+      }
+      return {nullptr};
     }
 
     /// @brief Waits until the buffer has items available.
