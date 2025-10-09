@@ -19,15 +19,17 @@ namespace fho::dbg
     static char const* bred  = color ? "\033[1;31m" : "";
     static char const* reset = color ? "\033[0m" : "";
 
-    static auto mut  = std::mutex{};
-    auto        _    = std::scoped_lock{mut};
-    auto        curr = to_str(current);
-    auto        exp  = to_str(expected);
+    static auto mut     = std::mutex{};
+    auto        _       = std::scoped_lock{mut};
+    auto        curr    = to_str(current);
+    auto        exp     = to_str(expected);
+    auto        expStr  = exp.data();
+    auto        currStr = curr.data();
     std::fprintf( // NOLINT
       stderr,
       "%s%s(%s) %sstate == expected%s (%s)%s, file %s, line %d:%d, function "
       "%s%s\n",
-      pref, red, curr.c_str(), bred, red, exp.c_str(), reset, l.file_name(), l.line(), l.column(),
+      pref, red, currStr, bred, red, expStr, reset, l.file_name(), l.line(), l.column(),
       l.function_name(), reset);
     std::fflush(stderr);
   }

@@ -62,52 +62,64 @@ namespace fho
 
   namespace dbg
   {
-    inline constexpr auto
-    to_str(slot_state s) -> std::string
+    inline auto
+    to_str(slot_state s) -> std::string_view
     {
-      auto res    = std::string{};
-      bool first  = true;
+      thread_local std::array<char, 64> buf{};   // Thread-local fixed buffer, no heap.
+      char*                             pos = buf.data();
+      char* end   = buf.data() + buf.size() - 1; // Reserve null terminator.
+      bool  first = true;
+
       auto append = [&](char const* str)
       {
         if (!first)
         {
-          res += "|";
+          if (pos + 1 < end)
+          {
+            *pos++ = '|';
+          }
         }
-        res += str;
+        while (*str && pos < end)
+        {
+          *pos++ = *str++;
+        }
         first = false;
       };
 
-      if (s & fho::locked)
-      {
-        append("locked");
-      }
-      if (s == fho::invalid)
+      if (s == fho::invalid) [[unlikely]]
       {
         append("invalid");
       }
-      if (s == fho::empty)
+      else [[likely]]
       {
-        append("empty");
-      }
-      if (s & fho::ready)
-      {
-        append("ready");
-      }
-      if (s & fho::epoch)
-      {
-        append("epoch");
-      }
-      if (s & fho::tag_seq)
-      {
-        append("tag_seq");
+        if (s & fho::locked)
+        {
+          append("locked");
+        }
+        if (s & fho::empty)
+        {
+          append("empty");
+        }
+        if (s & fho::ready)
+        {
+          append("ready");
+        }
+        if (s & fho::epoch)
+        {
+          append("epoch");
+        }
+        if (s & fho::tag_seq)
+        {
+          append("tag_seq");
+        }
+        if (first)
+        {
+          append("unknown");
+        }
       }
 
-      if (first)
-      {
-        append("unknown");
-      }
-
-      return res;
+      *pos = '\0';
+      return std::string_view(buf.data(), pos - buf.data()); // NOLINT
     }
   }
 
