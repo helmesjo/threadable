@@ -249,6 +249,51 @@ SCENARIO("ring_buffer: try pop")
         REQUIRE(*e == 3);
         REQUIRE_FALSE(ring.try_pop_front());
       }
+      THEN("3 items can be popped from back")
+      {
+        // NOTE: Can only pop from back once last pop is
+        //       reset to 'empty', else it's considered
+        //       unavailable. So reclaim slot each time.
+        {
+          auto e = ring.try_pop_back();
+          REQUIRE(e);
+          REQUIRE(*e == 3);
+        }
+        {
+          auto e = ring.try_pop_back();
+          REQUIRE(e);
+          REQUIRE(*e == 2);
+        }
+        {
+          auto e = ring.try_pop_back();
+          REQUIRE(e);
+          REQUIRE(*e == 1);
+        }
+        REQUIRE_FALSE(ring.try_pop_back());
+      }
+      THEN("1 item is popped from front, 2 from back")
+      {
+        // NOTE: Can only pop from back once last pop is
+        //       reset to 'empty', else it's considered
+        //       unavailable.
+        {
+          auto e = ring.try_pop_front();
+          REQUIRE(e);
+          REQUIRE(*e == 1);
+        }
+        {
+          auto e = ring.try_pop_back();
+          REQUIRE(e);
+          REQUIRE(*e == 3);
+        }
+        {
+          auto e = ring.try_pop_back();
+          REQUIRE(e);
+          REQUIRE(*e == 2);
+        }
+        REQUIRE_FALSE(ring.try_pop_front());
+        REQUIRE_FALSE(ring.try_pop_back());
+      }
     }
     WHEN("push back 2 sequentially tagged items")
     {
@@ -445,7 +490,8 @@ SCENARIO("ring_buffer: stress-test")
       REQUIRE(tasksExecuted == nr_of_tasks);
     }
   }
-  GIVEN("1 producer & 1 consumer")
+
+  GIVEN("1 producer & 1 consumer (front)")
   {
     static constexpr auto capacity = std::size_t{1 << 8};
 
@@ -487,7 +533,81 @@ SCENARIO("ring_buffer: stress-test")
       REQUIRE(tasksExecuted.load() == ring.max_size());
     }
   }
-  GIVEN("4 producers & 1 consumer")
+
+  GIVEN("1 producers & 1 consumers (back)")
+  {
+    static constexpr auto capacity      = std::size_t{1 << 16};
+    static constexpr auto nr_producers  = std::size_t{1};
+    static constexpr auto nr_consumers  = std::size_t{1};
+    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+
+    auto ring    = fho::ring_buffer<func_t, capacity>();
+    auto barrier = std::barrier{nr_producers + nr_consumers};
+
+    THEN("there are no race conditions")
+    {
+      auto processed = std::atomic_size_t{0};
+
+      // start producers
+      auto producers = std::vector<std::thread>{};
+      for (std::size_t i = 0; i < nr_producers; ++i)
+      {
+        producers.emplace_back(
+          [&barrier, &ring, &processed]
+          {
+            barrier.arrive_and_wait();
+            static_assert(nr_to_process % nr_producers == 0, "All tasks must be submitted");
+            for (std::size_t i = 0; i < nr_to_process / nr_producers; ++i)
+            {
+              ring.emplace_back(
+                [&processed]
+                {
+                  ++processed;
+                });
+            }
+          });
+      }
+      // start consumers
+      auto consumers = std::vector<std::thread>{};
+      for (std::size_t i = 0; i < nr_consumers; ++i)
+      {
+        consumers.emplace_back(
+          [&barrier, &ring, &processed]
+          {
+            barrier.arrive_and_wait();
+            while (processed < nr_to_process)
+            {
+              if (auto t = ring.try_pop_back())
+              {
+                t();
+              }
+            }
+          });
+      }
+
+      for (auto& producer : producers)
+      {
+        producer.join();
+      }
+      for (auto& consumer : consumers)
+      {
+        consumer.join();
+      }
+
+      auto i = std::uint64_t{0u};
+      for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
+      {
+        INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
+                           << ", index: " << i << ", slot: " << ring.mask(i)
+                           << " state: " << d->load(std::memory_order_acquire));
+        REQUIRE(d->template test<fho::slot_state::empty>());
+      }
+      REQUIRE(processed.load() == nr_to_process);
+      REQUIRE(ring.size() == 0);
+    }
+  }
+
+  GIVEN("4 producers & 1 consumers (front)")
   {
     static constexpr auto capacity      = std::size_t{1 << 16};
     static constexpr auto nr_producers  = std::size_t{4};
@@ -560,7 +680,82 @@ SCENARIO("ring_buffer: stress-test")
     }
   }
 
-  GIVEN("1 producers & 4 consumer")
+  GIVEN("2 producers & 1 consumers (back)")
+  {
+    // This means a highly contended path, so limit stress-test
+    // to only TWO PRODUCERS and ONE CONSUMER.
+    static constexpr auto capacity      = std::size_t{1 << 16};
+    static constexpr auto nr_producers  = std::size_t{2};
+    static constexpr auto nr_consumers  = std::size_t{1};
+    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+
+    auto ring    = fho::ring_buffer<func_t, capacity>();
+    auto barrier = std::barrier{nr_producers + nr_consumers};
+
+    THEN("there are no race conditions")
+    {
+      auto processed = std::atomic_size_t{0};
+
+      // start producers
+      auto producers = std::vector<std::thread>{};
+      for (std::size_t i = 0; i < nr_producers; ++i)
+      {
+        producers.emplace_back(
+          [&barrier, &ring, &processed]
+          {
+            barrier.arrive_and_wait();
+            static_assert(nr_to_process % nr_producers == 0, "All tasks must be submitted");
+            for (std::size_t i = 0; i < nr_to_process / nr_producers; ++i)
+            {
+              ring.emplace_back(
+                [&processed]
+                {
+                  ++processed;
+                });
+            }
+          });
+      }
+      // start consumers
+      auto consumers = std::vector<std::thread>{};
+      for (std::size_t i = 0; i < nr_consumers; ++i)
+      {
+        consumers.emplace_back(
+          [&barrier, &ring, &processed]
+          {
+            barrier.arrive_and_wait();
+            while (processed < nr_to_process)
+            {
+              if (auto t = ring.try_pop_back())
+              {
+                t();
+              }
+            }
+          });
+      }
+
+      for (auto& producer : producers)
+      {
+        producer.join();
+      }
+      for (auto& consumer : consumers)
+      {
+        consumer.join();
+      }
+
+      auto i = std::uint64_t{0u};
+      for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
+      {
+        INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
+                           << ", index: " << i << ", slot: " << ring.mask(i)
+                           << " state: " << d->load(std::memory_order_acquire));
+        REQUIRE(d->template test<fho::slot_state::empty>());
+      }
+      REQUIRE(processed.load() == nr_to_process);
+      REQUIRE(ring.size() == 0);
+    }
+  }
+
+  GIVEN("1 producers & 4 consumers (front)")
   {
     static constexpr auto capacity      = std::size_t{1 << 16};
     static constexpr auto nr_producers  = std::size_t{1};
@@ -632,6 +827,81 @@ SCENARIO("ring_buffer: stress-test")
       REQUIRE(ring.size() == 0);
     }
   }
+
+  GIVEN("1 producers & 2 consumers (back)")
+  {
+    // This means a highly contended path, so limit stress-test
+    // to only ONE PRODUCER and TWO CONSUMERS.
+    static constexpr auto capacity      = std::size_t{1 << 16};
+    static constexpr auto nr_producers  = std::size_t{1};
+    static constexpr auto nr_consumers  = std::size_t{2};
+    static constexpr auto nr_to_process = std::size_t{capacity * nr_producers};
+
+    auto ring    = fho::ring_buffer<func_t, capacity>();
+    auto barrier = std::barrier{nr_producers + nr_consumers};
+
+    THEN("there are no race conditions")
+    {
+      auto processed = std::atomic_size_t{0};
+
+      // start producers
+      auto producers = std::vector<std::thread>{};
+      for (std::size_t i = 0; i < nr_producers; ++i)
+      {
+        producers.emplace_back(
+          [&barrier, &ring, &processed]
+          {
+            barrier.arrive_and_wait();
+            static_assert(nr_to_process % nr_producers == 0, "All tasks must be submitted");
+            for (std::size_t i = 0; i < nr_to_process / nr_producers; ++i)
+            {
+              ring.emplace_back(
+                [&processed]
+                {
+                  ++processed;
+                });
+            }
+          });
+      }
+      // start consumers
+      auto consumers = std::vector<std::thread>{};
+      for (std::size_t i = 0; i < nr_consumers; ++i)
+      {
+        consumers.emplace_back(
+          [&barrier, &ring, &processed]
+          {
+            barrier.arrive_and_wait();
+            while (processed < nr_to_process)
+            {
+              if (auto t = ring.try_pop_back())
+              {
+                t();
+              }
+            }
+          });
+      }
+
+      for (auto& producer : producers)
+      {
+        producer.join();
+      }
+      for (auto& consumer : consumers)
+      {
+        consumer.join();
+      }
+
+      auto i = std::uint64_t{0u};
+      for (auto d = ring.data(); d < ring.data() + capacity; ++d, ++i)
+      {
+        INFO("ring-size: " << ring.size() << " (empty: " << ring.empty() << ")"
+                           << ", index: " << i << ", slot: " << ring.mask(i)
+                           << " state: " << d->load(std::memory_order_acquire));
+        REQUIRE(d->template test<fho::slot_state::empty>());
+      }
+      REQUIRE(processed.load() == nr_to_process);
+      REQUIRE(ring.size() == 0);
+    }
+  }
 }
 
 SCENARIO("ring_buffer: standard algorithms")
@@ -645,7 +915,7 @@ SCENARIO("ring_buffer: standard algorithms")
     auto iterated = std::atomic_size_t{0};
     WHEN("emplace all")
     {
-      while (ring.size() < ring.max_size())
+      for (auto i = std::size_t{0}; i < capacity; ++i)
       {
         ring.emplace_back();
       }

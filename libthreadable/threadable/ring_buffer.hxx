@@ -12,6 +12,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <iterator>
 #include <ranges>
 #include <type_traits>
 #include <vector>
@@ -357,7 +358,7 @@ namespace fho
     {
       auto const t = tail_.load(std::memory_order_acquire);
       auto&      s = elems_[mask(t)];
-      if (s.template try_lock<slot_state::ready>())
+      if (s.template try_lock<slot_state::ready>()) [[likely]]
       {
         // If insertion required "previous empty" (tag_seq is set)
         // then check if previous slot is set to 'empty' iff in the
@@ -376,11 +377,44 @@ namespace fho
         }
         auto exp = t;
         if (tail_.compare_exchange_strong(exp, t + 1, std::memory_order_acq_rel,
-                                          std::memory_order_acquire))
+                                          std::memory_order_acquire)) [[likely]]
         {
           return {&s};
         }
         s.template unlock<slot_state::locked_ready>();
+      }
+      return {nullptr};
+    }
+
+    auto
+    try_pop_back() noexcept -> claimed_slot<T>
+    {
+      auto const h = head_.load(std::memory_order_acquire);
+      auto const t = h < Capacity ? 0 : h - Capacity;
+      for (auto i = h; i > t; --i)
+      {
+        auto const pos = i - 1;
+        auto&      s   = elems_[mask(pos)];
+
+        if (s.template try_lock<slot_state::ready>()) [[likely]]
+        {
+          // If insertion required "previous empty" (tag_seq is set)
+          // then check if previous slot is set to 'empty' iff in the
+          // same epoch.
+          if (s.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
+          {
+            auto const  ppos = pos - 1;
+            auto const& p    = elems_[mask(ppos)];
+
+            if (!p.template test<slot_state::empty>(std::memory_order_acquire) &&
+                p.template test<slot_state::epoch>(std::memory_order_relaxed) == epoch_of(ppos))
+            {
+              s.template unlock<slot_state::locked_ready>();
+              break;
+            }
+          }
+          return {&s};
+        }
       }
       return {nullptr};
     }
@@ -451,7 +485,12 @@ namespace fho
     void
     clear() noexcept
     {
-      (void)consume();
+      if (elems_.size() == 0) [[unlikely]]
+      {
+        return;
+      }
+      while (auto s = try_pop_front())
+        ;
     }
 
     /// @brief Returns a const iterator to the buffer's start.
@@ -476,7 +515,7 @@ namespace fho
     }
 
     /// @brief Returns the maximum capacity of the buffer.
-    /// @details Returns `Capacity - 1`, as one slot is reserved to distinguish full from empty.
+    /// @details Returns `Capacity`.
     /// @return Maximum number of items the buffer can hold.
     static constexpr auto
     max_size() noexcept -> std::size_t
@@ -485,14 +524,25 @@ namespace fho
     }
 
     /// @brief Returns the current number of items in the buffer.
-    /// @details Computes the masked difference between `head_` and `tail_`.
+    /// @details Computes the number of items in state `ready` O(N).
     /// @return Current number of items.
     auto
     size() const noexcept -> std::size_t
     {
-      auto const tail = tail_.load(std::memory_order_acquire);
+      if (elems_.size() == 0) [[unlikely]]
+      {
+        return 0;
+      }
+      // TODO: Probably just add a size_ atomic and keep track
+      //       of that, because this can get very slow.
       auto const head = head_.load(std::memory_order_acquire);
-      return head - tail;
+      auto const s =
+        std::count_if(data(), data() + std::min(head, Capacity),
+                      [](auto const& e)
+                      {
+                        return e.template test<slot_state::ready>(std::memory_order_acquire);
+                      });
+      return s;
     }
 
     /// @brief Checks if the buffer is empty.
