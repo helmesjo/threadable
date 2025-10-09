@@ -268,8 +268,7 @@ namespace fho
       // 2. Assign `value_type`.
       s.emplace(FWD(args)...);
       s.template set<Tags, true>(std::memory_order_relaxed);
-      s.template set<slot_state::epoch>(epoch_of(h), std::memory_order_relaxed);
-      // dbg::verify<slot_state::epoch>(s, epoch_of(h) ? slot_state::epoch : slot_state::invalid);
+      dbg::verify<slot_state::epoch>(s, epoch_of(h) ? slot_state::epoch : slot_state::invalid);
 
       s.template commit<slot_state::locked_empty>(std::memory_order_acq_rel,
                                                   std::memory_order_acquire);
@@ -491,6 +490,7 @@ namespace fho
       }
       while (auto s = try_pop_front())
         ;
+      tail_.store(head_.load(std::memory_order_acquire), std::memory_order_release);
     }
 
     /// @brief Returns a const iterator to the buffer's start.
