@@ -61,6 +61,8 @@ namespace fho
     }
 
   public:
+    static constexpr auto is_always_lock_free = atomic_t::is_always_lock_free;
+
     using atomic_t::atomic_t;
     using atomic_t::is_lock_free;
     using atomic_t::operator=;

@@ -161,6 +161,9 @@ namespace fho
     using const_ring_iterator_t = ring_iterator<slot_type const, index_mask>;
 
   public:
+    static constexpr auto is_always_lock_free = slot_type::is_always_lock_free;
+
+    using claimed_type  = claimed_slot<value_type>;
     using subrange_type = decltype(active_subrange<ring_iterator_t, slot_type>() |
                                    std::views::transform(slot_value_accessor<value_type>));
 

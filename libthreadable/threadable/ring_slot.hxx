@@ -51,6 +51,7 @@ namespace fho
   class alignas(details::cache_line_size) ring_slot
   {
   public:
+    static constexpr auto is_always_lock_free = atomic_state_t::is_always_lock_free;
     /// @brief Default constructor.
     /// @details Initializes the slot with an `empty` state and no value.
     ring_slot() = default;
