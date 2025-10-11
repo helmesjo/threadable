@@ -12,7 +12,7 @@ SCENARIO("async: submit tasks")
   GIVEN("tasks are submitted")
   {
     auto counter = std::atomic_size_t{0};
-    auto tokens  = fho::token_group{};
+    auto tokens  = fho::token_group{nr_of_tasks};
     for (std::size_t i = 0; i < nr_of_tasks; ++i)
     {
       tokens += fho::async(
@@ -80,7 +80,7 @@ SCENARIO("execute: execute range of tasks")
   GIVEN("tasks are executed on the sequential queue")
   {
     std::ranges::fill(executed, 0);
-    auto tokens  = fho::token_group{};
+    auto tokens  = fho::token_group{nr_of_tasks};
     auto counter = std::size_t{0};
     auto index   = std::size_t{0};
 
@@ -99,7 +99,7 @@ SCENARIO("execute: execute range of tasks")
   GIVEN("tasks are executed on the parallel queue")
   {
     std::ranges::fill(executed, 0);
-    auto tokens  = fho::token_group{};
+    auto tokens  = fho::token_group{nr_of_tasks};
     auto counter = std::size_t{0};
     auto index   = std::size_t{0};
 

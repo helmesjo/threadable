@@ -58,7 +58,7 @@ TEST_CASE("pool: task execution")
       .run("fho::pool",
            [&]
            {
-             auto group = fho::token_group{};
+             auto group = fho::token_group{tasks_per_iteration};
              for (std::size_t i = 0; i < tasks_per_iteration; ++i)
              {
                group += queue.emplace_back(task_t{});

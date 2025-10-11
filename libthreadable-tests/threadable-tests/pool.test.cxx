@@ -103,8 +103,10 @@ SCENARIO("pool: stress-test")
         {
           static_assert(decltype(pool)::max_size() % nr_producers == 0,
                         "All tasks must be submitted");
-          auto tokens = fho::token_group{};
-          for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
+          constexpr auto nr_of_tasks = queue.max_size() / nr_producers;
+
+          auto tokens = fho::token_group{nr_of_tasks};
+          for (std::size_t j = 0; j < nr_of_tasks; ++j)
           {
             tokens += queue.emplace_back(
               [&counter]
@@ -142,9 +144,11 @@ SCENARIO("pool: stress-test")
           static_assert(decltype(pool)::max_size() % nr_producers == 0,
                         "All tasks must be submitted");
 
-          auto tokens = fho::token_group{};
+          constexpr auto nr_of_tasks = queue.max_size() / nr_producers;
+
+          auto tokens = fho::token_group{nr_of_tasks};
           barrier.arrive_and_wait();
-          for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
+          for (std::size_t j = 0; j < nr_of_tasks; ++j)
           {
             tokens += queue.emplace_back(
               [&counter]

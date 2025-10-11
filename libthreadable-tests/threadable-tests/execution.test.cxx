@@ -11,7 +11,7 @@ SCENARIO("executor: Submit callables")
 
     auto items    = std::vector<std::function<void()>>{};
     auto executed = std::vector<std::size_t>(size, 0);
-    auto tokens   = fho::token_group{};
+    auto tokens   = fho::token_group{size};
     auto counter  = std::atomic_size_t{0};
 
     for (std::size_t i = 0; i < size; ++i)

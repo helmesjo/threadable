@@ -337,8 +337,9 @@ namespace fho
     /// @details Initializes the token group with the specified capacity.
     /// @param `capacity` The initial capacity of the group.
     token_group(std::size_t capacity)
-      : tokens_(capacity)
-    {}
+    {
+      tokens_.reserve(capacity);
+    }
 
     /// @brief Adds a `token` to the group.
     /// @details Appends the token to the internal vector.
