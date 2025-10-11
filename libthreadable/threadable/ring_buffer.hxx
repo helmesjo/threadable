@@ -273,9 +273,12 @@ namespace fho
       s.template set<Tags, true>(std::memory_order_relaxed);
       dbg::verify<slot_state::epoch>(s, epoch_of(h) ? slot_state::epoch : slot_state::invalid);
 
+      s.bind(token); // NOTE: Always bind _before_ comitting. This is especially
+                     //       important for repeat_async(token,) + token.wait().
+                     //       If this is modified, wrap repeat_async() test in
+                     //       a while(true) and let it spin for a while.
       s.template commit<slot_state::locked_empty>(std::memory_order_acq_rel,
                                                   std::memory_order_acquire);
-      s.bind(token); // NOTE: Always bind _after_ comitting (state == ready).
 
       head_.notify_one();
       return token;
