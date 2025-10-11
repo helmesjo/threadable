@@ -265,7 +265,7 @@ namespace fho
 
       while (!s.template try_lock<slot_state::empty>(std::memory_order_acq_rel))
       {
-        s.template wait<slot_state::empty, false>(std::memory_order_relaxed);
+        s.template wait<slot_state::empty>(false, std::memory_order_acquire);
       }
 
       // 2. Assign `value_type`.

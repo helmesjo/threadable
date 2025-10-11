@@ -57,7 +57,7 @@ SCENARIO("atomic_bitfield")
         REQUIRE(field.test<0b00001000>());
         REQUIRE(field.load() == 0b00001000);
 
-        field.wait<0b00001000, false>();
+        field.wait<0b00001000>(false);
       }
     }
   }
@@ -75,7 +75,7 @@ SCENARIO("atomic_bitfield")
       {
         REQUIRE(field.test_and_set<0b00000010, false>());
         REQUIRE(field.load() == 0b11111101);
-        field.wait<0b00000010, true>();
+        field.wait<0b00000010>(true);
       }
     }
   }

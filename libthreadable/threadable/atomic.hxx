@@ -313,22 +313,50 @@ namespace fho
     /// @details Blocks until the bits in `Mask` are all unset if `Old` is true, or all set if `Old`
     /// is false.
     /// @tparam Mask A constant expression representing the bitmask to monitor.
-    /// @tparam Old The initial state of the bits (true for set, false for unset).
+    /// @param old The initial state of the (masked) bits.
+    /// @param order Memory order for the load operation (e.g., `std::memory_order_seq_cst`).
+    /// @example
+    /// ```cpp
+    /// auto flag = fho::atomic_bitfield<std::uint8_t>{0b111};
+    /// flag.wait<0b111>(0b001); // Waits until 0b110
+    /// ```
+    template<T Mask>
+      requires (!std::same_as<T, bool>)
+    inline void
+    wait(T old, std::memory_order order = std::memory_order_seq_cst) const noexcept
+    {
+      constexpr auto umask = to_underlying(Mask);
+      auto const     uold  = to_underlying(old);
+      auto const     utgt  = (~uold) & umask;
+
+      auto curr = atomic_t::load(order);
+      while ((curr & umask) != utgt)
+      {
+        atomic_t::wait(curr, order);
+        curr = atomic_t::load(order);
+      }
+    }
+
+    /// @brief Waits until the bits in the mask change from the specified initial state.
+    /// @details Blocks until the bits in `Mask` are all unset if `Old` is true, or all set if `Old`
+    /// is false.
+    /// @tparam Mask A constant expression representing the bitmask to monitor.
+    /// @param old The initial state of the bits (true for set, false for unset).
     /// @param orders Memory orders for the load operation (e.g., `std::memory_order_seq_cst`).
     /// @example
     /// ```cpp
     /// auto flag = fho::atomic_bitfield<std::uint8_t>{0b111};
-    /// flag.wait<0b111, true>(); // Waits until all bits are unset (0b000)
+    /// flag.wait<0b101>(true); // Waits until bits 0 & 2 are unset (eg. 0b010).
     /// ```
-    template<T Mask, bool Old>
+    template<T Mask>
     inline void
-    wait(std::memory_order order = std::memory_order_seq_cst) const noexcept
+    wait(bool old, std::memory_order order = std::memory_order_seq_cst) const noexcept
     {
       constexpr auto umask = to_underlying(Mask);
-      constexpr auto tgt   = to_underlying(Old ? T{0} : Mask);
+      auto const     utgt  = to_underlying(old ? T{0} : Mask);
 
       auto curr = atomic_t::load(order);
-      while ((curr & umask) != tgt)
+      while ((curr & umask) != utgt)
       {
         atomic_t::wait(curr, order);
         curr = atomic_t::load(order);

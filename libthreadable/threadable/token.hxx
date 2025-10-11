@@ -258,7 +258,7 @@ namespace fho
       {
         assert(state != nullptr and
                "token::wait() - state must never be assigned null while owned");
-        state->wait<slot_state::ready, true>(std::memory_order_acquire);
+        state->wait<slot_state::ready>(true, std::memory_order_acquire);
         // Re-fetch to handle rebinding. If it
         // stayed same, then it wasn't rebound.
         if (auto next = state_.load(std::memory_order_acquire); next == state) [[likely]]
@@ -267,6 +267,8 @@ namespace fho
         }
         else [[unlikely]]
         {
+          assert(next != nullptr and
+                 "token::wait() - state must never be re-assigned to null while owned");
           state = next;
         }
       }

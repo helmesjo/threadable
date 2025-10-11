@@ -30,7 +30,7 @@ namespace fho
                           { slot.template unlock<slot_state::locked_empty>() } noexcept;
                           { slot.template release<slot_state::locked_ready>() } noexcept;
                           {
-                            slot.template wait<slot_state::ready, true>(std::memory_order_acquire)
+                            slot.template wait<slot_state::ready>(true, std::memory_order_acquire)
                           } noexcept;
                         };
 
@@ -278,11 +278,11 @@ namespace fho
     /// @tparam `State` State to transition.
     /// @tparam `Old` Value to transition from.
     ///               Defaults to `true`.
-    template<slot_state State = slot_state::ready, bool Old = true>
+    template<slot_state State = slot_state::ready>
     inline void
-    wait(std::memory_order order = std::memory_order_acquire) const noexcept
+    wait(bool old, std::memory_order order = std::memory_order_acquire) const noexcept
     {
-      state_.template wait<State, Old>(order);
+      state_.template wait<State>(old, order);
     }
 
     /// @brief Tests if any states specified by the mask are set.
