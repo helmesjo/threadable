@@ -193,7 +193,7 @@ namespace fho
       auto exp = State;
       if (!state_.compare_exchange_strong<slot_state::state_mask>(exp, desired, success, failure))
       {
-        dbg::log("Prerequisite violation: ", exp, slot_state::locked_empty);
+        dbg::log("Prerequisite violation: ", exp, desired);
         std::abort();
       }
     }
@@ -209,9 +209,10 @@ namespace fho
 
       dbg::verify<slot_state::state_mask>(state_, State);
       auto exp = State;
-      while (!state_.compare_exchange_weak<slot_state::state_mask>(exp, desired, success, failure))
+      if (!state_.compare_exchange_strong<slot_state::state_mask>(exp, desired, success, failure))
       {
-        exp = State;
+        dbg::log("Prerequisite violation: ", exp, desired);
+        std::abort();
       }
     }
 
@@ -251,7 +252,8 @@ namespace fho
     template<slot_state State>
       requires (State == slot_state::locked_ready)
     inline void
-    release(std::memory_order order = std::memory_order_release) noexcept
+    release(std::memory_order success = std::memory_order_acq_rel,
+            std::memory_order failure = std::memory_order_acquire) noexcept
     {
       dbg::verify<slot_state::state_mask>(state_, State);
       // Free up slot for re-use.
@@ -264,11 +266,17 @@ namespace fho
 #endif
       // @NOTE: Ownership is dropped, so we reset all bits.
       // Expected = current {state,epoch} (and we assert state is locked_ready)
-      auto curr = state_.load(std::memory_order_relaxed);
+      auto curr = state_.load(failure);
       // Desired = {state=empty, epoch = flipped}
-      auto val = static_cast<slot_state>(slot_state::empty |
-                                         ((curr ^ slot_state::epoch) & slot_state::epoch));
-      state_.store(val, order);
+      auto desired = static_cast<slot_state>(slot_state::empty |
+                                             ((curr ^ slot_state::epoch) & slot_state::epoch));
+      auto derp    = dbg::to_str(desired);
+      if (!state_.compare_exchange_strong<slot_state::state_mask, slot_state::state_u_epoch_mask>(
+            curr, desired, success, failure))
+      {
+        dbg::log("Prerequisite violation: ", curr, desired);
+        std::abort();
+      }
       state_.notify_all();
     }
 
