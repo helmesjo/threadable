@@ -61,7 +61,7 @@ namespace fho
     /// @param `state` The initial atomic state of the slot.
     /// @param `value` The value to store in the slot.
     ring_slot(fho::atomic_state_t state, T value)
-      : state_(state.load(std::memory_order_relaxed))
+      : state_(state.load(std::memory_order_acquire))
       , value_(std::move(value))
     {}
 
@@ -69,7 +69,7 @@ namespace fho
     /// @details Transfers the state and value from another slot.
     /// @param `that` The slot to move from.
     ring_slot(ring_slot&& that) noexcept
-      : state_(that.state_.load(std::memory_order_relaxed))
+      : state_(that.state_.load(std::memory_order_acquire))
     {
       if constexpr (!std::is_trivially_move_constructible_v<T>)
       {
@@ -105,7 +105,7 @@ namespace fho
     inline constexpr auto
     operator=(ring_slot&& that) noexcept -> ring_slot&
     {
-      state_ = that.state_.load(std::memory_order_relaxed);
+      state_ = that.state_.load(std::memory_order_acquire);
       if constexpr (!std::is_trivially_move_constructible_v<T>)
       {
         // Placement new with move to properly invoke

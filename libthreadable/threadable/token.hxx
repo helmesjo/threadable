@@ -4,8 +4,9 @@
 #include <threadable/function.hxx>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
-#include <ostream>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -123,13 +124,6 @@ namespace fho
     }
   }
 
-  inline auto
-  operator<<(std::ostream& os, slot_state const& s) -> std::ostream&
-  {
-    os << dbg::to_str(s);
-    return os;
-  }
-
   using atomic_state_t = fho::atomic_bitfield<slot_state>;
 
   inline constexpr auto null_state = atomic_state_t{slot_state::invalid};
@@ -172,7 +166,7 @@ namespace fho
     /// @brief Constructor from atomic state.
     /// @details Initializes the token with the given `ring_slot` state.
     /// @param `state` A reference to the atomic state of the `ring_slot`.
-    slot_token(atomic_state_t& state)
+    slot_token(atomic_state_t const& state)
       : state_(&state)
     {}
 
@@ -180,10 +174,10 @@ namespace fho
     /// @details Transfers ownership of the token's state.
     /// @param `rhs` The `slot_token` to move from.
     slot_token(slot_token&& rhs) noexcept
-      : cancelled_(rhs.cancelled_.load(std::memory_order_relaxed))
-      , state_(rhs.state_.load(std::memory_order_relaxed))
+      : cancelled_(rhs.cancelled_.load(std::memory_order_acquire))
+      , state_(rhs.state_.load(std::memory_order_acquire))
     {
-      rhs.state_.store(nullptr, std::memory_order_relaxed);
+      rhs.state_.store(nullptr, std::memory_order_release);
     }
 
     /// @brief Deleted copy assignment.
@@ -197,9 +191,9 @@ namespace fho
     auto
     operator=(slot_token&& rhs) noexcept -> slot_token&
     {
-      cancelled_.store(rhs.cancelled_, std::memory_order_relaxed);
-      state_.store(rhs.state_, std::memory_order_relaxed);
-      rhs.state_.store(nullptr, std::memory_order_relaxed);
+      cancelled_.store(rhs.cancelled_.load(std::memory_order_acquire), std::memory_order_release);
+      state_.store(rhs.state_.load(std::memory_order_acquire), std::memory_order_release);
+      rhs.state_.store(nullptr, std::memory_order_release);
       return *this;
     }
 
