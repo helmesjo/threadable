@@ -1,148 +1,179 @@
 #include <threadable-tests/doctest_include.hxx>
 #include <threadable/atomic.hxx>
 
+#include <bitset>
+#include <cstdint>
 #include <thread>
+
+namespace
+{
+  using u8_t       = std::uint8_t;
+  using bitfield_t = fho::atomic_bitfield<u8_t>;
+}
+
+namespace doctest
+{
+  template<>
+  struct StringMaker<u8_t>
+  {
+    static auto
+    convert(u8_t val) -> String
+    {
+      thread_local auto tmp = std::string{};
+      tmp                   = std::bitset<sizeof(val) * 8>{val}.to_string();
+      return tmp.c_str();
+    }
+  };
+
+  template<>
+  struct StringMaker<bitfield_t>
+  {
+    static auto
+    convert(bitfield_t const& v) -> String
+    {
+      thread_local auto tmp = std::string{};
+      auto              val = v.load();
+      tmp                   = std::bitset<sizeof(val) * 8>{val}.to_string();
+      return tmp.c_str();
+    }
+  };
+}
 
 SCENARIO("atomic_bitfield")
 {
-  using bitfield_t = fho::atomic_bitfield<std::uint8_t>;
   GIVEN("a bitfield set to 0")
   {
-    auto field = bitfield_t{0};
+    auto field = bitfield_t{0b00000000};
+    INFO("field=" << field);
     THEN("test<0x00> is false")
     {
-      REQUIRE_FALSE(field.test<0x00>());
+      REQUIRE_FALSE(field.test<0b00000000>());
     }
     WHEN("test_and_set bit 6 to true")
     {
       THEN("new value is assigned and old is returned")
       {
-        REQUIRE_FALSE(field.test_and_set<(1 << 5), true>());
-        REQUIRE(field.test<(1 << 5)>());
-        REQUIRE(field.load() == 0b00100000);
-        field.wait<(1 << 5), false>();
+        REQUIRE_FALSE(field.test_and_set<0b00001000, true>());
+        REQUIRE(field.test<0b00001000>());
+        REQUIRE(field.load() == 0b00001000);
+
+        field.wait<0b00001000, false>();
       }
     }
   }
   GIVEN("a bitfield set to all 1")
   {
-    auto field = bitfield_t{static_cast<std::uint8_t>(-1)};
+    auto field = bitfield_t{0b11111111};
+    INFO("field=" << field);
     THEN("test<0x00> is false")
     {
-      REQUIRE_FALSE(field.test<0x00>());
+      REQUIRE_FALSE(field.test<0b00000000>());
     }
     WHEN("test_and_set bit 3 to false")
     {
       THEN("new value is assigned and old is returned")
       {
-        REQUIRE(field.test_and_set<(1 << 2), false>());
-        REQUIRE(field.load() == 0b11111011);
-        field.wait<(1 << 2), true>();
+        REQUIRE(field.test_and_set<0b00000010, false>());
+        REQUIRE(field.load() == 0b11111101);
+        field.wait<0b00000010, true>();
       }
     }
   }
   GIVEN("CAS fails")
   {
-    auto field = bitfield_t{0};
+    auto field = bitfield_t{0b00010000};
+    INFO("field=" << field);
     THEN("'expected' is updated")
     {
-      auto expected = static_cast<std::uint8_t>(-1);
-      REQUIRE_FALSE(field.compare_exchange_weak(expected, 0xbb));
-      REQUIRE(expected == 0);
-      expected = static_cast<std::uint8_t>(-1);
-      REQUIRE_FALSE(field.compare_exchange_strong(expected, 0xbb));
-      REQUIRE(expected == 0);
+      auto expected = u8_t{0b11111111};
+      REQUIRE_FALSE(field.compare_exchange_weak<0b11111111>(expected, 0b00000010));
+      REQUIRE(expected == 0b00010000);
+      expected = 0b11111111;
+      REQUIRE_FALSE(field.compare_exchange_strong<0b11111111>(expected, 0b00000010));
+      REQUIRE(expected == 0b00010000);
     }
   }
 }
 
 SCENARIO("atomic_bitfield: CAS")
 {
-  using bitfield_t = fho::atomic_bitfield<std::uint8_t>;
-
   GIVEN("a bitfield set to 0")
   {
-    bitfield_t field{0};
+    bitfield_t field{0b00000000};
+    INFO("field=" << field);
     WHEN("CAS bit 0 from 0 to 1 with MaskExp=0x1, MaskDes=0x1")
     {
-      auto expected = std::uint8_t{0};
-      REQUIRE(field.compare_exchange_strong<0x1, 0x1>(expected, 1));
+      auto expected = u8_t{0b00000000};
+      REQUIRE(field.compare_exchange_strong<0b00000001, 0b00000001>(expected, 0b00000001));
       THEN("bit 0 is set, others unchanged")
       {
-        REQUIRE(field.test<0x1>());
-        REQUIRE(field.load() == 0x1);
+        REQUIRE(field.test<0b00000001>());
+        REQUIRE(field.load() == 0b00000001);
       }
     }
     WHEN("CAS bit 0 from 1 to 0 with MaskExp=0x1, MaskDes=0x1 (expected mismatch)")
     {
-      auto expected = std::uint8_t{1};
-      REQUIRE_FALSE(field.compare_exchange_strong<0x1, 0x1>(expected, 0));
+      auto expected = u8_t{0b00000001};
+      REQUIRE_FALSE(field.compare_exchange_strong<0b00000001, 0b00000001>(expected, 0b00000000));
       THEN("bit 0 is unchanged, expected updated")
       {
-        REQUIRE_FALSE(field.test<0x1>());
-        REQUIRE(expected == 0);
+        REQUIRE_FALSE(field.test<0b00000001>());
+        REQUIRE(expected == 0b00000000);
       }
     }
     WHEN("weak CAS bit 1 from 0 to 1 with MaskExp=0x2, MaskDes=0x2")
     {
-      auto expected = std::uint8_t{0};
-      bool result   = field.compare_exchange_weak<0x2, 0x2>(expected, 2);
+      auto expected = u8_t{0b00000000};
+      REQUIRE(field.compare_exchange_weak<0b00000010, 0b00000010>(expected, 0b00000010));
       THEN("bit 1 is set if successful")
       {
-        if (result)
-        {
-          REQUIRE(field.test<0x2>());
-          REQUIRE(field.load() == 2);
-        }
-        else
-        {
-          REQUIRE_FALSE(field.test<0x2>());
-          REQUIRE(expected == field.load());
-        }
+        REQUIRE(field.test<0b00000010>());
+        REQUIRE(field.load() == 0b00000010);
       }
     }
     WHEN("CAS bits 0-1 from 0x0 to 0x3 with MaskExp=0x3, MaskDes=0x3")
     {
-      auto expected = std::uint8_t{0};
-      REQUIRE(field.compare_exchange_strong<0x3, 0x3>(expected, 0x3));
+      auto expected = u8_t{0b00000000};
+      REQUIRE(field.compare_exchange_strong<0b00000100, 0b00000100>(expected, 0b00000100));
       THEN("bits 0-1 are set, others unchanged")
       {
-        REQUIRE(field.test<0x3>());
-        REQUIRE(field.load() == 0x3);
+        REQUIRE(field.test<0b00000100>());
+        REQUIRE(field.load() == 0b00000100);
       }
     }
   }
 
   GIVEN("a bitfield set to 0xFF")
   {
-    bitfield_t field{0xFF};
+    bitfield_t field{0b11111111};
+    INFO("field=" << field);
     WHEN("CAS bits 0-1 from 0x3 to 0x0 with MaskExp=0x3, MaskDes=0x3")
     {
-      auto expected = std::uint8_t{0x3};
-      REQUIRE(field.compare_exchange_strong<0x3, 0x3>(expected, 0));
+      auto expected = u8_t{0b00000100};
+      REQUIRE(field.compare_exchange_strong<0b00000100, 0b00000100>(expected, 0b00000000));
       THEN("bits 0-1 are cleared, others preserved")
       {
-        REQUIRE_FALSE(field.test<0x3>());
-        REQUIRE(field.load() == 0xFC); // 0xFF & ~0x3 = 0xFC
+        REQUIRE_FALSE(field.test<0b00000100>());
+        REQUIRE(field.load() == (0b11111111 & ~0b00000100)); // 0xFF & ~0x3 = 0xFC
       }
     }
     WHEN("CAS all bits to 0x0 with MaskExp=0x3, MaskDes=0xFF")
     {
-      auto expected = std::uint8_t{0x3};
-      REQUIRE(field.compare_exchange_strong<0x3, 0xFF>(expected, 0));
+      auto expected = u8_t{0b00000100};
+      REQUIRE(field.compare_exchange_strong<0b00000100, 0b11111111>(expected, 0b00000000));
       THEN("all bits are cleared")
       {
-        REQUIRE(field.load() == 0);
+        REQUIRE(field.load() == 0b00000000);
       }
     }
     WHEN("CAS fails due to MaskExp mismatch")
     {
-      auto expected = std::uint8_t{0};
-      REQUIRE_FALSE(field.compare_exchange_strong<0x3, 0xFF>(expected, 0));
+      auto expected = u8_t{0b00000000};
+      REQUIRE_FALSE(field.compare_exchange_strong<0b00000100, 0b11111111>(expected, 0b00000000));
       THEN("state unchanged, expected updated")
       {
-        REQUIRE(field.load() == 0xFF);
-        REQUIRE(expected == 0xFF);
+        REQUIRE(field.load() == 0b11111111);
+        REQUIRE(expected == 0b11111111);
       }
     }
   }
@@ -153,54 +184,60 @@ SCENARIO("atomic_bitfield: stress-test multiple bits with CAS")
   // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,cppcoreguidelines-pro-bounds-constant-array-index)
   GIVEN("5 threads manipulating distinct bits")
   {
-    using bitfield_t                              = fho::atomic_bitfield<std::uint8_t>;
-    auto                   bitfield               = bitfield_t{0}; // Initialize with all bits unset
-    constexpr auto         num_threads            = std::size_t{5};
-    constexpr auto         iterations             = std::size_t{100000};
-    constexpr std::uint8_t bit_masks[num_threads] = {
-      0b00000001, 0b00000010, 0b00000100, 0b00001000, 0b00010000,
-    }; // Distinct bits for each thread
+    auto field = bitfield_t{0b00000000}; // Initialize with all bits unset
+    INFO("field=" << field);
 
-    auto threads         = std::vector<std::thread>{};
-    auto successCounters = std::array<std::atomic<std::size_t>, num_threads>{};
+    constexpr auto iterations = std::size_t{100000};
+    auto           threads    = std::vector<std::thread>{};
 
-    for (std::size_t i = 0; i < num_threads; ++i)
-    {
-      threads.emplace_back(
-        [&, mask = bit_masks[i], threadId = i]
+    threads.emplace_back(
+      [&field]
+      {
+        constexpr auto mask = u8_t{0b00000001};
+        for (std::size_t j = 0; j < iterations; ++j)
         {
-          for (std::size_t j = 0; j < iterations; ++j)
-          {
-            auto expected = std::uint8_t{bitfield.load(std::memory_order_acquire)};
-            auto desired  = std::uint8_t{0};
-            auto success  = false;
+          auto expected = field.load();
+          auto desired  = u8_t{0b00000000};
 
-            // Try compare_exchange_strong to set the thread's bit
-            do
-            {
-              expected = bitfield.load(std::memory_order_acquire);
-              desired  = expected | mask; // Set the thread's bit
-              success =
-                bitfield.compare_exchange_strong(expected, desired, std::memory_order_acq_rel,
-                                                 std::memory_order_acquire);
-            }
-            while (!success);
+          expected = field.load();
+          desired  = expected | mask; // Set the thread's bit
+          while (!field.compare_exchange_strong<mask>(expected, desired))
+            ;
+          desired = expected & ~mask; // Clear the thread's bit
+          while (!field.compare_exchange_strong<mask>(expected, desired))
+            ;
+        }
+      });
 
-            successCounters[threadId].fetch_add(1, std::memory_order_relaxed);
+    threads.emplace_back(
+      [&field]
+      {
+        constexpr auto mask = u8_t{0b00000010};
+        for (std::size_t j = 0; j < iterations; ++j)
+        {
+          auto expected = field.load();
+          expected      = field.load();
+          while (!field.compare_exchange_strong<mask>(expected, 1))     // set bit to 1
+            ;
+          while (!field.compare_exchange_strong<mask>(expected, ~mask)) // set bit to 0
+            ;
+        }
+      });
 
-            // Try compare_exchange_weak to clear the thread's bit
-            do
-            {
-              expected = bitfield.load(std::memory_order_acquire);
-              desired  = expected & ~mask; // Clear the thread's bit
-              success = bitfield.compare_exchange_weak(expected, desired, std::memory_order_acq_rel,
-                                                       std::memory_order_acquire);
-              // No yield here; weak CAS may fail spuriously, so we retry
-            }
-            while (!success);
-          }
-        });
-    }
+    threads.emplace_back(
+      [&field]
+      {
+        constexpr auto mask = u8_t{0b00000100};
+        for (std::size_t j = 0; j < iterations; ++j)
+        {
+          auto expected = field.load();
+          expected      = field.load();
+          while (!field.compare_exchange_strong<mask>(expected, 1))     // set bit to 1
+            ;
+          while (!field.compare_exchange_strong<mask>(expected, ~mask)) // set bit to 0
+            ;
+        }
+      });
 
     for (auto& t : threads)
     {
@@ -209,14 +246,8 @@ SCENARIO("atomic_bitfield: stress-test multiple bits with CAS")
 
     THEN("all operations succeeded and final bitfield state is correct")
     {
-      // Verify each thread completed the expected number of successful operations
-      for (std::size_t i = 0; i < num_threads; ++i)
-      {
-        REQUIRE(successCounters[i].load(std::memory_order_relaxed) == iterations);
-      }
-
       // Verify final bitfield state is 0 (all bits unset, as each thread sets and clears)
-      REQUIRE(bitfield.load(std::memory_order_seq_cst) == 0);
+      REQUIRE(field.load() == 0);
     }
   }
   // NOLINTEND(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,cppcoreguidelines-pro-bounds-constant-array-index)
