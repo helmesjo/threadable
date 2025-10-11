@@ -55,6 +55,13 @@ namespace fho
   }
 
   inline constexpr auto
+  operator^(slot_state lhs, slot_state rhs) noexcept -> slot_state
+  {
+    using ut_t = std::underlying_type_t<slot_state>;
+    return static_cast<slot_state>(static_cast<ut_t>(lhs) ^ static_cast<ut_t>(rhs));
+  }
+
+  inline constexpr auto
   operator~(slot_state rhs) noexcept -> slot_state
   {
     using ut_t = std::underlying_type_t<slot_state>;
