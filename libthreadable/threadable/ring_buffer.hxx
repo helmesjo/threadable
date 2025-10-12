@@ -544,13 +544,12 @@ namespace fho
       }
       // TODO: Probably just add a size_ atomic and keep track
       //       of that, because this can get very slow.
-      auto const head = head_.load(std::memory_order_acquire);
-      auto const s =
-        std::count_if(data(), data() + std::min(head, Capacity),
-                      [](auto const& e)
-                      {
-                        return e.template test<slot_state::ready>(std::memory_order_acquire);
-                      });
+      auto const s = std::ranges::count_if(elems_,
+                                           [](auto const& e)
+                                           {
+                                             return e.template test<slot_state::ready>(
+                                               std::memory_order_acquire);
+                                           });
       return s;
     }
 
@@ -560,7 +559,19 @@ namespace fho
     auto
     empty() const noexcept -> bool
     {
-      return size() == 0;
+      if (elems_.size() == 0) [[unlikely]]
+      {
+        return true;
+      }
+      // TODO: Probably just add a size_ atomic and keep track
+      //       of that, because this can get very slow.
+      // auto const head = head_.load(std::memory_order_acquire);
+      return !std::ranges::any_of(elems_,
+                                  [](auto const& e)
+                                  {
+                                    return e.template test<slot_state::ready>(
+                                      std::memory_order_acquire);
+                                  });
     }
 
     /// @brief Provides direct access to the underlying data.
