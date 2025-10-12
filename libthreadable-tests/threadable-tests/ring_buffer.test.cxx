@@ -23,7 +23,7 @@ namespace
   using func_t = fho::fast_func_t;
 }
 
-SCENARIO("ring_buffer: emplace & consume")
+SCENARIO("ring_buffer: push & pop")
 {
   GIVEN("ring with capacity 2")
   {
@@ -126,7 +126,7 @@ SCENARIO("ring_buffer: emplace & consume")
           REQUIRE(called == 0);
         }
       }
-      AND_WHEN("consume and execute tasks")
+      AND_WHEN("pop and execute tasks")
       {
         while (auto task = ring.try_pop_front())
         {
@@ -183,7 +183,7 @@ SCENARIO("ring_buffer: emplace & consume")
       }
       REQUIRE(ring.size() == ring.max_size());
 
-      AND_WHEN("consume and execute tasks")
+      AND_WHEN("pop and execute tasks")
       {
         while (auto task = ring.try_pop_front())
         {
@@ -462,7 +462,7 @@ SCENARIO("ring_buffer: completion token")
 
 SCENARIO("ring_buffer: stress-test")
 {
-  GIVEN("produce & consume enough for wrap-around")
+  GIVEN("push & pop enough for wrap-around")
   {
     static constexpr auto capacity = std::size_t{1 << 8};
 

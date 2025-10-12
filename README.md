@@ -29,9 +29,9 @@ int main() {
   }
   assert(ring.size() == 3);
 
-  for (auto v : ring.consume())
+  while (auto v = ring.try_pop_front())
   {
-    cout << format("{}\n", v); // prints 1 2 3
+    cout << format("{}\n", *v); // prints 1 2 3
   }
   assert(ring.size() == 0);
 
@@ -47,7 +47,7 @@ orchestrating task distribution to executors running
 in dedicated threads via a scheduler._
 
 **task Queues** (`ring_buffer`):  
-_Lock-free multi-producer, single-consumer ring buffer  
+_Lock-free multi-producer, multi-consumer ring buffer  
 to store tasks._
 
 **Ring Iterator** (`ring_iterator`) + **Slot** (`ring_slot`):  

@@ -32,70 +32,6 @@ namespace fho
     inline constexpr std::size_t default_capacity = 1 << 16;
   }
 
-  /// @brief A subrange of active slots in the buffer.
-  /// @details Represents a range of consumed slots ready for processing. It manages the
-  ///          lifetime of these slots, releasing them when the subrange is destroyed to prevent
-  ///          reuse before processing is complete. Uses a `shared_ptr` with a static dummy
-  ///          object to handle cleanup without extra allocation.
-  /// @tparam `Iterator` The iterator type (`ring_iterator_t` or `const_ring_iterator_t`).
-  template<typename Iterator, typename Slot>
-  class active_subrange final : public std::ranges::subrange<Iterator>
-  {
-  public:
-    using base_t = std::ranges::subrange<Iterator>;
-
-    using iterator        = Iterator; // NOLINT
-    using value_type      = typename iterator::value_type;
-    using difference_type = typename iterator::difference_type;
-
-    using base_t::base_t;
-
-    using base_t::advance;
-    using base_t::back;
-    using base_t::begin;
-    using base_t::empty;
-    using base_t::end;
-    using base_t::front;
-    using base_t::next;
-    using base_t::prev;
-    using base_t::size;
-
-    active_subrange(active_subrange const&) noexcept = delete;
-    active_subrange(active_subrange&& that) noexcept = default;
-    ~active_subrange()                               = default;
-
-    active_subrange(base_t&& that) noexcept
-      : base_t(std::move(that))
-    {}
-
-    auto operator=(active_subrange const&) noexcept -> active_subrange& = delete;
-    auto operator=(active_subrange&& that) noexcept -> active_subrange& = default;
-
-  private:
-    /// @brief Static dummy object and `shared_ptr` for reference counting to trigger cleanup.
-    /// @details Uses a static `dummy` char as a placeholder to avoid memory allocation. The
-    ///          `shared_ptr` tracks references, and its custom deleter releases all slots in
-    ///          the range when the last reference is destroyed.
-    inline static char    dummy = 1;
-    std::shared_ptr<void> resetter_ =
-      std::shared_ptr<void>(&dummy,
-                            [b = base_t::begin().index(), e = base_t::end().index(),
-                             d = base_t::begin().data()](void*)
-                            {
-                              if constexpr (!std::is_const_v<value_type>)
-                              {
-                                if (b < e)
-                                {
-                                  for (auto i = b; i < e; ++i)
-                                  {
-                                    Slot& elem = d[Iterator::mask(i)];
-                                    elem.template release<slot_state::locked_ready>();
-                                  }
-                                }
-                              }
-                            });
-  };
-
   /// @brief A `fho::function` alias optimized to cache line size for use within a `ring_buffer`.
   /// @details The size of the function object is exactly that of the target system's (deduced)
   ///          cache line size minus `1` byte reserved for the `ring_slot` state handling.
@@ -117,17 +53,15 @@ namespace fho
   ///                     allocator for `ring_slot<T>`.
   /// @note The buffer uses three atomic indices: `tail_` (next slot to consume), `head_` (next
   ///       slot to produce into).
-  /// @warning Only one consumer should call `consume()` at a time to ensure thread safety.
-  ///          Multiple producers can safely call `emplace_back()` concurrently.
   /// @example
   /// ```cpp
   /// auto buffer = fho::ring_buffer<>{}; // Uses fast_func_t by default
   /// auto token = buffer.emplace_back([]() { std::cout << "Hello, World!\n"; });
-  /// auto range = buffer.consume();
-  /// for (auto& func : range) {
-  ///     func();
+  /// while (auto t = buffer.try_pop_front())
+  /// {
+  ///   t(); // prints "Hello, World!"
   /// }
-  /// token.wait(); // Wait for the task to complete
+  /// token.wait(); // Wait for a task to complete
   /// ```
   template<typename T = fast_func_t, std::size_t Capacity = details::default_capacity,
            typename Allocator = aligned_allocator<ring_slot<T>, details::cache_line_size>>
@@ -163,9 +97,7 @@ namespace fho
   public:
     static constexpr auto is_always_lock_free = slot_type::is_always_lock_free;
 
-    using claimed_type  = claimed_slot<value_type>;
-    using subrange_type = decltype(active_subrange<ring_iterator_t, slot_type>() |
-                                   std::views::transform(slot_value_accessor<value_type>));
+    using claimed_type = claimed_slot<value_type>;
 
     using transform_type =
       ring_transform_view<ring_iterator_t, decltype(slot_value_accessor<value_type>)>;
@@ -438,54 +370,6 @@ namespace fho
       {
         head_.wait(head, std::memory_order_acquire);
       }
-    }
-
-    /// @brief Consumes a range of items from the buffer.
-    /// @details Retrieves a range of values from `tail_` to `head_`, up to a specified maximum.
-    ///          Returns a `subrange_type` that must be processed within its lifetime; slots are
-    ///          released when the subrange is destroyed.
-    /// @param `max` Maximum number of items to consume. Defaults to `max_size()`.
-    /// @return Subrange of consumed values.
-    /// @warning Only one consumer should call this at a time to avoid race conditions.
-    /// @example
-    /// ```cpp
-    /// auto range = buffer.consume(10);
-    /// for (auto& value : range) { /* Process value */ }
-    /// ```
-    auto
-    consume(index_t max = max_size()) noexcept
-    {
-      auto const tail = tail_.load(std::memory_order_acquire);
-      auto const head = head_.load(std::memory_order_acquire);
-      auto const cap  = tail + std::min<index_t>(max, head - tail); // Cap range size
-      auto       i    = tail;
-      for (; i < cap; ++i)
-      {
-        auto& s = elems_[mask(i)];
-        if (!s.template try_lock<slot_state::ready>(std::memory_order_acq_rel))
-        {
-          break;
-        }
-        // If insertion required "previous empty" on back,
-        // then for front we require "next empty" (and same-lap) when tag_seq is set.
-        if (s.template test<slot_state::tag_seq>(std::memory_order_acquire)) [[unlikely]]
-        {
-          auto const  ppos = i - 1;
-          auto const& p    = elems_[mask(ppos)];
-
-          if (!p.template test<slot_state::empty>(std::memory_order_acquire) &&
-              p.template test<slot_state::epoch>(std::memory_order_relaxed) == epoch_of(ppos))
-          {
-            s.template unlock<slot_state::locked_ready>();
-            break;
-          }
-        }
-      }
-      auto b = ring_iterator_t(elems_.data(), tail);
-      auto e = ring_iterator_t(elems_.data(), i);
-      tail_.store(i, std::memory_order_release);
-      tail_.notify_all();
-      return subrange_type(std::ranges::subrange(b, e), slot_value_accessor<value_type>);
     }
 
     /// @brief Clears all items from the buffer.
