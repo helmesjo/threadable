@@ -1,7 +1,12 @@
 #include <threadable-benchmarks/util.hxx>
 #include <threadable/pool.hxx>
 
+#if __cpp_lib_execution >= 201603L
+  #include <execution>
+#endif
+
 #include <queue>
+#include <ranges>
 
 #include <doctest/doctest.h>
 
@@ -60,12 +65,17 @@ TEST_CASE("pool: task execution")
         .run(title,
              [&]
              {
-               auto group = fho::token_group{tasks_per_iteration};
-               for (auto i = 0; i < tasks_per_iteration; ++i)
-               {
-                 group += pool.push(task_t{});
-               }
-               group.wait();
+               auto range = std::views::iota(0, tasks_per_iteration);
+#if __cpp_lib_execution >= 201603L
+               std::for_each(std::execution::par, range.begin(), range.end(),
+#else
+               std::for_each(range.begin(), range.end(),
+#endif
+                             [&pool](auto)
+                             {
+                               pool.push(task_t{});
+                             });
+               pool.wait();
              });
     }
   }
