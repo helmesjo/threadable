@@ -78,7 +78,6 @@ namespace fho::scheduler::stealing
   {
     alignas(details::cache_line_size) event_count notifier;
     alignas(details::cache_line_size) ring_buffer<fast_func_t> master;
-
     alignas(details::cache_line_size) std::atomic<std::size_t> actives{0};
     alignas(details::cache_line_size) std::atomic<std::size_t> thieves{0};
     alignas(details::cache_line_size) std::atomic<bool> stops{false};
@@ -114,8 +113,8 @@ namespace fho::scheduler::stealing
   {
     if (stolen)
     { // t ≠ NIL; assume !t falsy for invalid/empty
-      if (activity.actives.fetch_add(1, std::memory_order_seq_cst) == 0 &&
-          activity.thieves.load(std::memory_order_seq_cst) == 0)
+      if (activity.actives.fetch_add(1, std::memory_order_acq_rel) == 0 &&
+          activity.thieves.load(std::memory_order_acquire) == 0)
       {
         activity.notifier.notify_one();
       }
@@ -125,7 +124,7 @@ namespace fho::scheduler::stealing
       {
         std::invoke(t);
       }
-      activity.actives.fetch_sub(1, std::memory_order_seq_cst);
+      activity.actives.fetch_sub(1, std::memory_order_acq_rel);
     }
   }
 
@@ -265,6 +264,7 @@ namespace fho::scheduler::stealing
       activity.notifier.commit_wait(epoch);
       return true;
     }
+    return false;
   }
 
   inline void
