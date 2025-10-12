@@ -27,8 +27,7 @@ namespace fho
   [[nodiscard]] inline auto
   async(std::invocable<Args...> auto&& func, Args&&... args) noexcept -> decltype(auto)
   {
-    static auto& queue = create();
-    return queue.emplace_back(FWD(func), FWD(args)...);
+    return details::default_pool().push(FWD(func), FWD(args)...);
   }
 
   /// @brief Submits a task to the default thread pool, reusing a token.
@@ -45,8 +44,7 @@ namespace fho
   async(slot_token& token, std::invocable<Args...> auto&& func, Args&&... args) noexcept
     -> decltype(auto)
   {
-    static auto& queue = create();
-    return queue.emplace_back(token, FWD(func), FWD(args)...);
+    return details::default_pool().push(token, FWD(func), FWD(args)...);
   }
 
   /// @brief Submits a task to the default thread pool, reusing a token, and re-submits it
@@ -75,17 +73,16 @@ namespace fho
   inline void
   repeat_async(slot_token& token, std::invocable<Args...> auto&& func, Args&&... args) noexcept
   {
-    static auto& queue  = create();
-    auto         lambda = [](auto&& self, fho::slot_token& token, decltype(func) func,
+    auto lambda = [](auto&& self, fho::slot_token& token, decltype(func) func,
                      decltype(args)... args) -> void
     {
+      FWD(func)(FWD(args)...);
       if (!token.cancelled())
       {
-        FWD(func)(FWD(args)...);
-        queue.emplace_back(token, self, self, std::ref(token), FWD(func), FWD(args)...);
+        details::default_pool().push(token, self, self, std::ref(token), FWD(func), FWD(args)...);
       }
     };
-    queue.emplace_back(token, lambda, lambda, std::ref(token), FWD(func), FWD(args)...);
+    details::default_pool().push(token, lambda, lambda, std::ref(token), FWD(func), FWD(args)...);
   }
 
   /// @brief Executes a range of callables with default sequential execution.
@@ -124,12 +121,11 @@ namespace fho
   {
     if (exPo != execution::seq)
     {
-      static auto& queue  = create();
-      auto         tokens = token_group{};
-      auto         s      = std::size_t{0};
+      auto tokens = token_group{};
+      auto s      = std::size_t{0};
       for (auto&& c : FWD(r))
       {
-        tokens += queue.emplace_back(FWD(c), FWD(args)...);
+        tokens += details::default_pool().push(FWD(c), FWD(args)...);
         ++s;
       }
       tokens.wait();

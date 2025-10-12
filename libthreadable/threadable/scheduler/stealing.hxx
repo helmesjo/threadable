@@ -93,21 +93,16 @@ namespace fho::scheduler::stealing
     bool        abort         = false;
   };
 
-  // ======================= exploit_task =======================
-  // Mirrors Algorithm 3. Preconditions: may enter with t != NIL when a steal succeeded.
-  /*
-  1) If t == NIL: return immediately (nothing to exploit).
-
-  2) Atomically increment num_actives.
-     2.1) If (previous value was 0) AND (num_thieves == 0): notifier.notify_one().
-
-  3) do {
-       3.1) execute(t).
-       3.2) If w.cache != NIL: t <- w.cache; else t <- pop(w.queue).
-     } while (t != NIL);
-
-  4) Atomically decrement num_actives; return.
-  */
+  /// @brief Mirrors Algorithm 3. Preconditions: may enter with t != NIL when a steal succeeded.
+  /// @details
+  /// 1) If t == NIL: return immediately (nothing to exploit).
+  /// 2) Atomically increment num_actives.
+  ///    2.1) If (previous value was 0) AND (num_thieves == 0): notifier.notify_one().
+  /// 3) do {
+  ///      3.1) execute(t).
+  ///      3.2) If w.cache != NIL: t <- w.cache; else t <- pop(w.queue).
+  ///    } while (t != NIL);
+  /// 4) Atomically decrement num_actives; return.
   inline void
   exploit_task(invocable_opt auto& stolen, activity_stats& activity, cas_deque auto& self)
   {
@@ -128,29 +123,25 @@ namespace fho::scheduler::stealing
     }
   }
 
-  // ======================= explore_task =======================
-  // Mirrors Algorithm 4. Populates 't' by random stealing or gives up after bounded backoff.
-  /*
-  1) num_failed_steals <- 0; num_yields <- 0.
-
-  2) while scheduler_not_stops:
-       2.1) victim <- random();
-       2.2) if victim == self:
-              t <- steal(master_queue);
-            else:
-              t <- steal_from(victim);
-
-       2.3) if t != NIL: break;
-
-       2.4) num_failed_steals++;
-            if num_failed_steals >= STEAL_BOUND:
-               yield();
-               num_yields++;
-               if num_yields == YIELD_BOUND: break;
-  */
+  /// @brief Mirrors Algorithm 4. Populates 't' by random stealing or gives up after bounded
+  /// backoff.
+  /// @details
+  /// 1) num_failed_steals <- 0; num_yields <- 0.
+  /// 2) while scheduler_not_stops:
+  ///      2.1) victim <- random();
+  ///      2.2) if victim == self:
+  ///             t <- steal(master_queue);
+  ///           else:
+  ///             t <- steal_from(victim);
+  ///      2.3) if t != NIL: break;
+  ///      2.4) num_failed_steals++;
+  ///           if num_failed_steals >= STEAL_BOUND:
+  ///              yield();
+  ///              num_yields++;
+  ///              if num_yields == YIELD_BOUND: break;
   inline auto
   explore_task(invocable_opt auto& cached, activity_stats& activity, exec_stats& exec,
-               cas_deque auto& self, invocable_return auto&& stealer) -> bool
+               cas_deque auto& self, invocable_return auto&& stealer) noexcept -> bool
   {
     exec.failed_steals = 0;
     exec.yields        = 0;
@@ -178,44 +169,36 @@ namespace fho::scheduler::stealing
     return cached;
   }
 
-  // ======================= wait_for_task =======================
-  // Mirrors Algorithm 5. Ensures Lemma 1: with any active and any inactive worker, a thief exists.
-  /*
-  1) Atomically increment num_thieves.
-
-  2) explore_task(t, w).
-     2.1) If t != NIL:
-           2.1.1) If AtomDec(num_thieves) == 0: notifier.notify_one();
-           2.1.2) return true.   // go to exploit phase
-
-  3) u <- notifier.prepare_wait();   // EventCount prepare
-
-  4) If master_queue is not empty:
-       4.1) notifier.cancel_wait(u);
-       4.2) t <- steal(master_queue);
-       4.3) if t != NIL:
-              4.3.1) If AtomDec(num_thieves) == 0: notifier.notify_one();
-              4.3.2) return true.
-            else:
-              4.3.3) goto step 2)  // re-run explore_task
-
-  5) If scheduler_stops:
-       5.1) notifier.cancel_wait(u);
-       5.2) notifier.notify_all();
-       5.3) AtomDec(num_thieves);
-       5.4) return false.  // exit worker loop
-
-  6) If AtomDec(num_thieves) == 0 AND num_actives > 0:
-       6.1) notifier.cancel_wait(u);
-       6.2) goto step 1)  // reiterate wait_for_task to keep one thief alive
-
-  7) notifier.commit_wait(u);   // sleep until notified
-
-  8) return true.  // woken up; loop will retry
-  */
+  /// @brief Mirrors Algorithm 5. Ensures Lemma 1: with any active and any inactive worker, a thief
+  /// exists.
+  /// @details
+  /// 1) Atomically increment num_thieves.
+  /// 2) explore_task(t, w).
+  ///    2.1) If t != NIL:
+  ///          2.1.1) If AtomDec(num_thieves) == 0: notifier.notify_one();
+  ///          2.1.2) return true.   // go to exploit phase
+  /// 3) u <- notifier.prepare_wait();   // EventCount prepare
+  /// 4) If master_queue is not empty:
+  ///      4.1) notifier.cancel_wait(u);
+  ///      4.2) t <- steal(master_queue);
+  ///      4.3) if t != NIL:
+  ///             4.3.1) If AtomDec(num_thieves) == 0: notifier.notify_one();
+  ///             4.3.2) return true.
+  ///           else:
+  ///             4.3.3) goto step 2)  // re-run explore_task
+  /// 5) If scheduler_stops:
+  ///      5.1) notifier.cancel_wait(u);
+  ///      5.2) notifier.notify_all();
+  ///      5.3) AtomDec(num_thieves);
+  ///      5.4) return false.  // exit worker loop
+  /// 6) If AtomDec(num_thieves) == 0 AND num_actives > 0:
+  ///      6.1) notifier.cancel_wait(u);
+  ///      6.2) goto step 1)  // reiterate wait_for_task to keep one thief alive
+  /// 7) notifier.commit_wait(u);   // sleep until notified
+  /// 8) return true.  // woken up; loop will retry
   inline auto
   wait_for_task(invocable_opt auto& stolen, activity_stats& activity, exec_stats& exec,
-                cas_deque auto& self, invocable_return auto&& stealer) -> bool
+                cas_deque auto& self, invocable_return auto&& stealer) noexcept -> bool
   {
     activity.thieves.fetch_add(1, std::memory_order_acq_rel);
     while (true)

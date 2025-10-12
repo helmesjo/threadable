@@ -12,9 +12,9 @@ namespace bench = ankerl::nanobench;
 namespace
 {
 #ifdef NDEBUG
-  constexpr auto tasks_per_iteration = 1 << 21;
+  constexpr auto tasks_per_iteration = 1 << 16;
 #else
-  constexpr auto tasks_per_iteration = 1 << 18;
+  constexpr auto tasks_per_iteration = 1 << 16;
 #endif
   auto val = 1; // NOLINT
 }
@@ -28,7 +28,7 @@ TEST_CASE("pool: task execution")
     bench::doNotOptimizeAway(val = fho::utils::do_non_trivial_work(val) );
   });
 
-  b.title("pool: emplace & wait");
+  b.title("pool: push & wait");
   {
     // too slow with large batch size, but also unaffected for
     // stats reported.
@@ -50,20 +50,23 @@ TEST_CASE("pool: task execution")
              }
            });
   }
+  for (auto threads = 1; threads <= std::min(12u, std::thread::hardware_concurrency()); ++threads)
   {
-    auto pool = fho::pool<tasks_per_iteration>();
+    {
+      auto pool = fho::pool(threads);
 
-    auto& queue = pool.create();
-    b.batch(tasks_per_iteration)
-      .run("fho::pool",
-           [&]
-           {
-             auto group = fho::token_group{tasks_per_iteration};
-             for (std::size_t i = 0; i < tasks_per_iteration; ++i)
+      auto title = std::format("fho::pool (t: {})", threads);
+      b.batch(tasks_per_iteration)
+        .run(title,
+             [&]
              {
-               group += queue.emplace_back(task_t{});
-             }
-             group.wait();
-           });
+               auto group = fho::token_group{tasks_per_iteration};
+               for (auto i = 0; i < tasks_per_iteration; ++i)
+               {
+                 group += pool.push(task_t{});
+               }
+               group.wait();
+             });
+    }
   }
 }
