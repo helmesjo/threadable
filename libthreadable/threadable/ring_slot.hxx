@@ -337,7 +337,7 @@ namespace fho
     /// `slot_token`.
     /// @param `t` The `slot_token` to bind the state to.
     inline constexpr void
-    bind(slot_token& t, slot_state old) noexcept
+    bind(slot_token& t, slot_state old) const noexcept
     {
       t.rebind(state_, old);
     }
