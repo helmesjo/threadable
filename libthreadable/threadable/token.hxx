@@ -213,9 +213,10 @@ namespace fho
     /// current state and uses it during `wait()` do distinguish pre- from post-state.
     /// @param `state` A const reference to the atomic state to monitor.
     void
-    rebind(atomic_state_t const& state) noexcept
+    rebind(atomic_state_t const& state, slot_state old) noexcept
     {
-      pre_.store(state.load(std::memory_order_acquire), std::memory_order_release);
+      assert((old & slot_state::empty) == 0 and "token::rebind() - Blocks wait() indefinitely");
+      pre_.store(old, std::memory_order_release);
       state_.store(&state, std::memory_order_release);
     }
 
@@ -260,28 +261,19 @@ namespace fho
     void
     wait() const noexcept
     {
-      // @NOTE:
-      // ...
       auto state = state_.load(std::memory_order_acquire);
-      while (state)
+      while (true)
       {
-        assert(state != nullptr and
-               "token::wait() - state must never be assigned null while owned");
+        assert(state != nullptr && "token::wait() - State must never be assigned null while owned");
         auto const pre = pre_.load(std::memory_order_acquire);
-        state->wait<slot_state::epoch>(pre & slot_state::epoch, std::memory_order_seq_cst);
-        // Re-fetch to handle rebinding. If it stayed
-        // the same, then it wasn't rebound.
-        auto       next     = state_.load(std::memory_order_acquire);
-        auto const post     = next->load(std::memory_order_acquire);
-        auto const newEpoch = (pre & slot_state::epoch) != (post & slot_state::epoch);
-        if (next == state && newEpoch) [[likely]]
+        state->wait<slot_state::state_mask>(pre, std::memory_order_acquire);
+        auto next = state_.load(std::memory_order_acquire);
+        if (next == state) [[likely]]
         {
           break;
         }
         else [[unlikely]]
         {
-          assert(next != nullptr and
-                 "token::wait() - state must never be re-assigned to null while owned");
           state = next;
         }
       }

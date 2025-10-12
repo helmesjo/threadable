@@ -270,7 +270,6 @@ namespace fho
       // Desired = {state=empty, epoch = flipped}
       auto desired = static_cast<slot_state>(slot_state::empty |
                                              ((curr ^ slot_state::epoch) & slot_state::epoch));
-      auto derp    = dbg::to_str(desired);
       if (!state_.compare_exchange_strong<slot_state::state_mask, slot_state::state_u_epoch_mask>(
             curr, desired, success, failure))
       {
@@ -338,9 +337,9 @@ namespace fho
     /// `slot_token`.
     /// @param `t` The `slot_token` to bind the state to.
     inline constexpr void
-    bind(slot_token& t) noexcept
+    bind(slot_token& t, slot_state old) noexcept
     {
-      t.rebind(state_);
+      t.rebind(state_, old);
     }
 
     /// @brief Gets a reference to the stored value.
