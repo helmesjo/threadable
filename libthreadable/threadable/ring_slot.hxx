@@ -270,8 +270,8 @@ namespace fho
       // Desired = {state=empty, epoch = flipped}
       auto desired = static_cast<slot_state>(slot_state::empty |
                                              ((curr ^ slot_state::epoch) & slot_state::epoch));
-      if (!state_.compare_exchange_strong<slot_state::state_mask, slot_state::state_u_epoch_mask>(
-            curr, desired, success, failure))
+      if (!state_.compare_exchange_strong<slot_state::state_u_epoch_mask>(curr, desired, success,
+                                                                          failure))
       {
         dbg::log("Prerequisite violation: ", curr, desired);
         std::abort();
