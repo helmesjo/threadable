@@ -223,6 +223,23 @@ namespace fho
       return activity_.master.size();
     }
 
+    /// @brief Returns true if there are no pending tasks.
+    /// @details Scans for any slot in the `ready` state.
+    /// @return True if none pending, false otherwise.
+    [[nodiscard]] auto
+    empty() const noexcept -> bool
+    {
+      return activity_.master.empty();
+    }
+
+    /// @brief Waits until the master queue is empty.
+    /// @details Blocks until there are no slots in state `ready`.
+    void
+    wait() const noexcept
+    {
+      activity_.master.wait();
+    }
+
     /// @brief Returns the maximum task capacity.
     /// @details Returns the capacity of the underlying master queue.
     /// @return Maximum number of pending tasks.

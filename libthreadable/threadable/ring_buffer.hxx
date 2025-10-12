@@ -359,16 +359,23 @@ namespace fho
       return {nullptr};
     }
 
-    /// @brief Waits until the buffer has items available.
-    /// @details Blocks until `head_ > tail_`, indicating items are ready for consumption.
+    /// @brief Waits until the buffer is empty.
+    /// @details Blocks until there are no slots in state `ready`.
     void
     wait() const noexcept
     {
-      auto const tail = tail_.load(std::memory_order_acquire);
-      auto const head = head_.load(std::memory_order_acquire);
-      if (mask(head - tail) == 0) [[unlikely]]
+      auto next = elems_.begin();
+      while (next != elems_.end())
       {
-        head_.wait(head, std::memory_order_acquire);
+        auto t = slot_token{};
+        next->bind(t, slot_state::locked_ready);
+        t.wait();
+        next = std::ranges::find_if(elems_,
+                                    [](auto const& e)
+                                    {
+                                      return e.template test<slot_state::ready>(
+                                        std::memory_order_acquire);
+                                    });
       }
     }
 
