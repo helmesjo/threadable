@@ -4,7 +4,6 @@
 #include <threadable/ring_buffer.hxx>
 #include <threadable/scheduler/stealing.hxx>
 
-#include <atomic>
 #include <thread>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)

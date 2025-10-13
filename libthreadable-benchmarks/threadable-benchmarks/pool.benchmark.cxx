@@ -1,12 +1,7 @@
 #include <threadable-benchmarks/util.hxx>
 #include <threadable/pool.hxx>
 
-#if __cpp_lib_execution >= 201603L
-  #include <execution>
-#endif
-
 #include <queue>
-#include <ranges>
 
 #include <doctest/doctest.h>
 
@@ -55,28 +50,24 @@ TEST_CASE("pool: task execution")
              }
            });
   }
-  for (auto threads = 1; threads <= std::min(12u, std::thread::hardware_concurrency()); ++threads)
   {
+    for (auto threads = 1; threads <= std::min(12u, std::thread::hardware_concurrency()); ++threads)
     {
-      auto pool = fho::pool(threads);
+      {
+        auto pool = fho::pool(threads);
 
-      auto title = std::format("fho::pool (t: {})", threads);
-      b.batch(tasks_per_iteration)
-        .run(title,
-             [&]
-             {
-               auto range = std::views::iota(0, tasks_per_iteration);
-#if __cpp_lib_execution >= 201603L
-               std::for_each(std::execution::par, range.begin(), range.end(),
-#else
-               std::for_each(range.begin(), range.end(),
-#endif
-                             [&pool](auto)
-                             {
-                               pool.push(task_t{});
-                             });
-               pool.wait();
-             });
+        auto title = std::format("fho::pool (t: {})", threads);
+        b.batch(tasks_per_iteration)
+          .run(title,
+               [&]
+               {
+                 for (std::size_t i = 0; i < tasks_per_iteration; ++i)
+                 {
+                   pool.push(task_t{});
+                 }
+                 pool.wait();
+               });
+      }
     }
   }
 }
