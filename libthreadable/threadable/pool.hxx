@@ -20,60 +20,6 @@
 
 namespace fho
 {
-  /// @brief A task queue for managing tasks in a thread pool with work-stealing support.
-  /// @details Extends `ring_buffer<fast_func_t>` to store tasks with an associated execution policy
-  ///          and activity stats for work-stealing coordination. Supports pushing tasks with or
-  ///          without a reusable `slot_token`, and popping tasks with sequential dependency checks
-  ///          for `execution::seq` to enforce single-edge DAG ordering. Thread-safe for multiple
-  ///          producers and consumers.
-  class alignas(details::cache_line_size) task_queue : private ring_buffer<fast_func_t>
-  {
-    using base_t = ring_buffer<fast_func_t>;
-
-  public:
-    /// @brief Constructs a task queue from an existing ring buffer with specified policy and stats.
-    /// @param base The `ring_buffer<fast_func_t>` to move into the queue.
-    /// @param policy The execution policy (`seq` for sequential, `par` for parallel).
-    /// @param activity Reference to shared `activity_stats` for work-stealing notifications.
-    explicit task_queue(base_t&& base, execution policy,
-                        scheduler::stealing::activity_stats& activity)
-      : base_t(std::move(base))
-      , activity_(activity)
-    {}
-
-    /// @brief Constructs an empty task queue with specified policy and stats.
-    /// @param policy The execution policy (`seq` for sequential, `par` for parallel).
-    /// @param activity Reference to shared `activity_stats` for work-stealing notifications.
-    explicit task_queue(scheduler::stealing::activity_stats& activity)
-      : activity_(activity)
-    {}
-
-    /// @brief Attempts to claim the first task from the queue.
-    /// @details For `execution::seq`, checks if the previous task is completed (`empty` state)
-    ///          before claiming, enforcing single-edge DAG ordering. For `execution::par`, claims
-    ///          without checking dependencies. Returns a `claimed_slot<fast_func_t>` that
-    ///          auto-releases on destruction. Thread-safe for multiple consumers.
-    /// @return A `claimed_slot<fast_func_t>` if a task is claimed, or `nullptr` if the queue is
-    ///         empty, contention occurs, or the previous task is not completed (for `seq`).
-    [[nodiscard]] auto
-    try_pop() noexcept -> decltype(auto)
-    {
-      return base_t::try_pop_front();
-    }
-
-    /// @brief Returns the maximum capacity of the queue.
-    /// @details Returns the capacity of the underlying `ring_buffer<fast_func_t>`.
-    /// @return The maximum number of tasks the queue can hold.
-    [[nodiscard]] static constexpr auto
-    max_size() noexcept
-    {
-      return base_t::max_size();
-    }
-
-  private:
-    alignas(details::cache_line_size) scheduler::stealing::activity_stats& activity_; // NOLINT
-  };
-
   /// @brief A thread pool managing work-stealing executors.
   /// @details Manages a set of `executor`s, distributing tasks via work-stealing.
   ///          Supports concurrent task submission, with tasks executed according to their
