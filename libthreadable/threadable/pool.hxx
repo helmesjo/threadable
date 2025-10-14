@@ -137,8 +137,8 @@ namespace fho
         //       by ring_buffer, we "bulk-steal" from master. This is not
         //       ideal (loop-try) and should instead be handled by the buffer
         //       directly (eg. through a 'range claim' FAA).
-        constexpr auto cap = std::size_t{128};
-        for (auto i = 0; i < cap; ++i)
+        constexpr auto cap = 128u;
+        for (auto i = 0u; i < cap; ++i)
         {
           if (auto t = activity_.master.try_pop_front(); t)
           {
