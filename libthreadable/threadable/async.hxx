@@ -6,7 +6,7 @@
 
 #include <concepts>
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(__clang__)
   #pragma warning(push)
   #pragma warning(disable : 4324)
 #endif
@@ -140,6 +140,6 @@ namespace fho
 
 #undef FWD
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(__clang__)
   #pragma warning(pop)
 #endif
