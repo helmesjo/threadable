@@ -45,16 +45,16 @@ SCENARIO("pool: create/remove queues")
 
       for (std::size_t i = 0; i < nr_of_tasks; ++i)
       {
-        tokens += queue.push<fho::execution::seq>(
-          [&executed, &counter, i]()
-          {
-            executed[i] = counter++;
-            // simulate interruptions
-            if (i % 2 == 0)
-            {
-              std::this_thread::yield();
-            }
-          });
+        tokens += queue.push(fho::execution::seq,
+                             [&executed, &counter, i]()
+                             {
+                               executed[i] = counter++;
+                               // simulate interruptions
+                               if (i % 2 == 0)
+                               {
+                                 std::this_thread::yield();
+                               }
+                             });
       }
       tokens.wait();
 

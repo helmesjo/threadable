@@ -4,17 +4,37 @@
 #include <threadable/ring_buffer.hxx>
 #include <threadable/scheduler/stealing.hxx>
 
+#include <concepts>
+
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
+  #include <execution>
+#endif
+
 #include <thread>
 
 #define FWD(...) ::std::forward<decltype(__VA_ARGS__)>(__VA_ARGS__)
 
 namespace fho
 {
-  enum class execution
+  namespace execution
   {
-    seq,
-    par
-  };
+#if __cpp_lib_execution >= 201603L && __cpp_lib_parallel_algorithm >= 201603L
+    inline constexpr auto seq = std::execution::seq;
+    inline constexpr auto par = std::execution::par;
+#else
+    struct parallel_policy
+    {
+    } const par;
+
+    struct sequential_policy
+    {
+    } const seq;
+#endif
+  }
+
+  template<typename ExPo>
+  concept exec_policy = std::common_reference_with<ExPo, decltype(execution::par)> ||
+                        std::common_reference_with<ExPo, decltype(execution::seq)>;
 
   namespace sched = fho::scheduler::stealing;
 

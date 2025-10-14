@@ -88,20 +88,64 @@ namespace fho
       /// @details Emplaces a task constructed from `args...` into the queue, binding it to the
       ///          provided `slot_token` for tracking. Signals pools `notifier` to wake sleeping
       ///          executors. Thread-safe for multiple producers.
+      /// @tparam ExPo Type of execution policy.
+      /// @tparam U Types of the arguments to construct the task.
+      /// @param exPo Execution policy.
+      /// @param token Reference to a `slot_token` to track the task's state.
+      /// @param args Arguments to construct a `fast_func_t` task.
+      /// @return Reference to the provided `slot_token`.
+      /// @requires `fast_func_t` must be constructible from `U...`.
+      template<exec_policy ExPo, typename... U>
+        requires std::constructible_from<fast_func_t, U...>
+      auto
+      push(ExPo&&, slot_token& token, U&&... args) noexcept -> slot_token&
+      {
+        if constexpr (std::common_reference_with<ExPo, decltype(execution::seq)>)
+        {
+          queue_->template emplace_back<slot_state::tag_seq>(token, FWD(args)...);
+        }
+        else
+        {
+          queue_->emplace_back(token, FWD(args)...);
+        }
+        pool_->activity_.notifier.notify_one();
+        return token;
+      }
+
+      /// @brief Pushes a task with a reusable token and arguments.
+      /// @details Emplaces a task constructed from `args...` into the queue, binding it to the
+      ///          provided `slot_token` for tracking. Signals pools `notifier` to wake sleeping
+      ///          executors. Thread-safe for multiple producers.
       /// @tparam U Types of the arguments to construct the task.
       /// @param token Reference to a `slot_token` to track the task's state.
       /// @param args Arguments to construct a `fast_func_t` task.
       /// @return Reference to the provided `slot_token`.
       /// @requires `fast_func_t` must be constructible from `U...`.
-      template<execution Policy = execution::par, typename... U>
+      template<typename... U>
         requires std::constructible_from<fast_func_t, U...>
       auto
       push(slot_token& token, U&&... args) noexcept -> slot_token&
       {
-        static constexpr auto tags =
-          Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
-        queue_->template emplace_back<tags>(token, FWD(args)...);
-        pool_->activity_.notifier.notify_one();
+        return push(execution::par, token, FWD(args)...);
+      }
+
+      /// @brief Pushes a task with arguments and returns a new token.
+      /// @details Emplaces a task constructed from `args...` into the queue, creating a new
+      ///          `slot_token` for tracking. Signals pools `notifier` to wake sleeping
+      ///          executors. Thread-safe for multiple producers.
+      /// @tparam ExPo Type of execution policy.
+      /// @tparam U Types of the arguments to construct the task.
+      /// @param exPo Execution policy.
+      /// @param args Arguments to construct a `fast_func_t` task.
+      /// @return A `slot_token` for tracking the task's state.
+      /// @requires `fast_func_t` must be constructible from `U...`.
+      template<exec_policy ExPo, typename... U>
+        requires std::constructible_from<fast_func_t, U...>
+      auto
+      push(ExPo&& exPo, U&&... args) noexcept -> slot_token
+      {
+        auto token = slot_token{};
+        push(FWD(exPo), token, FWD(args)...);
         return token;
       }
 
@@ -113,16 +157,12 @@ namespace fho
       /// @param args Arguments to construct a `fast_func_t` task.
       /// @return A `slot_token` for tracking the task's state.
       /// @requires `fast_func_t` must be constructible from `U...`.
-      template<execution Policy = execution::par, typename... U>
+      template<typename... U>
         requires std::constructible_from<fast_func_t, U...>
       auto
       push(U&&... args) noexcept -> slot_token
       {
-        static constexpr auto tags =
-          Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
-        auto token = queue_->template emplace_back<tags>(FWD(args)...);
-        pool_->activity_.notifier.notify_one();
-        return token;
+        return push(execution::par, FWD(args)...);
       }
 
     private:
@@ -182,14 +222,12 @@ namespace fho
     /// @param args Arguments to construct a `fast_func_t` task.
     /// @return Reference to the provided `slot_token`.
     /// @requires `fast_func_t` must be constructible from `U...`.
-    template<execution Policy = execution::par, typename... U>
+    template<typename... U>
       requires std::constructible_from<fast_func_t, U...>
     auto
     push(slot_token& token, U&&... args) noexcept -> slot_token&
     {
-      static constexpr auto tags =
-        Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
-      activity_.master.template emplace_back<tags>(token, FWD(args)...);
+      activity_.master.emplace_back(token, FWD(args)...);
       activity_.notifier.notify_one();
       return token;
     }
@@ -202,15 +240,13 @@ namespace fho
     /// @param args Arguments to construct a `fast_func_t` task.
     /// @return A `slot_token` for tracking the task's state.
     /// @requires `fast_func_t` must be constructible from `U...`.
-    template<execution Policy = execution::par, typename... U>
+    template<typename... U>
       requires std::constructible_from<fast_func_t, U...>
     auto
     push(U&&... args) noexcept -> slot_token
     {
-      static constexpr auto tags =
-        Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
-      auto token = activity_.master.template emplace_back<tags>(FWD(args)...);
-      activity_.notifier.notify_one();
+      auto token = slot_token{};
+      push(token, FWD(args)...);
       return token;
     }
 
@@ -316,8 +352,6 @@ namespace fho
     [[nodiscard]] auto
     remove(queue_t&& queue) noexcept -> bool // NOLINT
     {
-      // using q_t = typename queues_t::value_type;
-      // auto tmp  = q_t{nullptr};
       {
         auto _ = std::scoped_lock{queueMutex_};
         if (auto itr = std::ranges::find_if(queues_,
@@ -327,19 +361,11 @@ namespace fho
                                             });
             itr != std::end(queues_))
         {
-          // tmp = *itr;
-          // assert(itr->get()->empty());
           queues_.erase(itr);
           return true;
         }
       }
-      // After release: Wait for any ongoing processing to complete.
-      // if (tmp)
-      // {
-      //   tmp->wait();
-      //   tmp = nullptr;
-      //   return true;
-      // }
+      // @TODO: Wait for any active tasks in queue to finish processing?
       return false;
     }
 

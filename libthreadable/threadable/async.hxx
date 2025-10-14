@@ -35,8 +35,8 @@ namespace fho
   /// (optionally) passed by reference as the first argument to the callable.
   /// @tparam Func The type of the callable, must be invocable with `args`.
   /// @tparam Args The types of the arguments.
-  /// @param func The callable to submit.
   /// @param token Reference to a reusable `slot_token`.
+  /// @param func The callable to submit.
   /// @param args Additional arguments to pass to the callable.
   /// @return Reference to the reused `token`.
   template<typename... Args>
@@ -67,7 +67,7 @@ namespace fho
   ///     if (++count >= 5) token.cancel();
   /// });
   /// token.wait(); // Runs 5 times
-  /// // count == 5
+  /// assert(count == 5);
   /// ```
   template<typename... Args>
   inline void
@@ -85,11 +85,49 @@ namespace fho
     details::default_pool().push(token, lambda, lambda, std::ref(token), FWD(func), FWD(args)...);
   }
 
-  /// @brief Executes a range of callables with default sequential execution.
+  /// @brief Executes a range of callables with specified execution policy.
+  /// @details Invokes each callable in the provided range with the given arguments.
+  ///          Supports sequential (`seq`) or parallel (`par`) execution.
+  /// @tparam R The type of the range containing invocable objects.
+  /// @tparam Args Variadic argument types to pass to each callable.
+  /// @param exPo The execution policy (`fho::execution::seq` or `fho::execution::par`).
+  /// @param r The range of callables to execute.
+  /// @param args Arguments forwarded to each callable invocation.
+  /// @return The number of callables executed, equivalent to the range's size.
+  template<exec_policy ExPo, std::ranges::range R, typename... Args>
+  inline auto
+  execute(ExPo&&, R&& r, Args&&... args) // NOLINT
+    requires std::invocable<std::ranges::range_value_t<R>, Args...>
+  {
+    if constexpr (std::common_reference_with<ExPo, decltype(execution::seq)>)
+    {
+      for (auto&& c : FWD(r))
+      {
+        std::invoke(fho::stdext::forward_like<decltype(r)>(c),
+                    fho::stdext::forward_like<decltype(args)>(args)...);
+      }
+      return r.size();
+    }
+    else
+    {
+      auto tokens = token_group{};
+      auto s      = std::size_t{0};
+      for (auto&& c : FWD(r))
+      {
+        tokens += details::default_pool().push(fho::stdext::forward_like<decltype(r)>(c),
+                                               fho::stdext::forward_like<decltype(args)>(args)...);
+        ++s;
+      }
+      tokens.wait();
+      return s;
+    }
+  }
+
+  /// @brief Executes a range of callables sequentially.
   /// @details Invokes each callable in the range sequentially with the provided arguments.
   /// @tparam R The type of the range containing invocable objects.
-  /// @param r The range of callables to execute.
   /// @tparam Args Variadic argument types to pass to each callable.
+  /// @param r The range of callables to execute.
   /// @param args Arguments forwarded to each callable invocation.
   /// @return The number of callables executed, equivalent to the range's size.
   template<std::ranges::range R, typename... Args>
@@ -97,44 +135,7 @@ namespace fho
   execute(R&& r, Args&&... args) // NOLINT
     requires std::invocable<std::ranges::range_value_t<R>, Args...>
   {
-    for (auto&& c : FWD(r))
-    {
-      std::invoke(fho::stdext::forward_like<decltype(r)>(c),
-                  fho::stdext::forward_like<decltype(args)>(args)...);
-    }
-    return r.size();
-  }
-
-  /// @brief Executes a range of callables with specified execution policy.
-  /// @details Invokes each callable in the provided range with the given arguments.
-  ///          Supports sequential (`seq`) or parallel (`par`) execution.
-  /// @tparam R The type of the range containing invocable objects.
-  /// @param exPo The execution policy (`fho::execution::seq` or `fho::execution::par`).
-  /// @param r The range of callables to execute.
-  /// @tparam Args Variadic argument types to pass to each callable.
-  /// @param args Arguments forwarded to each callable invocation.
-  /// @return The number of callables executed, equivalent to the range's size.
-  template<std::ranges::range R, typename... Args>
-  inline auto
-  execute(execution exPo, R&& r, Args&&... args)
-    requires std::invocable<std::ranges::range_value_t<R>, Args...>
-  {
-    if (exPo != execution::seq)
-    {
-      auto tokens = token_group{};
-      auto s      = std::size_t{0};
-      for (auto&& c : FWD(r))
-      {
-        tokens += details::default_pool().push(FWD(c), FWD(args)...);
-        ++s;
-      }
-      tokens.wait();
-      return s;
-    }
-    else
-    {
-      return execute(FWD(r), FWD(args)...);
-    }
+    return execute(execution::seq, FWD(r), FWD(args)...);
   }
 }
 
