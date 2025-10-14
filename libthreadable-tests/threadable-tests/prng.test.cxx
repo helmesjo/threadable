@@ -1,5 +1,6 @@
-#include <threadable-tests/doctest_include.hxx>
 #include <threadable/prng.hxx>
+
+#include <threadable-tests/doctest_include.hxx>
 
 #include <array>
 #include <cstdint>
@@ -39,7 +40,11 @@ namespace
 SCENARIO("prng: generate random numbers")
 {
   // Basic compatibility check
-  static_assert(std::constructible_from<std::mt19937, fho::prng_dist<int>&>);
+  static_assert(std::uniform_random_bit_generator<fho::prng_engine>);
+  using Dist = std::uniform_int_distribution<int>;
+  static_assert(std::invocable<Dist&, fho::prng_engine&, Dist::param_type>);
+  using Param = fho::prng_dist<int>::param_type;
+  static_assert(std::invocable<fho::prng_dist<int>&, std::mt19937&, Param>);
 
   // Engine seeded once; used only for non-deterministic sanity checks below.
   auto rng = fho::prng_engine{std::random_device{}()};
