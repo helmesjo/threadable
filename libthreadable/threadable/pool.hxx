@@ -27,7 +27,109 @@ namespace fho
   ///          Uses a shared `activity_stats` for efficient executor wake-up.
   class pool
   {
+    using queue_t  = ring_buffer<fast_func_t>;
+    using queues_t = std::vector<std::shared_ptr<queue_t>>;
+
   public:
+    class queue_view
+    {
+    public:
+      queue_view(pool& pool, queue_t& queue)
+        : pool_(&pool)
+        , queue_(&queue)
+      {}
+
+      queue_view(queue_view&& rhs) noexcept
+        : pool_(rhs.pool_)
+        , queue_(rhs.queue_)
+      {
+        rhs.pool_  = nullptr;
+        rhs.queue_ = nullptr;
+      }
+
+      ~queue_view()
+      {
+        if (pool_ && queue_)
+        {
+          (void)pool_->remove(std::move(*queue_));
+        }
+        pool_  = nullptr;
+        queue_ = nullptr;
+      }
+
+      auto
+      operator=(queue_view&& rhs) noexcept -> queue_view&
+      {
+        if (this == &rhs) [[unlikely]]
+        {
+          return *this;
+        }
+        if (pool_ && queue_)
+        {
+          (void)pool_->remove(std::move(*queue_));
+        }
+        pool_      = rhs.pool_;
+        queue_     = rhs.queue_;
+        rhs.pool_  = nullptr;
+        rhs.queue_ = nullptr;
+        return *this;
+      }
+
+      queue_view()                                     = default;
+      queue_view(queue_view const&)                    = delete;
+      auto operator=(queue_view const&) -> queue_view& = delete;
+
+      operator bool() const noexcept
+      {
+        return pool_ && queue_;
+      }
+
+      /// @brief Pushes a task with a reusable token and arguments.
+      /// @details Emplaces a task constructed from `args...` into the queue, binding it to the
+      ///          provided `slot_token` for tracking. Signals pools `notifier` to wake sleeping
+      ///          executors. Thread-safe for multiple producers.
+      /// @tparam U Types of the arguments to construct the task.
+      /// @param token Reference to a `slot_token` to track the task's state.
+      /// @param args Arguments to construct a `fast_func_t` task.
+      /// @return Reference to the provided `slot_token`.
+      /// @requires `fast_func_t` must be constructible from `U...`.
+      template<execution Policy = execution::par, typename... U>
+        requires std::constructible_from<fast_func_t, U...>
+      auto
+      push(slot_token& token, U&&... args) noexcept -> slot_token&
+      {
+        static constexpr auto tags =
+          Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
+        queue_->template emplace_back<tags>(token, FWD(args)...);
+        pool_->activity_.notifier.notify_one();
+        return token;
+      }
+
+      /// @brief Pushes a task with arguments and returns a new token.
+      /// @details Emplaces a task constructed from `args...` into the queue, creating a new
+      ///          `slot_token` for tracking. Signals pools `notifier` to wake sleeping
+      ///          executors. Thread-safe for multiple producers.
+      /// @tparam U Types of the arguments to construct the task.
+      /// @param args Arguments to construct a `fast_func_t` task.
+      /// @return A `slot_token` for tracking the task's state.
+      /// @requires `fast_func_t` must be constructible from `U...`.
+      template<execution Policy = execution::par, typename... U>
+        requires std::constructible_from<fast_func_t, U...>
+      auto
+      push(U&&... args) noexcept -> slot_token
+      {
+        static constexpr auto tags =
+          Policy == execution::seq ? slot_state::tag_seq : slot_state::invalid;
+        auto token = queue_->template emplace_back<tags>(FWD(args)...);
+        pool_->activity_.notifier.notify_one();
+        return token;
+      }
+
+    private:
+      pool*    pool_  = nullptr;
+      queue_t* queue_ = nullptr;
+    };
+
     /// @brief Constructs a thread pool with a specified number of worker threads.
     /// @details Initializes the pool with `threads` executors, each running a work-stealing loop.
     ///          Defaults to `std::thread::hardware_concurrency()` for optimal parallelism.
@@ -124,9 +226,9 @@ namespace fho
       thread_local auto rng = fho::prng_engine{simple_seed()};
       using cached_t        = std::ranges::range_value_t<decltype(r)>;
 
-      auto  dist   = fho::prng_dist<std::size_t>(0, executors_.size() - 1);
-      auto  idx    = dist(rng);
-      auto& victim = executors_[idx];
+      auto       dist   = fho::prng_dist<std::size_t>(0, executors_.size() - 1);
+      auto const idx    = dist(rng);
+      auto&      victim = executors_[idx];
 
       auto cached = cached_t{nullptr};
 
@@ -156,8 +258,89 @@ namespace fho
             break;
           }
         }
+        // Second fallback to user-created queues.
+        if (!cached) [[unlikely]]
+        {
+          queues_t queues;
+          {
+            auto _ = std::scoped_lock{queueMutex_};
+            queues = queues_;
+          }
+          if (queues.size() > 0) [[unlikely]]
+          {
+            auto       dist2 = fho::prng_dist<std::size_t>(0, queues.size() - 1);
+            auto const cap2  = queues.size();
+            for (auto i = 0u; i < cap2; ++i)
+            {
+              auto const idx2  = dist2(rng);
+              auto&      queue = queues[idx2];
+              if (auto t = queue->try_pop_front(); t)
+              {
+                if (!cached)
+                {
+                  cached = std::move(t);
+                }
+                else
+                {
+                  r.emplace_back(std::move(t));
+                }
+              }
+            }
+          }
+        }
       }
       return std::move(cached);
+    }
+
+    /// @brief Makes a new task queue and adds it to the pool.
+    /// @details Instantiates a new `ring_buffer<fast_func_t>` and adds it to the pool's
+    /// list of available queues.
+    /// @return A reference to the newly created `ring_buffer`.
+    [[nodiscard]] auto
+    make() noexcept -> queue_view
+    {
+      queue_t* queue = nullptr;
+      {
+        auto _ = std::scoped_lock{queueMutex_};
+        queue  = queues_.emplace_back(std::make_unique<queue_t>()).get();
+      }
+
+      return {*this, *queue};
+    }
+
+    /// @brief Removes a specified queue from the pool.
+    /// @details Searches for the provided `ring_buffer` in the pool's list and removes it if found.
+    /// The queue is moved into the function to ensure ownership transfer.
+    /// @param queue The `ring_buffer` to remove, moved into the function.
+    /// @return True if the queue was successfully removed, false if not found.
+    [[nodiscard]] auto
+    remove(queue_t&& queue) noexcept -> bool // NOLINT
+    {
+      // using q_t = typename queues_t::value_type;
+      // auto tmp  = q_t{nullptr};
+      {
+        auto _ = std::scoped_lock{queueMutex_};
+        if (auto itr = std::ranges::find_if(queues_,
+                                            [&queue](auto const& q)
+                                            {
+                                              return q.get() == &queue;
+                                            });
+            itr != std::end(queues_))
+        {
+          // tmp = *itr;
+          // assert(itr->get()->empty());
+          queues_.erase(itr);
+          return true;
+        }
+      }
+      // After release: Wait for any ongoing processing to complete.
+      // if (tmp)
+      // {
+      //   tmp->wait();
+      //   tmp = nullptr;
+      //   return true;
+      // }
+      return false;
     }
 
     /// @brief Returns the number of threads.
@@ -206,6 +389,8 @@ namespace fho
   private:
     alignas(details::cache_line_size) scheduler::stealing::activity_stats activity_;
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
+    alignas(details::cache_line_size) mutable std::mutex queueMutex_;
+    alignas(details::cache_line_size) queues_t queues_;
   };
 
   namespace details
@@ -245,6 +430,12 @@ namespace fho
   thread_count(unsigned int threads) -> bool
   {
     return details::default_pool(threads).thread_count() == threads;
+  }
+
+  inline auto
+  make_queue() noexcept
+  {
+    return details::default_pool().make();
   }
 }
 

@@ -6,9 +6,68 @@
 #include <thread>
 #include <vector>
 
+#include "threadable/execution.hxx"
+
 SCENARIO("pool: print system info")
 {
   std::cerr << "hardware_concurrency: " << std::thread::hardware_concurrency() << std::endl;
+}
+
+SCENARIO("pool: create/remove queues")
+{
+  auto pool = fho::pool(4);
+  GIVEN("queue is created")
+  {
+    auto queue = pool.make();
+
+    WHEN("task is pushed to queue")
+    {
+      int  called = 0;
+      auto token  = queue.push(
+        [&called]
+        {
+          ++called;
+        });
+      THEN("it gets executed")
+      {
+        token.wait();
+        REQUIRE(called == 1);
+      }
+    }
+    WHEN("sequential tasks are pushed to queue")
+    {
+      constexpr auto nr_of_tasks = std::size_t{1024};
+
+      auto executed = std::vector<std::size_t>(nr_of_tasks, 0);
+
+      auto tokens  = fho::token_group{nr_of_tasks};
+      auto counter = std::size_t{0};
+
+      for (std::size_t i = 0; i < nr_of_tasks; ++i)
+      {
+        tokens += queue.push<fho::execution::seq>(
+          [&executed, &counter, i]()
+          {
+            executed[i] = counter++;
+            // simulate interruptions
+            if (i % 2 == 0)
+            {
+              std::this_thread::yield();
+            }
+          });
+      }
+      tokens.wait();
+
+      THEN("all tasks are executed in order")
+      {
+        REQUIRE(executed.size() == nr_of_tasks);
+        for (std::size_t i = 0; i < nr_of_tasks; ++i)
+        {
+          REQUIRE(executed[i] == i);
+        }
+      }
+    }
+  }
 }
 
 SCENARIO("pool: stress-test")
