@@ -2,13 +2,13 @@
 
 #include <threadable/execution.hxx>
 #include <threadable/function.hxx>
+#include <threadable/prng.hxx>
 #include <threadable/ring_buffer.hxx>
 #include <threadable/scheduler/stealing.hxx>
 
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
-#include <random>
 #include <ranges>
 
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -121,10 +121,10 @@ namespace fho
     [[nodiscard]] auto
     steal(std::ranges::range auto& r) noexcept -> claimed_slot<fast_func_t>
     {
-      thread_local auto rng = std::mt19937{std::random_device{}()};
+      thread_local auto rng = fho::prng_engine{simple_seed()};
       using cached_t        = std::ranges::range_value_t<decltype(r)>;
 
-      auto  dist   = std::uniform_int_distribution<std::size_t>(0, executors_.size() - 1);
+      auto  dist   = fho::prng_dist<std::size_t>(0, executors_.size() - 1);
       auto  idx    = dist(rng);
       auto& victim = executors_[idx];
 
