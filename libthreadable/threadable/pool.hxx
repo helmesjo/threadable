@@ -165,7 +165,7 @@ namespace fho
     [[nodiscard]] auto
     thread_count() const noexcept -> unsigned int
     {
-      return executors_.size();
+      return static_cast<unsigned int>(executors_.size());
     }
 
     /// @brief Returns the number of pending tasks.

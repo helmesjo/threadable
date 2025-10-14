@@ -175,8 +175,8 @@ namespace fho
     /// @details Initializes the token with the given `ring_slot` state.
     /// @param `state` A reference to the atomic state of the `ring_slot`.
     slot_token(atomic_state_t const& state)
-      : state_(&state)
-      , pre_(state.load(std::memory_order_acquire))
+      : pre_(state.load(std::memory_order_acquire))
+      , state_(&state)
     {}
 
     /// @brief Move constructor.

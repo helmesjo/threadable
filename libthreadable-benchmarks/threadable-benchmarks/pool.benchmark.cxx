@@ -16,7 +16,7 @@ namespace
 #else
   constexpr auto tasks_per_iteration = 1 << 16;
 #endif
-  auto val = 1; // NOLINT
+  auto dummyVal = 1; // NOLINT
 }
 
 TEST_CASE("pool: task execution")
@@ -25,7 +25,7 @@ TEST_CASE("pool: task execution")
   b.warmup(1).relative(true).unit("task");
 
   using task_t = decltype([](){
-    bench::doNotOptimizeAway(val = fho::utils::do_non_trivial_work(val) );
+    bench::doNotOptimizeAway(dummyVal = fho::utils::do_non_trivial_work(dummyVal) );
   });
 
   b.title("pool: push & wait");
@@ -51,7 +51,7 @@ TEST_CASE("pool: task execution")
            });
   }
   {
-    for (auto threads = 1; threads <= std::min(12u, std::thread::hardware_concurrency()); ++threads)
+    for (auto threads = 1u; threads <= std::min(12u, std::thread::hardware_concurrency()); ++threads)
     {
       {
         auto pool = fho::pool(threads);

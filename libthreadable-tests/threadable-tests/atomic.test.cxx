@@ -217,9 +217,10 @@ SCENARIO("atomic_bitfield: stress-test multiple bits with CAS")
         {
           auto expected = field.load();
           expected      = field.load();
-          while (!field.compare_exchange_strong<mask>(expected, 1))     // set bit to 1
+          while (!field.compare_exchange_strong<mask>(expected, 1))              // set bit to 1
             ;
-          while (!field.compare_exchange_strong<mask>(expected, ~mask)) // set bit to 0
+          while (!field.compare_exchange_strong<mask>(expected,
+                                                      static_cast<u8_t>(~mask))) // set bit to 0
             ;
         }
       });
@@ -232,9 +233,10 @@ SCENARIO("atomic_bitfield: stress-test multiple bits with CAS")
         {
           auto expected = field.load();
           expected      = field.load();
-          while (!field.compare_exchange_strong<mask>(expected, 1))     // set bit to 1
+          while (!field.compare_exchange_strong<mask>(expected, 1))              // set bit to 1
             ;
-          while (!field.compare_exchange_strong<mask>(expected, ~mask)) // set bit to 0
+          while (!field.compare_exchange_strong<mask>(expected,
+                                                      static_cast<u8_t>(~mask))) // set bit to 0
             ;
         }
       });

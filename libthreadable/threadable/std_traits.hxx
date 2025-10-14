@@ -11,7 +11,7 @@ namespace fho::stdext
   constexpr auto&&
   forward_like(U&& x) noexcept // NOLINT
   {
-#if __cpp_lib_forward_like >= 202207L
+#if defined(__cpp_lib_forward_like) && __cpp_lib_forward_like >= 202207L
     return std::forward_like<T>(x);
 #else
     constexpr bool is_adding_const = std::is_const_v<std::remove_reference_t<T>>;

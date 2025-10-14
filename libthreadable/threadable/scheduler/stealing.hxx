@@ -6,10 +6,16 @@
 #include <atomic>
 #include <concepts>
 #include <cstdint>
-#include <thread>
 
 #if defined(__x86_64__) || defined(_M_X64)
   #include <immintrin.h> // _mm_pause
+#else
+  #include <thread>
+#endif
+
+#ifdef _MSC_VER
+  #pragma warning(push)
+  #pragma warning(disable : 4324)
 #endif
 
 namespace fho::scheduler::stealing
@@ -268,3 +274,7 @@ namespace fho::scheduler::stealing
     }
   }
 }
+
+#ifdef _MSC_VER
+  #pragma warning(pop)
+#endif

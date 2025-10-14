@@ -22,7 +22,7 @@ namespace
 #else
   constexpr auto tasks_per_iteration = 1 << 18;
 #endif
-  auto val = 1; // NOLINT
+  auto dummyVal = 1; // NOLINT
 
   using fho_func_t = fho::fast_func_t;
   using std_func_t = std::function<void()>;
@@ -34,7 +34,7 @@ TEST_CASE("ring: emplace")
   b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
   using task_t = decltype([](){
-    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(dummyVal = fho::utils::do_trivial_work(dummyVal) );
   });
 
   b.title("ring: emplace");
@@ -74,7 +74,7 @@ TEST_CASE("ring: iterate (sequential)")
   b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
   using task_t = decltype([](){
-    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(dummyVal = fho::utils::do_trivial_work(dummyVal) );
   });
 
   b.title("ring: iterate - sequential");
@@ -121,7 +121,7 @@ TEST_CASE("ring: iterate (parallel)")
   b.warmup(1).relative(true).batch(tasks_per_iteration).unit("task");
 
   using task_t = decltype([](){
-    bench::doNotOptimizeAway(val = fho::utils::do_trivial_work(val) );
+    bench::doNotOptimizeAway(dummyVal = fho::utils::do_trivial_work(dummyVal) );
   });
 
   b.title("ring: iterate - parallel");

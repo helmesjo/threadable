@@ -922,7 +922,7 @@ SCENARIO("ring_buffer: standard algorithms")
       AND_WHEN("std::for_each")
       {
         std::ranges::for_each(ring,
-                              [&iterated](auto const& task)
+                              [&iterated](auto const&)
                               {
                                 ++iterated;
                               });

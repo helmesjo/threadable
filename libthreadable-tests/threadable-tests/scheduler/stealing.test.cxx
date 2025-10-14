@@ -13,7 +13,7 @@ SCENARIO("scheduler: adaptive stealing")
   auto activity = sched::activity_stats{};
   auto master   = fho::ring_buffer<fho::fast_func_t>{};
 
-  auto stealer = [&master](std::ranges::range auto&& r)
+  auto stealer = [&master](std::ranges::range auto&&)
   {
     return master.try_pop_back();
   };
@@ -24,7 +24,6 @@ SCENARIO("scheduler: adaptive stealing")
     {
       auto queue  = ring_t{};
       auto stolen = claimed_t{nullptr};
-      auto stats  = sched::exec_stats{};
 
       sched::exploit_task(stolen, activity, queue);
 
@@ -39,7 +38,6 @@ SCENARIO("scheduler: adaptive stealing")
     {
       auto queue    = fho::ring_buffer<fho::fast_func_t>{};
       auto executed = std::atomic_size_t{0};
-      auto stats    = sched::exec_stats{};
 
       auto stolen = fho::fast_func_t{[&]
                                      {
@@ -60,7 +58,6 @@ SCENARIO("scheduler: adaptive stealing")
       auto queue    = fho::ring_buffer<fho::fast_func_t>{};
       auto executed = std::atomic_size_t{0};
       auto stolen   = claimed_t{nullptr};
-      auto stats    = sched::exec_stats{};
 
       queue.emplace_back(
         [&]

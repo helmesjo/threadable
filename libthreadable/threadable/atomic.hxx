@@ -146,7 +146,7 @@ namespace fho
           expected = from_underlying(curr);
           return false;
         }
-        auto val = (curr & ~umask_des) | (des & umask_des);
+        auto val = to_underlying((curr & ~umask_des) | (des & umask_des));
         if (atomic_t::compare_exchange_strong(curr, val, success, failure))
         {
           return true;
@@ -186,7 +186,7 @@ namespace fho
         expected = from_underlying(curr);
         return false;
       }
-      auto val = (curr & ~umask_des) | (des & umask_des);
+      auto val = to_underlying((curr & ~umask_des) | (des & umask_des));
       if (!atomic_t::compare_exchange_weak(curr, val, success, failure))
       {
         expected = from_underlying(curr);
@@ -234,7 +234,7 @@ namespace fho
       else
       {
         // Clear the bits
-        return (atomic_t::fetch_and(~umask, order) & umask) != 0;
+        return (atomic_t::fetch_and(to_underlying(~umask), order) & umask) != 0;
       }
     }
 
@@ -258,7 +258,7 @@ namespace fho
       else
       {
         // Clear the bits
-        return (atomic_t::fetch_and(~umask, order) & umask) != 0;
+        return (atomic_t::fetch_and(to_underlying(~umask), order) & umask) != 0;
       }
     }
 
