@@ -152,14 +152,14 @@ namespace fho::scheduler::stealing
   {
     exec.failed_steals = 0;
     exec.yields        = 0;
-    while (!activity.stops.load(std::memory_order_acquire))
+    for (;;) [[likely]]
     {
       // steal from random victim, or master if victim == self.
-      if (cached = stealer(self); cached) // t ≠ NIL; assume truthy for valid task
+      if (cached = stealer(self); cached) [[likely]] // t ≠ NIL; assume truthy for valid task
       {
         break;
       }
-      else
+      else [[unlikely]]
       {
         ++exec.failed_steals;
         if (exec.failed_steals >= exec.steal_bound)
@@ -208,7 +208,7 @@ namespace fho::scheduler::stealing
                 cas_deque auto& self, invocable_return auto&& stealer) noexcept -> bool
   {
     activity.thieves.fetch_add(1, std::memory_order_acq_rel);
-    while (true)
+    for (;;) [[likely]]
     {
       assert(!stolen);
       // Alg. 4
@@ -235,7 +235,7 @@ namespace fho::scheduler::stealing
         continue;
       }
       // still failed; proceed to dec check
-      if (activity.stops.load(std::memory_order_acquire))
+      if (activity.stops.load(std::memory_order_acquire)) [[unlikely]]
       {
         activity.notifier.notify_all();
         activity.thieves.fetch_sub(1, std::memory_order_acq_rel);
@@ -254,7 +254,6 @@ namespace fho::scheduler::stealing
       activity.notifier.commit_wait(epoch);
       return true;
     }
-    return false;
   }
 
   inline void
