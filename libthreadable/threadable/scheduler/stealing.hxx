@@ -147,8 +147,8 @@ namespace fho::scheduler::stealing
   ///              num_yields++;
   ///              if num_yields == YIELD_BOUND: break;
   inline auto
-  explore_task(invocable_opt auto& cached, activity_stats& activity, exec_stats& exec,
-               cas_deque auto& self, invocable_return auto&& stealer) noexcept -> bool
+  explore_task(invocable_opt auto& cached, exec_stats& exec, cas_deque auto& self,
+               invocable_return auto&& stealer) noexcept -> bool
   {
     exec.failed_steals = 0;
     exec.yields        = 0;
@@ -212,7 +212,7 @@ namespace fho::scheduler::stealing
     {
       assert(!stolen);
       // Alg. 4
-      if (explore_task(stolen, activity, exec, self, stealer); stolen)
+      if (explore_task(stolen, exec, self, stealer); stolen)
       { // t != NIL
         if (activity.thieves.fetch_sub(1, std::memory_order_acq_rel) == 1)
         {

@@ -92,7 +92,7 @@ SCENARIO("scheduler: adaptive stealing")
           ++executed;
         });
       auto stats = sched::exec_stats{.steal_bound = 2, .yield_bound = 2};
-      REQUIRE(sched::explore_task(stolen, activity, stats, queue, stealer));
+      REQUIRE(sched::explore_task(stolen, stats, queue, stealer));
       REQUIRE(stolen);
       stolen(); // execute task
       REQUIRE(executed.load() == 1);
@@ -109,7 +109,7 @@ SCENARIO("scheduler: adaptive stealing")
       auto stolen = claimed_t{nullptr};
 
       auto stats = sched::exec_stats{.steal_bound = 2, .yield_bound = 2};
-      REQUIRE(!sched::explore_task(stolen, activity, stats, queue, stealer));
+      REQUIRE(!sched::explore_task(stolen, stats, queue, stealer));
       REQUIRE(!stolen);
       REQUIRE(stats.failed_steals >= stats.steal_bound);
       REQUIRE(stats.yields >= stats.yield_bound);
