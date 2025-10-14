@@ -16,6 +16,7 @@ SCENARIO("pool: stress-test")
   constexpr auto nr_producers = std::size_t{4};
 
   auto pool = fho::pool(nr_producers);
+  REQUIRE(pool.thread_count() == nr_producers);
 
   GIVEN("multiple producers submit a large amount of tasks")
   {

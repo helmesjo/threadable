@@ -160,6 +160,14 @@ namespace fho
       return std::move(cached);
     }
 
+    /// @brief Returns the number of threads.
+    /// @return Number of threads.
+    [[nodiscard]] auto
+    thread_count() const noexcept -> unsigned int
+    {
+      return executors_.size();
+    }
+
     /// @brief Returns the number of pending tasks.
     /// @details Counts the current number of tasks in the pool.
     /// @return Number of tasks.
@@ -209,15 +217,15 @@ namespace fho
     /// thread safety. The pool is constructed with default values and cleaned up via `std::atexit`,
     /// resetting the pointer at program exit.
     /// @return Reference to the default `pool` instance.
-    inline static auto
-    default_pool() -> pool_t&
+    inline auto
+    default_pool(unsigned int threads = std::thread::hardware_concurrency()) -> pool_t&
     {
       static auto default_pool = std::unique_ptr<pool_t>{}; // NOLINT
       static auto once         = std::once_flag{};
       std::call_once(once,
-                     []
+                     [threads]
                      {
-                       default_pool = std::make_unique<fho::details::pool_t>();
+                       default_pool = std::make_unique<fho::details::pool_t>(threads);
                        std::atexit(
                          []
                          {
@@ -226,6 +234,17 @@ namespace fho
                      });
       return *default_pool;
     }
+  }
+
+  /// @brief Attempts to set the number of threads for the default thread pool.
+  /// @details If no default thread pool has been instantiated, this function
+  ///          will instantiate it with the specified number of threads.
+  ///          Otherwise, no new instance is created.
+  /// @return True if the number of pool threads matches the specified number.
+  inline auto
+  thread_count(unsigned int threads) -> bool
+  {
+    return details::default_pool(threads).thread_count() == threads;
   }
 }
 
