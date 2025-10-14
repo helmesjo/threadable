@@ -31,42 +31,41 @@ SCENARIO("executor: Submit callables")
     return cached;
   };
 
-  auto exec1 = fho::executor(activity, {}, stealer);
-  auto exec2 = fho::executor(activity, {}, stealer);
-  auto exec3 = fho::executor(activity, {}, stealer);
-  auto exec4 = fho::executor(activity, {}, stealer);
-  GIVEN("a range of callables")
+  GIVEN("multiple executors")
   {
     static constexpr auto size = std::size_t{1024};
 
+    auto exec1    = fho::executor(activity, {}, stealer);
+    auto exec2    = fho::executor(activity, {}, stealer);
+    auto exec3    = fho::executor(activity, {}, stealer);
+    auto exec4    = fho::executor(activity, {}, stealer);
     auto executed = std::vector<std::size_t>(size, 0);
     auto tokens   = fho::token_group{size};
     auto counter  = std::atomic_size_t{0};
 
-    for (std::size_t i = 0; i < size; ++i)
+    WHEN("tasks submitted to the master queue")
     {
-      tokens += master.emplace_back(
-        [i, &executed, &counter]()
-        {
-          executed[i] = counter++;
-        });
-      // simulate interruptions
-      activity.notifier.notify_one();
-      if (i % 2 == 0)
+      for (std::size_t i = 0; i < size; ++i)
       {
-        std::this_thread::yield();
+        tokens += master.emplace_back(
+          [i, &executed, &counter]()
+          {
+            executed[i] = counter++;
+          });
+        activity.notifier.notify_one();
+        // simulate interruptions
+        if (i % 2 == 0)
+        {
+          std::this_thread::yield();
+        }
       }
-    }
-
-    WHEN("submitted to the executor")
-    {
       tokens.wait();
       THEN("all tasks are executed")
       {
         REQUIRE(executed.size() == size);
       }
     }
+    activity.stops = true;
+    activity.notifier.notify_all();
   }
-  activity.stops = true;
-  activity.notifier.notify_all();
 }

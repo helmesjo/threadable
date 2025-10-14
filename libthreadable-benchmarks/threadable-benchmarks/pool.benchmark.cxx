@@ -12,9 +12,11 @@ namespace bench = ankerl::nanobench;
 namespace
 {
 #ifdef NDEBUG
-  constexpr auto tasks_per_iteration = 1 << 16;
+  constexpr auto    tasks_per_iteration = 1 << 16;
+  inline auto const max_thread_count    = std::thread::hardware_concurrency();
 #else
-  constexpr auto tasks_per_iteration = 1 << 16;
+  constexpr auto    tasks_per_iteration = 1 << 16;
+  inline auto const max_thread_count    = std::min(8u, std::thread::hardware_concurrency());
 #endif
   auto dummyVal = 1; // NOLINT
 }
@@ -51,7 +53,7 @@ TEST_CASE("pool: task execution")
            });
   }
   {
-    for (auto threads = 1u; threads <= std::min(12u, std::thread::hardware_concurrency()); ++threads)
+    for (auto threads = 1u; threads <= max_thread_count; threads *= 2)
     {
       {
         auto pool = fho::pool(threads);
