@@ -7,7 +7,7 @@
 #include <concepts>
 #include <cstdint>
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if 0                    // defined(__x86_64__) || defined(_M_X64)
   #include <immintrin.h> // _mm_pause
 #else
   #include <thread>
@@ -26,7 +26,9 @@ namespace fho::scheduler::stealing
     inline void
     cpu_relax() noexcept
     {
-#if defined(__x86_64__) || defined(_M_X64)
+      // @NOTE: Disable '_mm_pause()' for now, maybe it's
+      //        too agressive.
+#if 0                            // defined(__x86_64__) || defined(_M_X64)
       _mm_pause();
 #else
       std::this_thread::yield(); // fallback
