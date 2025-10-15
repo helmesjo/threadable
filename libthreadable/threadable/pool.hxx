@@ -165,6 +165,17 @@ namespace fho
         return push(execution::par, FWD(args)...);
       }
 
+      /// @brief Waits until the master queue is empty.
+      /// @details Blocks until there are no slots in state `ready`.
+      void
+      wait() const noexcept
+      {
+        if (*this)
+        {
+          queue_->wait();
+        }
+      }
+
     private:
       pool*    pool_  = nullptr;
       queue_t* queue_ = nullptr;
