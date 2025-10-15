@@ -325,7 +325,7 @@ namespace fho
           }
         }
       }
-      return std::move(cached);
+      return cached;
     }
 
     /// @brief Makes a new task queue and adds it to the pool.
