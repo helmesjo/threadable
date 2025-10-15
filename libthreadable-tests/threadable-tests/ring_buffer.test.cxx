@@ -248,6 +248,12 @@ SCENARIO("ring_buffer: try pop")
         REQUIRE(e);
         REQUIRE(*e == 3);
         REQUIRE_FALSE(ring.try_pop_front());
+        AND_THEN(
+          "ring is considered empty with 'empty(exact=true)' with a 'locked|ready' task active")
+        {
+          REQUIRE_FALSE(ring.empty());
+          REQUIRE(ring.empty(true));
+        }
       }
       THEN("3 items can be popped from back")
       {

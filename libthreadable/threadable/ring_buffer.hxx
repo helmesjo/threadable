@@ -426,6 +426,7 @@ namespace fho
     /// @brief Returns the current number of items in the buffer.
     /// @details Computes the number of items in state `ready` O(N).
     /// @return Current number of items.
+    /// @note O(n) time.
     auto
     size() const noexcept -> std::size_t
     {
@@ -445,10 +446,15 @@ namespace fho
     }
 
     /// @brief Checks if the buffer is empty.
-    /// @details Returns true if `size() == 0`.
-    /// @return True if empty, false otherwise.
+    /// @details Returns true if there exists no slot in (non-exclusive) state `ready`.
+    ///          Iterates over slots and tests their state, stopping at the first one `ready`.
+    /// @param exact If `true`, a slot is considered ready (non-empty) only if its state-bits
+    ///              exactly matches the `ready` bitmask; otherwise, checks for overlap (ready
+    ///              bit set, ignoring others).
+    /// @return True if empty (no ready slots), false otherwise.
+    /// @note O(n) time.
     auto
-    empty() const noexcept -> bool
+    empty(bool exact = false) const noexcept -> bool
     {
       if (elems_.size() == 0) [[unlikely]]
       {
@@ -458,10 +464,18 @@ namespace fho
       //       of that, because this can get very slow.
       // auto const head = head_.load(std::memory_order_acquire);
       return !std::ranges::any_of(elems_,
-                                  [](auto const& e)
+                                  [exact](auto const& e)
                                   {
-                                    return e.template test<slot_state::ready>(
-                                      std::memory_order_acquire);
+                                    auto const state =
+                                      e.load(std::memory_order_acquire) & slot_state::state_mask;
+                                    if (!exact) [[likely]]
+                                    {
+                                      return (state & slot_state::ready) != 0;
+                                    }
+                                    else
+                                    {
+                                      return state == slot_state::ready;
+                                    }
                                   });
     }
 

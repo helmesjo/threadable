@@ -223,7 +223,10 @@ namespace fho::scheduler::stealing
         return true;
       }
       auto epoch = activity.notifier.prepare();
-      if (!activity.master.empty())
+      // @NOTE: Exact match ('empty(true)') because tasks stolen from master
+      //        queue are specifically 'locked|ready' until processed by
+      //        owning executor.
+      if (!activity.master.empty(true))
       {
         if (stolen = activity.master.try_pop_front();
             stolen) // t ≠ NIL; assume truthy for valid task
