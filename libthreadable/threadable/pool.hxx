@@ -232,6 +232,23 @@ namespace fho
       return token;
     }
 
+    /// @brief Pushes a task with a reusable token and arguments without notifying executors.
+    /// @details Emplaces a task constructed from `args...` into the queue, binding it to the
+    ///          provided `slot_token` for tracking. Does not signal `activity_.notifier`.
+    ///          Thread-safe for multiple producers.
+    /// @tparam U Types of the arguments to construct the task.
+    /// @param token Reference to a `slot_token` to track the task's state.
+    /// @param args Arguments to construct a `fast_func_t` task.
+    /// @return Reference to the provided `slot_token`.
+    /// @requires `fast_func_t` must be constructible from `U...`.
+    template<typename... U>
+      requires std::constructible_from<fast_func_t, U...>
+    auto
+    push_quiet(slot_token& token, U&&... args) noexcept -> slot_token&
+    {
+      return activity_.master.emplace_back(token, FWD(args)...);
+    }
+
     /// @brief Pushes a task with arguments and returns a new token.
     /// @details Emplaces a task constructed from `args...` into the queue, creating a new
     ///          `slot_token` for tracking. Signals `activity_.notifier` to wake sleeping executors.

@@ -79,7 +79,11 @@ namespace fho
       FWD(func)(FWD(args)...);
       if (!token.cancelled())
       {
-        details::default_pool().push(token, self, self, std::ref(token), FWD(func), FWD(args)...);
+        // @NOTE: We push 'quietly' (not notifying workers) because this current (active)
+        //        task implies one is already awake & will guarantee this new task is
+        //        picked up. No need to "flood" with another worker.
+        details::default_pool().push_quiet(token, self, self, std::ref(token), FWD(func),
+                                           FWD(args)...);
       }
     };
     details::default_pool().push(token, lambda, lambda, std::ref(token), FWD(func), FWD(args)...);
