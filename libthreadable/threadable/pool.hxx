@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstddef>
 #include <ranges>
+#include <thread>
 
 #if defined(_MSC_VER) && !defined(__clang__)
   #pragma warning(push)
@@ -176,6 +177,15 @@ namespace fho
         }
       }
 
+      /// @brief Returns the maximum task capacity.
+      /// @details Returns the capacity of the underlying queue.
+      /// @return Maximum number of pending tasks.
+      static constexpr auto
+      max_size() noexcept -> std::size_t
+      {
+        return queue_t::max_size();
+      }
+
     private:
       pool*    pool_  = nullptr;
       queue_t* queue_ = nullptr;
@@ -325,19 +335,15 @@ namespace fho
         // Second fallback to user-created queues.
         if (!cached) [[unlikely]]
         {
-          queues_t queues;
+          auto queues = queues_.load(std::memory_order_acquire);
+          if (queues->size() > 0) [[unlikely]]
           {
-            auto _ = std::scoped_lock{queueMutex_};
-            queues = queues_;
-          }
-          if (queues.size() > 0) [[unlikely]]
-          {
-            auto       dist2 = fho::prng_dist<std::size_t>(0, queues.size() - 1);
-            auto const cap2  = queues.size();
+            auto       dist2 = fho::prng_dist<std::size_t>(0, queues->size() - 1);
+            auto const cap2  = queues->size() * 2;
             for (auto i = 0u; i < cap2; ++i)
             {
               auto const idx2  = dist2(rng);
-              auto&      queue = queues[idx2];
+              auto&      queue = (*queues)[idx2];
               if (auto t = queue->try_pop_front(); t)
               {
                 if (!cached)
@@ -363,10 +369,20 @@ namespace fho
     [[nodiscard]] auto
     make() noexcept -> queue_view
     {
-      queue_t* queue = nullptr;
+      auto queue = std::make_shared<queue_t>();
+      for (;;)
       {
-        auto _ = std::scoped_lock{queueMutex_};
-        queue  = queues_.emplace_back(std::make_unique<queue_t>()).get();
+        // 1. Load old pointer to list.
+        auto old = queues_.load(std::memory_order_acquire);
+        // 2. Copy over items to a new list.
+        auto cpy = std::make_shared<queues_t>(*old);
+        // 3. Insert new item.
+        cpy->emplace_back(queue);
+        // 4. CAS the pointer.
+        if (queues_.compare_exchange_strong(old, cpy))
+        {
+          break;
+        }
       }
 
       return {*this, *queue};
@@ -380,20 +396,43 @@ namespace fho
     [[nodiscard]] auto
     remove(queue_t&& queue) noexcept -> bool // NOLINT
     {
+      for (;;)
       {
-        auto _ = std::scoped_lock{queueMutex_};
-        if (auto itr = std::ranges::find_if(queues_,
-                                            [&queue](auto const& q)
-                                            {
-                                              return q.get() == &queue;
-                                            });
-            itr != std::end(queues_))
+        // 1. Load old pointer to list.
+        auto old = queues_.load(std::memory_order_acquire);
+        // 4. Copy over items to a new list.
+        auto cpy = std::make_shared<queues_t>(*old);
+        // 2. Find queue (if it exists).
+        auto itr = std::ranges::find_if(*cpy,
+                                        [&queue](auto const& q)
+                                        {
+                                          return q.get() == &queue;
+                                        });
+        // 3. Bail if it doesn't exist.
+        if (itr == std::end(*cpy)) [[unlikely]]
         {
-          queues_.erase(itr);
+          break;
+        }
+
+        auto removed = *itr; //< Keep one ref alive.
+        // 5. Remove queue from copy-list.
+        cpy->erase(itr);
+        // 6. CAS the pointer.
+        if (queues_.compare_exchange_strong(old, cpy))
+        {
+          old = nullptr;
+          cpy = nullptr;
+          // @NOTE: Wait for any active tasks in queue to finish processing.
+          //        We are the last strong ref when 'use_count()' reaches 1.
+          //        Once 1, no one else can regain a ref (queue has already
+          //        been removed).
+          while (removed.use_count() > 1)
+          {
+            std::this_thread::yield();
+          }
           return true;
         }
       }
-      // @TODO: Wait for any active tasks in queue to finish processing?
       return false;
     }
 
@@ -443,8 +482,8 @@ namespace fho
   private:
     alignas(details::cache_line_size) scheduler::stealing::activity_stats activity_;
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
-    alignas(details::cache_line_size) mutable std::mutex queueMutex_;
-    alignas(details::cache_line_size) queues_t queues_;
+    alignas(details::cache_line_size) std::atomic<std::shared_ptr<queues_t>> queues_ =
+      std::make_shared<queues_t>();
   };
 
   namespace details

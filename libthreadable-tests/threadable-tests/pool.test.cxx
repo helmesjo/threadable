@@ -116,4 +116,45 @@ SCENARIO("pool: stress-test")
       REQUIRE(counter.load() == pool.max_size());
     }
   }
+  GIVEN("multiple producers submit a large amount of tasks to their own queue and then remove it")
+  {
+    static constexpr auto nr_producers = 4;
+
+    auto counter   = std::atomic_size_t{0};
+    auto producers = std::vector<std::thread>{};
+    auto latch     = std::latch{nr_producers};
+
+    for (std::size_t i = 0; i < nr_producers; ++i)
+    {
+      producers.emplace_back(
+        [&counter, &pool, &latch, queue = pool.make()]() mutable
+        {
+          static_assert(decltype(pool)::max_size() % nr_producers == 0,
+                        "All tasks must be submitted");
+
+          auto tokens = fho::token_group{};
+          latch.arrive_and_wait();
+          for (std::size_t j = 0; j < queue.max_size() / nr_producers; ++j)
+          {
+            tokens += queue.push(
+              [&counter]
+              {
+                ++counter;
+              });
+          }
+          tokens.wait();
+          queue = {}; // release/remove
+        });
+    }
+
+    for (auto& thread : producers)
+    {
+      thread.join();
+    }
+
+    THEN("all gets executed")
+    {
+      REQUIRE(counter.load() == pool.max_size());
+    }
+  }
 }
