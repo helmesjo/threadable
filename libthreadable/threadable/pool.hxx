@@ -471,7 +471,13 @@ namespace fho
     [[nodiscard]] auto
     empty() const noexcept -> bool
     {
-      return activity_.master.empty();
+      auto queues   = queues_.load(std::memory_order_acquire);
+      auto nonEmpty = std::ranges::any_of(*queues,
+                                          [](auto const& q)
+                                          {
+                                            return !q->empty(true);
+                                          });
+      return !nonEmpty && master_.empty(true);
     }
 
     /// @brief Waits until the master queue is empty.
