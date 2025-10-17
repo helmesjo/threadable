@@ -40,18 +40,13 @@ namespace fho
 
   class executor
   {
+    using queue_t =
+      fho::ring_buffer<ring_buffer<fast_func_t>::claimed_type, (details::default_capacity >> 6)>;
+
   public:
-    executor(sched::activity_stats& activity, sched::exec_stats init,
-             sched::invocable_return auto&& stealer)
-      : stats_(init)
-      , notifier_(activity.notifier)
-    {
-      thread_ = std::thread(
-        [this, &activity, stealer = FWD(stealer)]()
-        {
-          (*this)(activity, stealer);
-        });
-    }
+    executor(sched::event_count& notifier)
+      : notifier_(notifier)
+    {}
 
     executor(executor const&)                    = delete;
     executor(executor&&)                         = delete;
@@ -61,6 +56,19 @@ namespace fho
     ~executor()
     {
       stop();
+    }
+
+    auto
+    start(sched::activity_stats& activity, sched::exec_stats init, auto&& master) -> executor&
+    {
+      stats_  = init;
+      thread_ = std::thread(
+        [this, &activity, &master]()
+        {
+          (*this)(activity, master);
+        });
+
+      return *this;
     }
 
     void
@@ -97,18 +105,17 @@ namespace fho
     }
 
     void
-    operator()(sched::activity_stats& activity, sched::invocable_return auto& stealer) noexcept
+    operator()(sched::activity_stats& activity, sched::master_queue<queue_t> auto& master) noexcept
     {
-      sched::worker_loop(activity, stats_, tasks_, stealer);
+      sched::worker_loop(activity, stats_, tasks_, master);
       tasks_.clear();
     }
 
   private:
     sched::exec_stats                          stats_;
     decltype(sched::activity_stats::notifier)& notifier_;
-    fho::ring_buffer<ring_buffer<fast_func_t>::claimed_type, (details::default_capacity >> 6)>
-                tasks_;
-    std::thread thread_;
+    queue_t                                    tasks_;
+    std::thread                                thread_;
   };
 }
 

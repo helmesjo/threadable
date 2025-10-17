@@ -205,12 +205,11 @@ namespace fho
       };
       for (unsigned int i = 0; i < threads; ++i)
       {
-        executors_.emplace_back(std::make_unique<executor>(activity_, stats,
-                                                           [this](std::ranges::range auto&& r)
-                                                             -> claimed_slot<fast_func_t>
-                                                           {
-                                                             return steal(FWD(r));
-                                                           }));
+        executors_.emplace_back(std::make_unique<executor>(activity_.notifier));
+      }
+      for (auto& exec : executors_)
+      {
+        exec->start(activity_, stats, *this);
       }
     }
 
@@ -248,7 +247,7 @@ namespace fho
     auto
     push(slot_token& token, U&&... args) noexcept -> slot_token&
     {
-      activity_.master.emplace_back(token, FWD(args)...);
+      master_.emplace_back(token, FWD(args)...);
       activity_.notifier.notify_one();
       return token;
     }
@@ -267,7 +266,7 @@ namespace fho
     auto
     push_quiet(slot_token& token, U&&... args) noexcept -> slot_token&
     {
-      return activity_.master.emplace_back(token, FWD(args)...);
+      return master_.emplace_back(token, FWD(args)...);
     }
 
     /// @brief Pushes a task with arguments and returns a new token.
@@ -293,12 +292,16 @@ namespace fho
     ///          pop a task via `task_queue::try_pop_front()`. Returns empty claim if no task is
     ///          available from either steal-attempt or master queue.
     ///          Thread-safe for concurrent stealing.
+    /// @param masterOnly If `true` then only the master queue is considered, else executor queues
+    ///                   as well.
     /// @return A `claimed_slot<fast_func_t>` if a task is stolen, else empty claim.
     [[nodiscard]] auto
-    steal(std::ranges::range auto& r) noexcept -> claimed_slot<fast_func_t>
+    steal(std::ranges::range auto& r, bool masterOnly) noexcept -> claimed_slot<fast_func_t>
     {
       thread_local auto rng = fho::prng_engine{simple_seed()};
       using cached_t        = std::ranges::range_value_t<decltype(r)>;
+
+      assert(executors_.size() > 0 and "pool::steal()");
 
       auto       dist   = fho::prng_dist<std::size_t>(0, executors_.size() - 1);
       auto const idx    = dist(rng);
@@ -306,8 +309,8 @@ namespace fho
 
       auto cached = cached_t{nullptr};
 
-      // Returns 'false' if 'r == victim queue'
-      if (!victim->steal(r, cached))
+      // 'victim->steal(r, c)' returns 'false' if 'r == victim queue'
+      if (masterOnly || !victim->steal(r, cached))
       {
         // NOTE: Since no DAG (Direct Acyclic Graph) is (currently) supported
         //       by ring_buffer, we "bulk-steal" from master. This is not
@@ -316,7 +319,7 @@ namespace fho
         constexpr auto cap = 128u;
         for (auto i = 0u; i < cap; ++i)
         {
-          if (auto t = activity_.master.try_pop_front(); t)
+          if (auto t = master_.try_pop_front(); t)
           {
             if (!cached)
             {
@@ -450,7 +453,7 @@ namespace fho
     [[nodiscard]] auto
     size() const noexcept -> std::size_t
     {
-      return activity_.master.size();
+      return master_.size();
     }
 
     /// @brief Returns true if there are no pending tasks.
@@ -467,7 +470,7 @@ namespace fho
     void
     wait() const noexcept
     {
-      activity_.master.wait();
+      master_.wait();
     }
 
     /// @brief Returns the maximum task capacity.
@@ -476,10 +479,11 @@ namespace fho
     static constexpr auto
     max_size() noexcept -> std::size_t
     {
-      return decltype(activity_.master)::max_size();
+      return decltype(master_)::max_size();
     }
 
   private:
+    alignas(details::cache_line_size) ring_buffer<fast_func_t> master_;
     alignas(details::cache_line_size) scheduler::stealing::activity_stats activity_;
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
     alignas(details::cache_line_size) std::atomic<std::shared_ptr<queues_t>> queues_ =

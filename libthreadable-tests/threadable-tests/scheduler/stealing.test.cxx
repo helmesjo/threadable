@@ -4,19 +4,48 @@
 
 #include <atomic>
 
+namespace
+{
+  using ring_t    = fho::ring_buffer<fho::fast_func_t>;
+  using claimed_t = typename ring_t::claimed_type;
+
+  struct master_queue
+  {
+    ring_t queue;
+
+    auto
+    steal(std::ranges::range auto&& r, bool) -> claimed_t
+    {
+      using cached_t = std::ranges::range_value_t<decltype(r)>;
+      auto cached    = cached_t{nullptr};
+      if (auto t = queue.try_pop_back())
+      {
+        if (!cached)
+        {
+          cached = std::move(t);
+        }
+        else
+        {
+          r.emplace_back(std::move(t));
+        }
+      }
+      return cached;
+    }
+
+    auto
+    empty() const -> bool
+    {
+      return queue.empty(true);
+    }
+  };
+}
+
 SCENARIO("scheduler: adaptive stealing")
 {
   namespace sched = fho::scheduler::stealing;
-  using ring_t    = fho::ring_buffer<fho::fast_func_t>;
-  using claimed_t = fho::ring_buffer<fho::fast_func_t>::claimed_type;
 
   auto activity = sched::activity_stats{};
-  auto master   = fho::ring_buffer<fho::fast_func_t>{};
-
-  auto stealer = [&master](std::ranges::range auto&&)
-  {
-    return master.try_pop_back();
-  };
+  auto master   = master_queue{};
 
   GIVEN("empty queue for exploit_task")
   {
@@ -82,17 +111,17 @@ SCENARIO("scheduler: adaptive stealing")
   {
     THEN("task stolen, stats updated")
     {
-      auto queue    = fho::ring_buffer<fho::fast_func_t>{};
+      auto queue    = fho::ring_buffer<claimed_t>{};
       auto executed = std::atomic_size_t{0};
       auto stolen   = claimed_t{nullptr};
 
-      master.emplace_back(
+      master.queue.emplace_back(
         [&]
         {
           ++executed;
         });
       auto stats = sched::exec_stats{.steal_bound = 2, .yield_bound = 2};
-      REQUIRE(sched::explore_task(stolen, stats, queue, stealer));
+      REQUIRE(sched::explore_task(stolen, stats, queue, master));
       REQUIRE(stolen);
       stolen(); // execute task
       REQUIRE(executed.load() == 1);
@@ -105,11 +134,11 @@ SCENARIO("scheduler: adaptive stealing")
   {
     THEN("no task stolen, bounds reached")
     {
-      auto queue  = fho::ring_buffer<fho::fast_func_t>{};
+      auto queue  = fho::ring_buffer<claimed_t>{};
       auto stolen = claimed_t{nullptr};
 
       auto stats = sched::exec_stats{.steal_bound = 2, .yield_bound = 2};
-      REQUIRE(!sched::explore_task(stolen, stats, queue, stealer));
+      REQUIRE(!sched::explore_task(stolen, stats, queue, master));
       REQUIRE(!stolen);
       REQUIRE(stats.failed_steals >= stats.steal_bound);
       REQUIRE(stats.yields >= stats.yield_bound);
@@ -120,9 +149,9 @@ SCENARIO("scheduler: adaptive stealing")
   {
     THEN("task stolen, thieves adjusted")
     {
-      auto queue    = fho::ring_buffer<fho::fast_func_t>{};
+      auto queue    = fho::ring_buffer<claimed_t>{};
       auto executed = std::atomic_size_t{0};
-      master.emplace_back(
+      master.queue.emplace_back(
         [&]
         {
           ++executed;
@@ -130,7 +159,7 @@ SCENARIO("scheduler: adaptive stealing")
       auto stolen = claimed_t{nullptr};
 
       auto stats = sched::exec_stats{.steal_bound = 2, .yield_bound = 2};
-      REQUIRE(sched::wait_for_task(stolen, activity, stats, queue, stealer));
+      REQUIRE(sched::wait_for_task(stolen, activity, stats, queue, master));
       REQUIRE(stolen);
       stolen();
       REQUIRE(executed.load() == 1);
@@ -142,12 +171,12 @@ SCENARIO("scheduler: adaptive stealing")
   {
     THEN("no task stolen, returns false")
     {
-      auto queue  = fho::ring_buffer<fho::fast_func_t>{};
+      auto queue  = fho::ring_buffer<claimed_t>{};
       auto stolen = claimed_t{nullptr};
       auto stats  = sched::exec_stats{.steal_bound = 2, .yield_bound = 2};
 
       activity.stops = true;
-      REQUIRE(!sched::wait_for_task(stolen, activity, stats, queue, stealer));
+      REQUIRE(!sched::wait_for_task(stolen, activity, stats, queue, master));
       REQUIRE(!stolen);
       REQUIRE(activity.thieves.load() == 0);
     }
