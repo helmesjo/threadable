@@ -21,6 +21,15 @@
 
 namespace fho
 {
+  namespace details
+  {
+#ifdef FHO_THREAD_COUNT
+    inline unsigned int const default_thread_count = FHO_THREAD_COUNT;
+#else
+    inline unsigned int const default_thread_count = std::thread::hardware_concurrency();
+#endif
+  }
+
   /// @brief A thread pool managing work-stealing executors.
   /// @details Manages a set of `executor`s, distributing tasks via work-stealing.
   ///          Supports concurrent task submission, with tasks executed according to their
@@ -196,7 +205,7 @@ namespace fho
     ///          Defaults to `std::thread::hardware_concurrency()` for optimal parallelism.
     ///          Creates a shared `activity_stats` for task notifications.
     /// @param threads Number of worker threads (executors).
-    explicit pool(std::size_t threads = std::thread::hardware_concurrency())
+    explicit pool(std::size_t threads = details::default_thread_count)
     {
       executors_.reserve(threads);
       auto stats = scheduler::stealing::exec_stats{
@@ -500,7 +509,7 @@ namespace fho
     /// resetting the pointer at program exit.
     /// @return Reference to the default `pool` instance.
     inline auto
-    default_pool(unsigned int threads = std::thread::hardware_concurrency()) -> pool_t&
+    default_pool(unsigned int threads = details::default_thread_count) -> pool_t&
     {
       static auto default_pool = std::unique_ptr<pool_t>{}; // NOLINT
       static auto once         = std::once_flag{};
@@ -524,9 +533,9 @@ namespace fho
   ///          Otherwise, no new instance is created.
   /// @return True if the number of pool threads matches the specified number.
   inline auto
-  thread_count(unsigned int threads) -> bool
+  thread_count(unsigned int threads) -> unsigned int
   {
-    return details::default_pool(threads).thread_count() == threads;
+    return details::default_pool(threads).thread_count();
   }
 
   inline auto
