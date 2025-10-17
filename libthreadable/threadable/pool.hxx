@@ -344,28 +344,24 @@ namespace fho
             break;
           }
         }
-        // Second fallback to user-created queues.
-        if (!cached) [[unlikely]]
+        auto queues = queues_.load(std::memory_order_acquire);
+        if (queues->size() > 0) [[unlikely]]
         {
-          auto queues = queues_.load(std::memory_order_acquire);
-          if (queues->size() > 0) [[unlikely]]
+          auto       dist2 = fho::prng_dist<std::size_t>(0, queues->size() - 1);
+          auto const cap2  = queues->size() * 2;
+          for (auto i = 0u; i < cap2; ++i)
           {
-            auto       dist2 = fho::prng_dist<std::size_t>(0, queues->size() - 1);
-            auto const cap2  = queues->size() * 2;
-            for (auto i = 0u; i < cap2; ++i)
+            auto const idx2  = dist2(rng);
+            auto&      queue = (*queues)[idx2];
+            if (auto t = queue->try_pop_front(); t)
             {
-              auto const idx2  = dist2(rng);
-              auto&      queue = (*queues)[idx2];
-              if (auto t = queue->try_pop_front(); t)
+              if (!cached)
               {
-                if (!cached)
-                {
-                  cached = std::move(t);
-                }
-                else
-                {
-                  r.emplace_back(std::move(t));
-                }
+                cached = std::move(t);
+              }
+              else
+              {
+                r.emplace_back(std::move(t));
               }
             }
           }
