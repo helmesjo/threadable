@@ -40,8 +40,7 @@ namespace fho
 
   class executor
   {
-    using queue_t =
-      fho::ring_buffer<ring_buffer<fast_func_t>::claimed_type, (details::default_capacity >> 6)>;
+    using queue_t = fho::ring_buffer<ring_buffer<fast_func_t>::claimed_type, 1024>;
 
   public:
     executor(sched::event_count& notifier)
