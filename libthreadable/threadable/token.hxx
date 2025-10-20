@@ -126,6 +126,19 @@ namespace fho
         }
       }
 
+      // Append full bitset as hex
+      static_assert(sizeof(std::underlying_type_t<slot_state>) == 1,
+                    "Expects 1-byte underlying type");
+      if (pos + 8 < end) // Enough space for ", 0xXX"
+      {
+        if (!first)
+        {
+          *pos++ = ',';
+        }
+        std::snprintf(pos, end - pos, " 0x%02X", static_cast<std::uint_fast8_t>(s)); // NOLINT
+        pos += std::strlen(pos);
+      }
+
       *pos = '\0';
       return std::string_view(buf.data(), pos - buf.data()); // NOLINT
     }
