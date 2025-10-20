@@ -1,0 +1,8 @@
+: 1
+name: libthreadable-tests
+version: 0.2.2
+type: exe
+language: c++
+project: threadable
+summary: libthreadable ; tests
+license: MIT; MIT License.

@@ -1,0 +1,9 @@
+: 1
+name: libthreadable
+version: 0.2.2
+type: lib
+language: c++
+project: threadable
+summary: C++20 lock-free thread pool & MPSC ring buffer library with\
+ cache-aligned task processing
+license: MIT; MIT License.
