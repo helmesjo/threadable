@@ -163,7 +163,7 @@ namespace fho::scheduler::stealing
     inline void
     commit_wait(std::uint64_t epoch) const noexcept
     {
-      bell.wait(epoch, std::memory_order_relaxed);
+      bell.wait(epoch, std::memory_order_acquire);
     }
 
     inline void
