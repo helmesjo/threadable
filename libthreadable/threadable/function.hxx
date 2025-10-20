@@ -26,24 +26,28 @@ namespace fho
 
   namespace details
   {
-    // @NOTE: GCC/Clang incorrectly reports 64 bytes when targeting Apple Silicon.
-#if __cpp_lib_hardware_interference_size >= 201603 && !defined(__APPLE__)
-    constexpr auto cache_line_size = std::hardware_destructive_interference_size;
+#ifdef FHO_CACHE_LINE_SIZE
+    constexpr auto cache_line_size = FHO_CACHE_LINE_SIZE;
 #else
-  #if defined(__x86_64__) || defined(_M_X64)
-    constexpr auto cache_line_size = std::size_t{64}; // Common for x86-64 (Intel, AMD)
-  #elif defined(__aarch64__) || defined(_M_ARM64)
-    #if defined(__APPLE__)
-    constexpr auto cache_line_size = std::size_t{128}; // Apple Silicon (M1, M2)
-    #else
-    constexpr auto cache_line_size = std::size_t{64}; // Other ARM64 (e.g., Graviton)
-    #endif
-  #elif defined(__powerpc64__)
-    constexpr auto cache_line_size = std::size_t{128}; // Common for PowerPC64
-  #elif defined(__riscv)
-    constexpr auto cache_line_size = std::size_t{64}; // Common for RISC-V
+    // @NOTE: GCC/Clang incorrectly reports 64 bytes when targeting Apple Silicon.
+  #if __cpp_lib_hardware_interference_size >= 201603 && !defined(__APPLE__)
+    constexpr auto cache_line_size = std::hardware_destructive_interference_size;
   #else
+    #if defined(__x86_64__) || defined(_M_X64)
+    constexpr auto cache_line_size = std::size_t{64}; // Common for x86-64 (Intel, AMD)
+    #elif defined(__aarch64__) || defined(_M_ARM64)
+      #if defined(__APPLE__)
+    constexpr auto cache_line_size = std::size_t{128}; // Apple Silicon (M1, M2)
+      #else
+    constexpr auto cache_line_size = std::size_t{64}; // Other ARM64 (e.g., Graviton)
+      #endif
+    #elif defined(__powerpc64__)
+    constexpr auto cache_line_size = std::size_t{128}; // Common for PowerPC64
+    #elif defined(__riscv)
+    constexpr auto cache_line_size = std::size_t{64}; // Common for RISC-V
+    #else
     constexpr auto cache_line_size = std::size_t{64}; // Fallback for unknown architectures
+    #endif
   #endif
 #endif
 

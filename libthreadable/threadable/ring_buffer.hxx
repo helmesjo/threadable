@@ -28,8 +28,12 @@ namespace fho
 {
   namespace details
   {
-    inline constexpr auto        slot_size        = cache_line_size - sizeof(fho::atomic_state_t);
+    inline constexpr auto slot_size = cache_line_size - sizeof(fho::atomic_state_t);
+#ifdef FHO_DEFAULT_RING_CAPACITY
+    inline constexpr std::size_t default_capacity = FHO_DEFAULT_RING_CAPACITY;
+#else
     inline constexpr std::size_t default_capacity = 1 << 16;
+#endif
   }
 
   /// @brief A `fho::function` alias optimized to cache line size for use within a `ring_buffer`.

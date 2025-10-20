@@ -23,8 +23,8 @@ namespace fho
 {
   namespace details
   {
-#ifdef FHO_THREAD_COUNT
-    inline unsigned int const default_thread_count = FHO_THREAD_COUNT;
+#ifdef FHO_DEFAULT_THREAD_COUNT
+    inline unsigned int const default_thread_count = FHO_DEFAULT_THREAD_COUNT;
 #else
     inline unsigned int const default_thread_count = std::thread::hardware_concurrency();
 #endif
