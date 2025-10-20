@@ -53,9 +53,9 @@ namespace fho::dbg
   inline void
   verify(T const& current, slot_state expected,
          std::source_location l = std::source_location::current()) noexcept
-    requires requires (T& c) { c.load(std::memory_order_relaxed); }
+    requires requires (T& c) { c.load(std::memory_order_acquire); }
   {
-    verify(static_cast<slot_state>(current.load(std::memory_order_relaxed) & Mask), expected, l);
+    verify(static_cast<slot_state>(current.load(std::memory_order_acquire) & Mask), expected, l);
   }
 
   template<slot_state Mask = slot_state::all_mask>
@@ -85,8 +85,8 @@ namespace fho::dbg
   inline void
   verify_bitwise(T& current, slot_state mask,
                  std::source_location l = std::source_location::current()) noexcept
-    requires requires (T& c) { c.load(std::memory_order_relaxed); }
+    requires requires (T& c) { c.load(std::memory_order_acquire); }
   {
-    verify_bitwise(static_cast<slot_state>(current.load(std::memory_order_relaxed)), mask, l);
+    verify_bitwise(static_cast<slot_state>(current.load(std::memory_order_acquire)), mask, l);
   }
 }
