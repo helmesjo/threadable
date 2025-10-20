@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
-#include <string_view>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -70,8 +70,11 @@ namespace fho
 
   namespace dbg
   {
+    /// @brief Creates a string-representation from a `slot_state`.
+    /// @details Uses thread-local storage to create a string-representation
+    ///          of the active states.
     inline auto
-    to_str(slot_state s) -> std::string_view
+    to_str(slot_state s) -> std::string
     {
       thread_local std::array<char, 64> buf{};   // Thread-local fixed buffer, no heap.
       char*                             pos = buf.data();
@@ -127,20 +130,22 @@ namespace fho
       }
 
       // Append full bitset as hex
-      static_assert(sizeof(std::underlying_type_t<slot_state>) == 1,
-                    "Expects 1-byte underlying type");
-      if (pos + 8 < end) // Enough space for ", 0xXX"
+      if (pos + 12 < end) // Enough space for ", 0xXXXXXXXX"
       {
         if (!first)
         {
           *pos++ = ',';
         }
-        std::snprintf(pos, end - pos, " 0x%02X", static_cast<std::uint_fast8_t>(s)); // NOLINT
+        using u_t              = std::underlying_type_t<slot_state>;
+        constexpr auto ut_size = sizeof(u_t);
+        std::snprintf(pos, end - pos, " 0x%0*X",     // NOLINT
+                      static_cast<int>(2 * ut_size), // Cast to int
+                      static_cast<u_t>(s));
         pos += std::strlen(pos);
       }
 
       *pos = '\0';
-      return std::string_view(buf.data(), pos - buf.data()); // NOLINT
+      return std::string(buf.data(), pos - buf.data()); // NOLINT
     }
   }
 
