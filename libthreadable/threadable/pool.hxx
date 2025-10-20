@@ -344,7 +344,11 @@ namespace fho
             break;
           }
         }
+#if __cpp_lib_atomic_shared_ptr >= 201711L
         auto queues = queues_.load(std::memory_order_acquire);
+#else
+        auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
+#endif
         if (queues->size() > 0) [[unlikely]]
         {
           auto       dist2 = fho::prng_dist<std::size_t>(0, queues->size() - 1);
@@ -381,13 +385,24 @@ namespace fho
       for (;;)
       {
         // 1. Load old pointer to list.
+#if __cpp_lib_atomic_shared_ptr >= 201711L
         auto old = queues_.load(std::memory_order_acquire);
+#else
+        auto old = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
+#endif
         // 2. Copy over items to a new list.
         auto cpy = std::make_shared<queues_t>(*old);
         // 3. Insert new item.
         cpy->emplace_back(queue);
         // 4. CAS the pointer.
-        if (queues_.compare_exchange_strong(old, cpy))
+#if __cpp_lib_atomic_shared_ptr >= 201711L
+        if (queues_.compare_exchange_strong(old, cpy, std::memory_order_acq_rel,
+                                            std::memory_order_acquire))
+#else
+        if (std::atomic_compare_exchange_strong_explicit(&queues_, &old, cpy,
+                                                         std::memory_order_acq_rel,
+                                                         std::memory_order_acquire))
+#endif
         {
           break;
         }
@@ -407,7 +422,11 @@ namespace fho
       for (;;)
       {
         // 1. Load old pointer to list.
+#if __cpp_lib_atomic_shared_ptr >= 201711L
         auto old = queues_.load(std::memory_order_acquire);
+#else
+        auto old = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
+#endif
         // 4. Copy over items to a new list.
         auto cpy = std::make_shared<queues_t>(*old);
         // 2. Find queue (if it exists).
@@ -426,7 +445,14 @@ namespace fho
         // 5. Remove queue from copy-list.
         cpy->erase(itr);
         // 6. CAS the pointer.
-        if (queues_.compare_exchange_strong(old, cpy))
+#if __cpp_lib_atomic_shared_ptr >= 201711L
+        if (queues_.compare_exchange_strong(old, cpy, std::memory_order_acq_rel,
+                                            std::memory_order_acquire))
+#else
+        if (std::atomic_compare_exchange_strong_explicit(&queues_, &old, cpy,
+                                                         std::memory_order_acq_rel,
+                                                         std::memory_order_acquire))
+#endif
         {
           old = nullptr;
           cpy = nullptr;
@@ -467,7 +493,11 @@ namespace fho
     [[nodiscard]] auto
     empty() const noexcept -> bool
     {
-      auto queues   = queues_.load(std::memory_order_acquire);
+#if __cpp_lib_atomic_shared_ptr >= 201711L
+      auto queues = queues_.load(std::memory_order_acquire);
+#else
+      auto queues = std::atomic_load_explicit(&queues_, std::memory_order_acquire);
+#endif
       auto nonEmpty = std::ranges::any_of(*queues,
                                           [](auto const& q)
                                           {
@@ -497,8 +527,13 @@ namespace fho
     alignas(details::cache_line_size) ring_buffer<fast_func_t> master_;
     alignas(details::cache_line_size) scheduler::stealing::activity_stats activity_;
     alignas(details::cache_line_size) std::vector<std::unique_ptr<executor>> executors_;
+#if __cpp_lib_atomic_shared_ptr >= 201711L
     alignas(details::cache_line_size) std::atomic<std::shared_ptr<queues_t>> queues_ =
       std::make_shared<queues_t>();
+#else
+    alignas(details::cache_line_size) std::shared_ptr<queues_t> queues_ =
+      std::make_shared<queues_t>();
+#endif
   };
 
   namespace details
