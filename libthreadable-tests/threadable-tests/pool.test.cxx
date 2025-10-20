@@ -127,7 +127,7 @@ SCENARIO("pool: stress-test")
     for (std::size_t i = 0; i < nr_producers; ++i)
     {
       producers.emplace_back(
-        [&counter, &pool, &latch, queue = pool.make()]() mutable
+        [&counter, &latch, queue = pool.make()]() mutable
         {
           static_assert(decltype(pool)::max_size() % nr_producers == 0,
                         "All tasks must be submitted");
