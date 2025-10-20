@@ -533,10 +533,16 @@ namespace fho
   /// @details If no default thread pool has been instantiated, this function
   ///          will instantiate it with the specified number of threads.
   ///          Otherwise, no new instance is created.
-  /// @return True if the number of pool threads matches the specified number.
+  /// @param threads Number of desired threads.
+  /// @note If `threads == 0` then the `details::default_thread_count` is used.
+  /// @return Number of pool threads used by default thread pool.
   inline auto
   thread_count(unsigned int threads) -> unsigned int
   {
+    if (threads == 0)
+    {
+      threads = details::default_thread_count;
+    }
     return details::default_pool(threads).thread_count();
   }
 
