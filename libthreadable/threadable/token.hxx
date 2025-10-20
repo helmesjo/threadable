@@ -12,7 +12,7 @@
 
 namespace fho
 {
-  enum slot_state : std::uint_fast8_t
+  enum slot_state : std::uint8_t
   {
     /// @brief No state, only used as variable default init.
     invalid = 0,
