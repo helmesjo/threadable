@@ -41,7 +41,7 @@ namespace fho
   ///          cache line size minus `1` byte reserved for the `ring_slot` state handling.
   using fast_func_t = function<details::slot_size>;
 
-  /// @brief A Multi-Producer Single-Consumer (MPSC) ring buffer for managing objects in a
+  /// @brief A Multi-Producer Multi-Consumer (MPMC) ring buffer for managing objects in a
   /// threading environment.
   /// @details This class provides a lock-free ring buffer that allows multiple producers to add
   /// objects concurrently and a single consumer to remove them. It uses atomic operations to
